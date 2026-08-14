@@ -1,0 +1,223 @@
+// ACISI data model.
+//
+// Design notes (see docs/ARCHITECTURE.md for the full rationale):
+// - Multi-tenancy: shared tables, scoped by clinicId. Patient records are
+//   deliberately clinic-agnostic (no clinicId) — portability across clinics
+//   is the core product feature, so a patient exists once and accumulates
+//   Encounters at whichever clinics they visit.
+// - Data Protection Act minimalism: Patient collects only what's needed for
+//   clinical continuity (name, DOB, sex, phone). No national ID or other
+//   sensitive identifiers at MVP — add later only behind explicit consent.
+// - Every grant/revoke of cross-clinic data sharing is recorded in Consent,
+//   never overwritten, so there is always a full history of what a patient
+//   agreed to and when.
+// - AuditLog is append-only application-side (no update/delete code paths).
+//   Enforcing that at the DB level (e.g. REVOKE UPDATE/DELETE for the app
+//   role) is a follow-up hardening step, not done here.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum StaffRole {
+  RECEPTIONIST
+  CLINICIAN
+  ADMIN
+}
+
+enum Sex {
+  MALE
+  FEMALE
+  OTHER
+  UNKNOWN
+}
+
+enum CheckInStatus {
+  PENDING_PAYMENT
+  PAID
+  FAILED
+  CANCELLED
+}
+
+enum ConsentType {
+  CROSS_CLINIC_RECORD_SHARING
+  PLATFORM_REGISTRATION
+}
+
+enum ActorType {
+  PATIENT
+  STAFF
+  SYSTEM
+}
+
+model Clinic {
+  id         String   @id @default(cuid())
+  name       String
+  county     String?
+  /// Short numeric code staff give patients to select this clinic within
+  /// the shared USSD menu, e.g. "482". Not a phone number, not secret.
+  ussdCode   String   @unique
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  staff      Staff[]
+  checkIns   CheckIn[]
+  encounters Encounter[]
+
+  @@map("clinics")
+}
+
+model Staff {
+  id          String     @id @default(cuid())
+  clinicId    String
+  clinic      Clinic     @relation(fields: [clinicId], references: [id])
+  /// E.164 phone number, e.g. "+2547XXXXXXXX" — doubles as the USSD login identifier.
+  phoneNumber String     @unique
+  name        String
+  /// bcrypt hash of a staff-chosen numeric PIN. Never store or log the raw PIN.
+  pinHash     String
+  role        StaffRole  @default(RECEPTIONIST)
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  checkIns    CheckIn[]
+  auditLogs   AuditLog[]
+
+  @@index([clinicId])
+  @@map("staff")
+}
+
+model Patient {
+  id          String      @id @default(cuid())
+  /// E.164 phone number — the primary lookup key, since Africa's Talking
+  /// gives us the caller's number on every USSD session.
+  phoneNumber String      @unique
+  firstName   String
+  lastName    String
+  dateOfBirth DateTime?
+  sex         Sex         @default(UNKNOWN)
+  county      String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  consents    Consent[]
+  encounters  Encounter[]
+  checkIns    CheckIn[]
+
+  @@map("patients")
+}
+
+/// One row per consent grant or revocation. Never mutated after creation —
+/// a revoke is a new row with granted=false, so history is always intact.
+model Consent {
+  id        String      @id @default(cuid())
+  patientId String
+  patient   Patient     @relation(fields: [patientId], references: [id])
+  type      ConsentType
+  granted   Boolean
+  /// How consent was captured, e.g. "USSD", "STAFF_ASSISTED".
+  channel   String
+  /// Version identifier of the consent copy shown, so we can reproduce
+  /// exactly what the patient agreed to.
+  version   String
+  createdAt DateTime    @default(now())
+
+  @@index([patientId])
+  @@map("consents")
+}
+
+/// A single visit at a clinic. Deliberately minimal — this is a portable
+/// history pointer ("patient X visited clinic Y on date Z"), not a full EMR.
+model Encounter {
+  id          String   @id @default(cuid())
+  patientId   String
+  patient     Patient  @relation(fields: [patientId], references: [id])
+  clinicId    String
+  clinic      Clinic   @relation(fields: [clinicId], references: [id])
+  checkInId   String   @unique
+  checkIn     CheckIn  @relation(fields: [checkInId], references: [id])
+  /// Optional free text a staff member can add later via a richer channel.
+  /// Not collected over USSD at MVP.
+  visitReason String?
+  createdAt   DateTime @default(now())
+
+  @@index([patientId])
+  @@index([clinicId])
+  @@map("encounters")
+}
+
+model CheckIn {
+  id                     String        @id @default(cuid())
+  patientId              String
+  patient                Patient       @relation(fields: [patientId], references: [id])
+  clinicId               String
+  clinic                 Clinic        @relation(fields: [clinicId], references: [id])
+  staffId                String?
+  staff                  Staff?        @relation(fields: [staffId], references: [id])
+  /// Idempotency guard: one CheckIn per USSD session, so a dropped-session
+  /// replay (see docs/ARCHITECTURE.md) can never trigger a second STK push.
+  ussdSessionId          String        @unique
+  amountKes              Decimal       @db.Decimal(10, 2)
+  status                 CheckInStatus @default(PENDING_PAYMENT)
+  mpesaCheckoutRequestId String?       @unique
+  mpesaMerchantRequestId String?
+  createdAt              DateTime      @default(now())
+  paidAt                 DateTime?
+
+  encounter        Encounter?
+  mpesaTransactions MpesaTransaction[]
+
+  @@index([patientId])
+  @@index([clinicId])
+  @@map("check_ins")
+}
+
+/// One row per Daraja STK push attempt/callback for a CheckIn. A CheckIn can
+/// have more than one (e.g. a timed-out push followed by a retry).
+model MpesaTransaction {
+  id                  String    @id @default(cuid())
+  checkInId           String
+  checkIn             CheckIn   @relation(fields: [checkInId], references: [id])
+  merchantRequestId   String
+  checkoutRequestId   String
+  resultCode          Int?
+  resultDesc          String?
+  mpesaReceiptNumber  String?   @unique
+  transactionDate     DateTime?
+  phoneNumber         String
+  amountKes           Decimal   @db.Decimal(10, 2)
+  /// Full raw Daraja callback body, kept verbatim for reconciliation/audit.
+  rawCallbackPayload  Json?
+  createdAt           DateTime  @default(now())
+
+  @@index([checkInId])
+  @@map("mpesa_transactions")
+}
+
+/// Append-only. Every access to or mutation of patient data should leave a
+/// row here — this is the audit trail the Data Protection Act requires.
+model AuditLog {
+  id         String    @id @default(cuid())
+  actorType  ActorType
+  /// Patient.id or Staff.id depending on actorType; null when actorType is SYSTEM.
+  actorId    String?
+  staffId    String?
+  staff      Staff?    @relation(fields: [staffId], references: [id])
+  /// e.g. "PATIENT_HISTORY_VIEWED", "CONSENT_GRANTED", "CHECK_IN_CREATED".
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json?
+  createdAt  DateTime  @default(now())
+
+  @@index([entityType, entityId])
+  @@index([actorType, actorId])
+  @@map("audit_logs")
+}
