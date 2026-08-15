@@ -56,7 +56,8 @@ export async function initiateCheckIn(input: InitiateCheckInInput): Promise<Init
     const stkResponse = await initiateStkPush({
       amountKes: env.CHECKIN_FEE_AMOUNT_KES,
       phoneNumberE164: input.phoneNumberE164,
-      accountReference: `ACISI-${checkIn.id.slice(-8)}`,
+      // Daraja caps AccountReference at 12 chars.
+      accountReference: checkIn.id.slice(-10),
       transactionDesc: `Check-in fee: ${input.clinicName}`,
     });
 
