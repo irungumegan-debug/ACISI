@@ -56,6 +56,37 @@ exception is `MAIN_MENU`, which is invoked with the `ENTER_SENTINEL` on a
 genuinely fresh session (`text === ''`) to render the welcome menu without
 interpreting the sentinel as a menu choice.
 
+## Clinic selection and patient self-service
+
+The check-in flow originally asked patients to type a clinic code from
+memory. That's now replaced with a paginated selection menu
+(`CHECKIN_SELECT_CLINIC`, `src/ussd/states/clinicSelect.ts`): `listActiveClinics()`
+fetches all active clinics once per request (fine at MVP scale — see the
+comment on that function for when to revisit), and `buildClinicSelectionPrompt`
+renders `CLINICS_PER_PAGE` (5) of them at a time, numbered `1`-`5`, with a
+`0. Next page` control that wraps back to page 1 after the last page. The
+selected page number lives in `session.data.clinicPage`, so it survives the
+same Redis-backed session (and dropped-session replay) as everything else in
+the flow. Once a clinic is picked, `proceedToPatientLookup` (still in
+`patientCheckIn.ts`) takes over exactly where the old code-entry state left
+off — patient lookup, consent gate, registration.
+
+`Clinic.ussdCode` still exists in the schema but is no longer read by the
+patient-facing flow now that selection is by list position, not typed code.
+Left in place rather than migrated out, since it's harmless and may be
+useful later (e.g. an internal/admin reference, or as the basis for the
+future `*XXX*[clinic-id]#` per-clinic shortcode extension).
+
+The main menu also gained a **My Records** option: a patient can view their
+own visit history directly, keyed off the session's own phone number with no
+additional identity input (`src/ussd/states/mainMenu.ts`, option `3`). This
+is the same `getPortableHistory` used by staff, but bypasses
+`hasActiveDataSharingConsent()` — that check exists to gate *staff* (a third
+party) viewing a patient's history, not a patient viewing their own data.
+It's still logged to `AuditLog` (`PATIENT_SELF_VIEWED_HISTORY`) for
+consistency with "every access gets a row," even though the DPA rationale
+for third-party access logging doesn't strictly apply to self-access.
+
 ## Data model & Data Protection Act posture
 
 See `prisma/schema.prisma` for full field-level comments. Key decisions:

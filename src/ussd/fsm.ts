@@ -3,17 +3,17 @@ import { mainMenu } from './states/mainMenu';
 import {
   checkinConfirm,
   checkinConsent,
-  checkinEnterClinicCode,
   checkinNewPatientDob,
   checkinNewPatientName,
   checkinNewPatientSex,
 } from './states/patientCheckIn';
+import { checkinSelectClinic } from './states/clinicSelect';
 import { staffEnterPin, staffMenu } from './states/staffLogin';
 import { staffHistoryEnterPhone } from './states/patientHistory';
 
 const registry: Record<UssdStateName, UssdStateHandler> = {
   MAIN_MENU: mainMenu,
-  CHECKIN_ENTER_CLINIC_CODE: checkinEnterClinicCode,
+  CHECKIN_SELECT_CLINIC: checkinSelectClinic,
   CHECKIN_CONSENT: checkinConsent,
   CHECKIN_NEW_PATIENT_NAME: checkinNewPatientName,
   CHECKIN_NEW_PATIENT_DOB: checkinNewPatientDob,

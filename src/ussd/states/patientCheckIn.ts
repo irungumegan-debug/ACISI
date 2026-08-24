@@ -1,6 +1,6 @@
 import { Sex } from '@prisma/client';
-import { UssdStateHandler } from '../types';
-import { findClinicByUssdCode } from '../../services/clinicService';
+import { UssdSessionContext, UssdStateHandler, UssdStateResult } from '../types';
+import { ClinicListItem } from '../../services/clinicService';
 import { findPatientByPhone, registerPatient } from '../../services/patientService';
 import { initiateCheckIn } from '../../services/checkInService';
 import { env } from '../../config/env';
@@ -13,12 +13,16 @@ function confirmPrompt(clinicName: string): string {
   return `CON Check in at ${clinicName} for KES ${env.CHECKIN_FEE_AMOUNT_KES}?\n1. Confirm\n2. Cancel`;
 }
 
-export const checkinEnterClinicCode: UssdStateHandler = async (session, input) => {
-  const clinic = await findClinicByUssdCode(input.trim());
-  if (!clinic) {
-    return { response: 'CON Clinic code not found. Enter your clinic code:', continueSession: true };
-  }
-
+/**
+ * Shared tail of the "clinic chosen" step, reached once a clinic has been
+ * picked from the selection menu (src/ussd/states/clinicSelect.ts): look the
+ * patient up by their session phone number and branch into either the
+ * returning-patient confirm prompt or the new-patient consent gate.
+ */
+export async function proceedToPatientLookup(
+  session: UssdSessionContext,
+  clinic: ClinicListItem,
+): Promise<UssdStateResult> {
   session.data.clinicId = clinic.id;
   session.data.clinicName = clinic.name;
 
@@ -29,7 +33,7 @@ export const checkinEnterClinicCode: UssdStateHandler = async (session, input) =
   }
 
   return { response: `CON ${CONSENT_PROMPT_TEXT}\n1. Yes, I agree\n2. No`, continueSession: true, nextState: 'CHECKIN_CONSENT' };
-};
+}
 
 export const checkinConsent: UssdStateHandler = async (_session, input) => {
   if (input === '1') {

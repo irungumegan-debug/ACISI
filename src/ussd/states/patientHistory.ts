@@ -1,8 +1,8 @@
-import dayjs from 'dayjs';
 import { UssdStateHandler } from '../types';
 import { InvalidPhoneNumberError, toE164 } from '../../utils/phone';
 import { findPatientByPhone, getPortableHistory, hasActiveDataSharingConsent } from '../../services/patientService';
 import { recordAuditEvent } from '../../services/auditService';
+import { formatVisitHistoryLines } from '../formatting';
 
 export const staffHistoryEnterPhone: UssdStateHandler = async (session, input) => {
   let patientPhone: string;
@@ -41,7 +41,7 @@ export const staffHistoryEnterPhone: UssdStateHandler = async (session, input) =
     return { response: `END ${patient.firstName} ${patient.lastName} — no prior visits on record.`, continueSession: false };
   }
 
-  const lines = history.map((h, i) => `${i + 1}. ${h.clinicName} - ${dayjs(h.visitedAt).format('DD MMM YYYY')}`);
+  const lines = formatVisitHistoryLines(history);
 
   return {
     response: `END ${patient.firstName} ${patient.lastName} — recent visits:\n${lines.join('\n')}`,

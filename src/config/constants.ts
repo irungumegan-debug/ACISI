@@ -13,3 +13,6 @@ export const CONSENT_PROMPT_TEXT =
 export const MAX_STAFF_PIN_ATTEMPTS = 3;
 
 export const HISTORY_ENCOUNTER_LIMIT = 5;
+
+/** Clinics shown per page in the USSD check-in clinic-selection menu. */
+export const CLINICS_PER_PAGE = 5;
