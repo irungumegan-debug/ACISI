@@ -6,7 +6,8 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
-    "build": "tsc -p tsconfig.build.json",
+    "dev:dashboard": "npm run dev --prefix dashboard",
+    "build": "tsc -p tsconfig.build.json && npm install --prefix dashboard && npm run build --prefix dashboard",
     "start": "node dist/index.js",
     "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
@@ -27,6 +28,7 @@
     "axios": "^1.7.7",
     "bcrypt": "^5.1.1",
     "bullmq": "^5.13.2",
+    "cookie-parser": "^1.4.7",
     "dayjs": "^1.11.13",
     "dotenv": "^16.4.5",
     "express": "^4.21.0",
@@ -37,6 +39,7 @@
   },
   "devDependencies": {
     "@types/bcrypt": "^5.0.2",
+    "@types/cookie-parser": "^1.4.7",
     "@types/express": "^4.17.21",
     "@types/jest": "^29.5.13",
     "@types/node": "^20.16.10",

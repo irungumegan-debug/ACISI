@@ -7,6 +7,7 @@
 - **Session state / job queue:** Redis + BullMQ
 - **USSD gateway:** Africa's Talking
 - **Payments:** M-Pesa Daraja (STK Push)
+- **Staff dashboard:** Vite + React + TypeScript + Tailwind (`dashboard/`), served by the same Express process
 
 See the README for the trade-off reasoning behind each choice.
 
@@ -144,14 +145,80 @@ for a structurally malformed body — a business-logic failure (e.g. no
 matching `CheckIn`) is logged, not surfaced as an HTTP error, since
 Daraja retries indefinitely on non-2xx.
 
+## Staff dashboard
+
+Separate surface from the USSD patient flow by design: patients never touch
+the dashboard, staff never touch USSD (per the two-pillar architecture).
+They share only `services/` and the Postgres/Redis layer underneath —
+`src/dashboard/` never imports from `src/ussd/` or vice versa.
+
+**Auth.** `src/dashboard/auth.ts` reuses the exact staff PIN verification
+already built for USSD login (`staffService.findActiveStaffWithClinicByPhone`
++ `verifyStaffPin` — same bcrypt compare, same audit log write). What's new
+is the session mechanism: a browser needs a persistent login, so a
+successful login creates an opaque token (`crypto.randomBytes`, not a JWT —
+no signing/verification complexity needed) mapped to `{staffId, clinicId,
+staffName, clinicName}` in Redis (`src/dashboard/session.ts`), TTL'd to
+`DASHBOARD_SESSION_TTL_SECONDS` (8h, roughly a shift), handed to the browser
+as an httpOnly cookie. Same "server holds the truth, client just holds a
+lookup key" pattern as the USSD session store — logout is a single Redis
+delete. The login endpoint itself is rate-limited per phone number
+(`LOGIN_RATE_LIMIT_MAX_ATTEMPTS` failures per `LOGIN_RATE_LIMIT_WINDOW_SECONDS`,
+tracked in Redis) — a 4-digit PIN with no throttling would be trivially
+brute-forceable, and this endpoint gates access to every patient at the
+clinic, so it gets the same security treatment as everything else patient-data-adjacent in this codebase.
+
+**Authorization scoping.** Patient search (`GET /api/staff/patients`) and
+patient detail (`GET /api/staff/patients/:id`) are both scoped to patients
+who have a `CheckIn` or `Encounter` at the logged-in staff member's own
+`clinicId` — not a global patient search. This is enforced server-side on
+*both* endpoints, not just hidden in the search UI: a staff member can't
+view an arbitrary patient by guessing/crafting an ID for a patient who's
+never been to their clinic. Once a patient does have a relationship with the
+clinic, the detail view shows their full portable history across all
+clinics (`getPortableHistory`, same function the USSD staff-history lookup
+uses) — that cross-clinic visibility is the whole point of the platform, it's
+just gated behind having a legitimate reason to be looking at this patient
+at all.
+
+**Live check-in queue.** `src/services/realtimeEvents.ts` is a small
+in-process pub/sub (Node `EventEmitter`, channel-per-`clinicId`) that
+`checkInService.applyPaymentResult` publishes to whenever a `CheckIn` flips
+to `PAID`. `GET /api/staff/events` (`src/dashboard/events.ts`) is a
+Server-Sent Events endpoint — one dashboard client subscribes per open
+browser tab, gets pushed a JSON payload the instant their clinic's check-in
+lands, no polling. SSE over WebSockets because this is one-directional
+(server → browser) and `EventSource` needs zero extra protocol handling.
+`GET /api/staff/checkins/today` gives the initial snapshot on page load;
+SSE events are prepended to that list client-side from then on.
+
+This event bus is **in-process, single-instance** — it works because the
+whole app is one Express process today. If this ever runs on more than one
+instance, a dashboard client connected to instance A would never see a
+payment that landed via a callback routed to instance B. Moving to Redis
+pub/sub for this would be a small, contained change (same publish/subscribe
+call sites, different transport) — not done now because it isn't needed yet.
+
+**No schema changes for the dashboard.** All four MVP dashboard features
+(login, search, patient detail, live queue) are read-only against data the
+USSD side already writes — `Patient`, `Clinic`, `Staff`, `CheckIn`,
+`Encounter`. Patient detail is deliberately read-only for this build (no
+notes/diagnosis editing) — a real write surface on clinical data is a
+meaningfully bigger scope than a read view, and wasn't worth the risk on a
+one-week timeline to a demo.
+
 ## Known MVP limitations / deliberate scope cuts
 
 - Consent revocation has no USSD flow yet (only grant, at registration).
   The schema and `hasActiveDataSharingConsent()` already support it.
-- Staff PIN lockout is per-session only (`MAX_STAFF_PIN_ATTEMPTS`), not a
-  persistent account lockout across sessions.
+- Staff PIN lockout is per-session only in USSD (`MAX_STAFF_PIN_ATTEMPTS`);
+  the dashboard login has its own, separate Redis-backed rate limit
+  (`LOGIN_RATE_LIMIT_MAX_ATTEMPTS`) since a web form doesn't have USSD's
+  natural per-session boundary.
 - `AuditLog` is append-only by convention, not by DB-level grant
   restriction yet.
+- Dashboard patient detail is read-only — no notes/diagnosis editing yet.
+- The live check-in queue's event bus is single-instance (see above).
 - No insurer-facing API exists yet — the data model is deliberately kept
   clean and minimal so that layer can be added later without a schema
   rework.

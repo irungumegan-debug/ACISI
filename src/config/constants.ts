@@ -16,3 +16,10 @@ export const HISTORY_ENCOUNTER_LIMIT = 5;
 
 /** Clinics shown per page in the USSD check-in clinic-selection menu. */
 export const CLINICS_PER_PAGE = 5;
+
+/** Staff dashboard web session lifetime — roughly a shift. */
+export const DASHBOARD_SESSION_TTL_SECONDS = 8 * 60 * 60;
+
+/** Brute-force guard on the dashboard PIN login endpoint. */
+export const LOGIN_RATE_LIMIT_MAX_ATTEMPTS = 5;
+export const LOGIN_RATE_LIMIT_WINDOW_SECONDS = 15 * 60;

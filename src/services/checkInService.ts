@@ -6,6 +6,7 @@ import { recordAuditEvent } from './auditService';
 import { initiateStkPush } from '../mpesa/stkPush';
 import { ParsedStkCallback } from '../mpesa/types';
 import { enqueueSmsReceipt, scheduleStkStatusCheck } from '../jobs/queue';
+import { publishCheckInPaid } from './realtimeEvents';
 
 interface InitiateCheckInInput {
   ussdSessionId: string;
@@ -117,14 +118,24 @@ export async function applyPaymentResult(parsed: ParsedStkCallback, rawPayload: 
 
   const succeeded = parsed.resultCode === 0;
 
-  await prisma.checkIn.update({
+  const updated = await prisma.checkIn.update({
     where: { id: checkIn.id },
     data: { status: succeeded ? 'PAID' : 'FAILED', paidAt: succeeded ? new Date() : null },
+    include: { patient: true },
   });
 
   if (succeeded) {
     await prisma.encounter.create({
       data: { patientId: checkIn.patientId, clinicId: checkIn.clinicId, checkInId: checkIn.id },
+    });
+
+    publishCheckInPaid({
+      checkInId: updated.id,
+      patientId: updated.patientId,
+      patientName: `${updated.patient.firstName} ${updated.patient.lastName}`,
+      clinicId: updated.clinicId,
+      amountKes: Number(updated.amountKes),
+      paidAt: (updated.paidAt as Date).toISOString(),
     });
   }
 

@@ -1,11 +1,23 @@
 import bcrypt from 'bcrypt';
 import { prisma } from '../db/prisma';
-import { Staff } from '@prisma/client';
+import { Clinic, Staff } from '@prisma/client';
 import { recordAuditEvent } from './auditService';
 
 export async function findActiveStaffByPhone(phoneNumberE164: string): Promise<Staff | null> {
   const staff = await prisma.staff.findUnique({ where: { phoneNumber: phoneNumberE164 } });
   if (!staff || !staff.isActive) return null;
+  return staff;
+}
+
+/** Same as findActiveStaffByPhone, but also loads the clinic — for the dashboard login, which needs the clinic name for the session/UI. */
+export async function findActiveStaffWithClinicByPhone(
+  phoneNumberE164: string,
+): Promise<(Staff & { clinic: Clinic }) | null> {
+  const staff = await prisma.staff.findUnique({
+    where: { phoneNumber: phoneNumberE164 },
+    include: { clinic: true },
+  });
+  if (!staff || !staff.isActive || !staff.clinic.isActive) return null;
   return staff;
 }
 
