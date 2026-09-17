@@ -8,6 +8,7 @@
 - **USSD gateway:** Africa's Talking
 - **Payments:** M-Pesa Daraja (STK Push)
 - **Staff dashboard:** Vite + React + TypeScript + Tailwind (`dashboard/`), served by the same Express process
+- **Patient portal:** Vite + React + TypeScript + Tailwind (`portal/`), also served by the same Express process, at `/portal`
 
 See the README for the trade-off reasoning behind each choice.
 
@@ -77,6 +78,18 @@ patient-facing flow now that selection is by list position, not typed code.
 Left in place rather than migrated out, since it's harmless and may be
 useful later (e.g. an internal/admin reference, or as the basis for the
 future `*XXX*[clinic-id]#` per-clinic shortcode extension).
+
+Once a clinic is picked, the flow now asks for a **department**
+(`CHECKIN_SELECT_DEPARTMENT`, `src/ussd/states/departmentSelect.ts`) before
+patient lookup — same paginated-menu pattern as clinic selection, reading
+from `listActiveDepartments()`. This is what lets the staff dashboard queue
+group/filter check-ins by department regardless of whether they came in
+over USSD or the web portal (`CheckIn.channel`). `Department` is a plain,
+platform-wide table (not per-clinic) at MVP, seeded with General/
+Gynecology/Dental/Pediatrics in `prisma/seed.ts` — the same list every
+clinic sees. If clinics eventually need different department lists, the
+natural extension is a `ClinicDepartment` join table; not built now because
+every seeded clinic offers the same four departments today.
 
 The main menu also gained a **My Records** option: a patient can view their
 own visit history directly, keyed off the session's own phone number with no
@@ -199,13 +212,72 @@ payment that landed via a callback routed to instance B. Moving to Redis
 pub/sub for this would be a small, contained change (same publish/subscribe
 call sites, different transport) — not done now because it isn't needed yet.
 
-**No schema changes for the dashboard.** All four MVP dashboard features
-(login, search, patient detail, live queue) are read-only against data the
-USSD side already writes — `Patient`, `Clinic`, `Staff`, `CheckIn`,
-`Encounter`. Patient detail is deliberately read-only for this build (no
-notes/diagnosis editing) — a real write surface on clinical data is a
-meaningfully bigger scope than a read view, and wasn't worth the risk on a
-one-week timeline to a demo.
+**Consultation workflow (Waiting → In Consultation → Done).** This is the
+dashboard's one real write surface on clinical data: `consultationService.ts`
+layers `Encounter.consultationStatus`/`notes`/`prescription`/`completedAt`
+onto the existing `Encounter` row, clinic-scoped the same way patient search
+and detail are (`loadClinicScopedEncounter` — a staff member can't act on an
+encounter that isn't at their own clinic, even by guessing an id).
+`GET /api/staff/checkins/today` now reads `Encounter` (not just `CheckIn`)
+so it can show department and consultation status alongside the patient/
+phone/check-in-time it already showed; `POST /:encounterId/start` and
+`POST /:encounterId/checkout` are the two state transitions. Checkout is
+the one place prescriptions/notes get written and is also what triggers the
+checkout SMS (`visitSummarySmsQueue`, a separate BullMQ job/worker from the
+existing payment-receipt job — different message, different trigger point).
+**Live updates here are polling** (the dashboard re-fetches `/checkins/today`
+every 5s), not a second SSE channel: the existing SSE feed above is
+payment-only and reshaping it to also carry consultation-status changes
+wasn't worth the complexity when polling every few seconds is explicitly
+fine for this use case. The SSE endpoint itself is untouched and still
+fires on new arrivals; the dashboard just no longer needs it now that
+polling covers both new arrivals and status changes in one mechanism.
+
+## Patient portal
+
+A second, separate web surface (`portal/` frontend, `src/portal/` backend),
+served at `/portal` alongside the dashboard at `/` — same single-origin,
+no-CORS setup. Patients never see the staff dashboard and staff never see
+the portal, same two-pillar separation as USSD vs. dashboard.
+
+**Web check-in reuses the USSD check-in machinery, not a copy of it.**
+`POST /api/portal/checkin` calls the exact same `checkInService.initiateCheckIn`
+(and so the same M-Pesa STK push) the USSD `CHECKIN_CONFIRM` state calls. A
+phone number ACISI has never seen goes through the same consent +
+registration step USSD collects (`registerPatient`) before the check-in is
+created — the endpoint responds `REGISTRATION_REQUIRED` instead of erroring
+when it hits an unknown number with no registration payload yet, so the
+frontend can show a short sign-up form and resubmit. `CheckIn.ussdSessionId`
+(the existing idempotency guard against double STK pushes) is reused as-is
+for the web path too: the portal generates its own per-attempt id
+client-side and sends it as `web:<id>` instead of an Africa's Talking
+session id — same column, same uniqueness guarantee, no schema change
+needed for a second channel's idempotency key. `CheckIn.channel` records
+which path a given check-in came in on.
+
+**OTP auth, not a password.** "My records" is phone number + a 6-digit SMS
+code, deliberately not a permanent password — these are the same
+not-necessarily-tech-savvy patients USSD serves, just reached through a
+phone browser instead of a feature-phone menu. The OTP itself never touches
+Postgres: it's a hashed code in Redis (`portal:otp:<phone>`,
+`PATIENT_OTP_TTL_SECONDS` TTL), rate-limited on both request
+(`PATIENT_OTP_REQUEST_RATE_LIMIT_*`) and verify attempts
+(`PATIENT_OTP_MAX_VERIFY_ATTEMPTS`) using the same generic Redis rate
+limiter (`src/utils/rateLimit.ts`) the dashboard's PIN login uses — extracted
+from that login endpoint specifically so this didn't need a second
+implementation. Once verified, the session (`src/portal/session.ts`) is the
+same opaque-token-in-Redis pattern as the dashboard's staff session and the
+USSD session store, just scoped to `{ phoneNumberE164 }` rather than a
+`patientId` — deliberately, since a patient can verify before they have any
+ACISI record at all (before their first check-in), so every protected route
+re-resolves the `Patient` row by phone at request time instead of trusting a
+cached id.
+
+**Records are strictly self-scoped.** `GET /api/portal/visits` filters by
+the phone number on the caller's own OTP-verified session — never a body,
+query, or path parameter — so there's no id a patient could pass to see
+someone else's history. It logs `PATIENT_SELF_VIEWED_HISTORY` on every
+access, same audit convention as everywhere else patient data is read.
 
 ## Known MVP limitations / deliberate scope cuts
 
@@ -217,8 +289,25 @@ one-week timeline to a demo.
   natural per-session boundary.
 - `AuditLog` is append-only by convention, not by DB-level grant
   restriction yet.
-- Dashboard patient detail is read-only — no notes/diagnosis editing yet.
-- The live check-in queue's event bus is single-instance (see above).
+- Dashboard patient detail (the cross-clinic history view) is still
+  read-only — the consultation workflow's notes/prescription fields are
+  edited only through the queue's checkout form, not the patient detail
+  page.
+- The live check-in queue's event bus is single-instance (see above); the
+  consultation workflow's live updates are polling, not SSE, by choice
+  (see "Consultation workflow" above), so this limitation doesn't apply to
+  it the same way.
+- `Department` is a single platform-wide list, not per-clinic — every
+  clinic currently offers the same four departments. A `ClinicDepartment`
+  join table is the natural extension if that stops being true.
+- No doctor/clinician login exists yet — front-desk staff enter the
+  prescription and notes at checkout on the clinician's behalf, using the
+  same staff login as everything else in the dashboard. A separate
+  clinician-facing view is future work, not part of this build.
+- The patient portal's OTP session (`PATIENT_SESSION_TTL_SECONDS`, 30 min)
+  is deliberately shorter-lived than the staff dashboard's (8h) — it's
+  read access to personal health data from a patient's own, less-controlled
+  device, re-verified each visit rather than kept logged in.
 - No insurer-facing API exists yet — the data model is deliberately kept
   clean and minimal so that layer can be added later without a schema
   rework.
