@@ -1,0 +1,38 @@
+@import "tailwindcss";
+
+/* Same ACISI navy/gold brand tokens as dashboard/src/index.css — kept as a
+   plain duplicate rather than a shared package, since these are two
+   independent Vite apps and the token list is tiny and stable. */
+@theme {
+  --color-navy-50: #eef2f7;
+  --color-navy-100: #d9e2ee;
+  --color-navy-200: #b3c5dd;
+  --color-navy-300: #8aa7cb;
+  --color-navy-400: #5c85b3;
+  --color-navy-500: #3a6699;
+  --color-navy-600: #2c4f7c;
+  --color-navy-700: #1c3a66;
+  --color-navy-800: #142c4e;
+  --color-navy-900: #0c1c34;
+
+  --color-gold-50: #fbf3e2;
+  --color-gold-100: #f5e4bd;
+  --color-gold-300: #e2bb5f;
+  --color-gold-400: #d9ab3d;
+  --color-gold-500: #c9971f;
+  --color-gold-600: #a87c16;
+  --color-gold-700: #8a6f1f;
+}
+
+body {
+  @apply bg-slate-50 text-navy-900;
+}
+
+@layer components {
+  .input {
+    @apply w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-navy-900 focus:border-navy-500 focus:outline-none;
+  }
+  .btn-primary {
+    @apply rounded-md bg-gold-500 px-4 py-2 text-sm font-semibold text-navy-900 transition-colors hover:bg-gold-600 disabled:cursor-not-allowed disabled:opacity-60;
+  }
+}

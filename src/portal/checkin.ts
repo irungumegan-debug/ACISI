@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { Sex } from '@prisma/client';
 import { prisma } from '../db/prisma';
+import { env } from '../config/env';
 import { logger } from '../utils/logger';
 import { InvalidPhoneNumberError, toE164 } from '../utils/phone';
 import { listActiveClinics, getActiveClinicById } from '../services/clinicService';
@@ -22,6 +23,11 @@ portalCheckinRouter.get('/clinics', async (_req, res) => {
 portalCheckinRouter.get('/departments', async (_req, res) => {
   const departments = await listActiveDepartments();
   res.json({ departments });
+});
+
+/** So the portal shows the real fee instead of hardcoding it, same value the USSD confirm prompt uses. */
+portalCheckinRouter.get('/fee', (_req, res) => {
+  res.json({ checkInFeeKes: env.CHECKIN_FEE_AMOUNT_KES });
 });
 
 const CURRENT_YEAR = new Date().getFullYear();
