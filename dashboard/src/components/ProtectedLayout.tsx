@@ -13,22 +13,27 @@ export function ProtectedLayout() {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
+  const linkClass = (path: string) =>
+    `rounded-md px-3 py-1.5 transition-colors ${
+      location.pathname.startsWith(path) ? 'bg-gold-500 text-navy-900 font-semibold' : 'text-navy-100 hover:text-white'
+    }`;
+
   return (
     <div className="min-h-screen">
-      <header className="border-b border-slate-200 bg-white">
+      <header className="bg-navy-800">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
           <div>
-            <p className="font-semibold text-slate-900">{session.clinicName}</p>
-            <p className="text-sm text-slate-500">{session.staffName}</p>
+            <p className="font-semibold text-white">{session.clinicName}</p>
+            <p className="text-sm text-navy-200">{session.staffName}</p>
           </div>
-          <nav className="flex items-center gap-4 text-sm">
-            <Link to="/queue" className="text-slate-600 hover:text-slate-900">
+          <nav className="flex items-center gap-2 text-sm">
+            <Link to="/queue" className={linkClass('/queue')}>
               Queue
             </Link>
-            <Link to="/patients" className="text-slate-600 hover:text-slate-900">
+            <Link to="/patients" className={linkClass('/patients')}>
               Patients
             </Link>
-            <button onClick={() => void logout()} className="text-slate-600 hover:text-slate-900">
+            <button onClick={() => void logout()} className="rounded-md px-3 py-1.5 text-navy-100 hover:text-white">
               Log out
             </button>
           </nav>

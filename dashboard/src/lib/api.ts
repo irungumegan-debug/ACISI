@@ -27,12 +27,30 @@ export interface PatientDetail {
   history: VisitHistoryEntry[];
 }
 
-export interface QueueItem {
-  checkInId: string;
+export type ConsultationStatus = 'WAITING' | 'IN_CONSULTATION' | 'DONE';
+
+export interface Department {
+  id: string;
+  name: string;
+}
+
+export interface TodayQueueItem {
+  encounterId: string;
   patientId: string;
   patientName: string;
-  amountKes: number;
-  paidAt: string;
+  phoneNumber: string;
+  departmentId: string | null;
+  departmentName: string;
+  channel: string;
+  consultationStatus: ConsultationStatus;
+  checkInTime: string;
+  prescription: string | null;
+  notes: string | null;
+}
+
+export interface CheckoutInput {
+  notes?: string;
+  prescription?: string;
 }
 
 class ApiError extends Error {
@@ -85,30 +103,28 @@ export const api = {
     return request<PatientDetail>(`/patients/${id}`);
   },
 
-  getTodayCheckIns() {
-    return request<{ checkIns: QueueItem[] }>('/checkins/today');
+  getTodayQueue(departmentId?: string) {
+    const qs = departmentId ? `?department=${encodeURIComponent(departmentId)}` : '';
+    return request<{ queue: TodayQueueItem[] }>(`/checkins/today${qs}`);
+  },
+
+  getDepartments() {
+    return request<{ departments: Department[] }>('/departments');
+  },
+
+  startConsultation(encounterId: string) {
+    return request<{ encounterId: string; consultationStatus: ConsultationStatus }>(
+      `/checkins/${encounterId}/start`,
+      { method: 'POST' },
+    );
+  },
+
+  checkout(encounterId: string, input: CheckoutInput) {
+    return request<{ encounterId: string; consultationStatus: ConsultationStatus }>(
+      `/checkins/${encounterId}/checkout`,
+      { method: 'POST', body: JSON.stringify(input) },
+    );
   },
 };
 
 export { ApiError };
-
-/**
- * Subscribes to the live check-in queue. Returns an unsubscribe function.
- * EventSource carries cookies for same-origin requests automatically, so no
- * extra auth wiring is needed here — the browser just needs to already have
- * the session cookie from a successful login.
- */
-export function subscribeToQueue(onCheckIn: (item: QueueItem) => void): () => void {
-  const source = new EventSource('/api/staff/events');
-  source.onmessage = (event) => {
-    const payload = JSON.parse(event.data) as {
-      checkInId: string;
-      patientId: string;
-      patientName: string;
-      amountKes: number;
-      paidAt: string;
-    };
-    onCheckIn(payload);
-  };
-  return () => source.close();
-}
