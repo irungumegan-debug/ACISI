@@ -44,6 +44,20 @@ enum CheckInStatus {
   CANCELLED
 }
 
+enum CheckInChannel {
+  USSD
+  WEB
+}
+
+/// Front-desk consultation workflow, separate from CheckInStatus (which
+/// tracks payment). A CheckIn only reaches this workflow once PAID, at
+/// which point its Encounter starts at WAITING.
+enum ConsultationStatus {
+  WAITING
+  IN_CONSULTATION
+  DONE
+}
+
 enum ConsentType {
   CROSS_CLINIC_RECORD_SHARING
   PLATFORM_REGISTRATION
@@ -56,15 +70,15 @@ enum ActorType {
 }
 
 model Clinic {
-  id         String   @id @default(cuid())
-  name       String
-  county     String?
+  id        String   @id @default(cuid())
+  name      String
+  county    String?
   /// Short numeric code staff give patients to select this clinic within
   /// the shared USSD menu, e.g. "482". Not a phone number, not secret.
-  ussdCode   String   @unique
-  isActive   Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  ussdCode  String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   staff      Staff[]
   checkIns   CheckIn[]
@@ -73,43 +87,59 @@ model Clinic {
   @@map("clinics")
 }
 
+/// What a patient is checking in for (General, Gynecology, Dental, ...).
+/// A shared, platform-wide list (not per-clinic) at MVP — see
+/// docs/ARCHITECTURE.md for the rationale and the follow-up if that
+/// stops being good enough.
+model Department {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  checkIns CheckIn[]
+
+  @@map("departments")
+}
+
 model Staff {
-  id          String     @id @default(cuid())
+  id          String    @id @default(cuid())
   clinicId    String
-  clinic      Clinic     @relation(fields: [clinicId], references: [id])
+  clinic      Clinic    @relation(fields: [clinicId], references: [id])
   /// E.164 phone number, e.g. "+2547XXXXXXXX" — doubles as the USSD login identifier.
-  phoneNumber String     @unique
+  phoneNumber String    @unique
   name        String
   /// bcrypt hash of a staff-chosen numeric PIN. Never store or log the raw PIN.
   pinHash     String
-  role        StaffRole  @default(RECEPTIONIST)
-  isActive    Boolean    @default(true)
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  role        StaffRole @default(RECEPTIONIST)
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-  checkIns    CheckIn[]
-  auditLogs   AuditLog[]
+  checkIns  CheckIn[]
+  auditLogs AuditLog[]
 
   @@index([clinicId])
   @@map("staff")
 }
 
 model Patient {
-  id          String      @id @default(cuid())
+  id          String    @id @default(cuid())
   /// E.164 phone number — the primary lookup key, since Africa's Talking
   /// gives us the caller's number on every USSD session.
-  phoneNumber String      @unique
+  phoneNumber String    @unique
   firstName   String
   lastName    String
   dateOfBirth DateTime?
-  sex         Sex         @default(UNKNOWN)
+  sex         Sex       @default(UNKNOWN)
   county      String?
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-  consents    Consent[]
-  encounters  Encounter[]
-  checkIns    CheckIn[]
+  consents   Consent[]
+  encounters Encounter[]
+  checkIns   CheckIn[]
 
   @@map("patients")
 }
@@ -133,20 +163,32 @@ model Consent {
   @@map("consents")
 }
 
-/// A single visit at a clinic. Deliberately minimal — this is a portable
-/// history pointer ("patient X visited clinic Y on date Z"), not a full EMR.
+/// A single visit at a clinic. Started as a portable history pointer
+/// ("patient X visited clinic Y on date Z"); now also carries the front-desk
+/// consultation workflow (status/prescription/notes) added for the staff
+/// dashboard and patient portal — still not a full EMR.
 model Encounter {
-  id          String   @id @default(cuid())
-  patientId   String
-  patient     Patient  @relation(fields: [patientId], references: [id])
-  clinicId    String
-  clinic      Clinic   @relation(fields: [clinicId], references: [id])
-  checkInId   String   @unique
-  checkIn     CheckIn  @relation(fields: [checkInId], references: [id])
+  id                    String             @id @default(cuid())
+  patientId             String
+  patient               Patient            @relation(fields: [patientId], references: [id])
+  clinicId              String
+  clinic                Clinic             @relation(fields: [clinicId], references: [id])
+  checkInId             String             @unique
+  checkIn               CheckIn            @relation(fields: [checkInId], references: [id])
   /// Optional free text a staff member can add later via a richer channel.
   /// Not collected over USSD at MVP.
-  visitReason String?
-  createdAt   DateTime @default(now())
+  visitReason           String?
+  /// Front-desk queue status. Starts WAITING the moment payment succeeds
+  /// (see checkInService.applyPaymentResult).
+  consultationStatus    ConsultationStatus @default(WAITING)
+  consultationStartedAt DateTime?
+  /// Set together at checkout, by staff, on behalf of the clinician who saw
+  /// the patient — there's no separate clinician login yet (deliberate scope
+  /// cut, see docs/ARCHITECTURE.md).
+  notes                 String?
+  prescription          String?
+  completedAt           DateTime?
+  createdAt             DateTime           @default(now())
 
   @@index([patientId])
   @@index([clinicId])
@@ -154,48 +196,57 @@ model Encounter {
 }
 
 model CheckIn {
-  id                     String        @id @default(cuid())
+  id                     String         @id @default(cuid())
   patientId              String
-  patient                Patient       @relation(fields: [patientId], references: [id])
+  patient                Patient        @relation(fields: [patientId], references: [id])
   clinicId               String
-  clinic                 Clinic        @relation(fields: [clinicId], references: [id])
+  clinic                 Clinic         @relation(fields: [clinicId], references: [id])
   staffId                String?
-  staff                  Staff?        @relation(fields: [staffId], references: [id])
-  /// Idempotency guard: one CheckIn per USSD session, so a dropped-session
-  /// replay (see docs/ARCHITECTURE.md) can never trigger a second STK push.
-  ussdSessionId          String        @unique
-  amountKes              Decimal       @db.Decimal(10, 2)
-  status                 CheckInStatus @default(PENDING_PAYMENT)
-  mpesaCheckoutRequestId String?       @unique
+  staff                  Staff?         @relation(fields: [staffId], references: [id])
+  departmentId           String?
+  department             Department?    @relation(fields: [departmentId], references: [id])
+  /// USSD or the web patient portal. Both write the same CheckIn/Encounter
+  /// rows, so the staff queue never needs to know which one a patient used.
+  channel                CheckInChannel @default(USSD)
+  /// Idempotency guard: one CheckIn per originating session, so a
+  /// dropped-session replay (see docs/ARCHITECTURE.md) or a double-submitted
+  /// web request can never trigger a second STK push. Holds an Africa's
+  /// Talking sessionId for USSD, or a client-generated request id for WEB —
+  /// same guard, same column, different source of the value.
+  ussdSessionId          String         @unique
+  amountKes              Decimal        @db.Decimal(10, 2)
+  status                 CheckInStatus  @default(PENDING_PAYMENT)
+  mpesaCheckoutRequestId String?        @unique
   mpesaMerchantRequestId String?
-  createdAt              DateTime      @default(now())
+  createdAt              DateTime       @default(now())
   paidAt                 DateTime?
 
-  encounter        Encounter?
+  encounter         Encounter?
   mpesaTransactions MpesaTransaction[]
 
   @@index([patientId])
   @@index([clinicId])
+  @@index([departmentId])
   @@map("check_ins")
 }
 
 /// One row per Daraja STK push attempt/callback for a CheckIn. A CheckIn can
 /// have more than one (e.g. a timed-out push followed by a retry).
 model MpesaTransaction {
-  id                  String    @id @default(cuid())
-  checkInId           String
-  checkIn             CheckIn   @relation(fields: [checkInId], references: [id])
-  merchantRequestId   String
-  checkoutRequestId   String
-  resultCode          Int?
-  resultDesc          String?
-  mpesaReceiptNumber  String?   @unique
-  transactionDate     DateTime?
-  phoneNumber         String
-  amountKes           Decimal   @db.Decimal(10, 2)
+  id                 String    @id @default(cuid())
+  checkInId          String
+  checkIn            CheckIn   @relation(fields: [checkInId], references: [id])
+  merchantRequestId  String
+  checkoutRequestId  String
+  resultCode         Int?
+  resultDesc         String?
+  mpesaReceiptNumber String?   @unique
+  transactionDate    DateTime?
+  phoneNumber        String
+  amountKes          Decimal   @db.Decimal(10, 2)
   /// Full raw Daraja callback body, kept verbatim for reconciliation/audit.
-  rawCallbackPayload  Json?
-  createdAt           DateTime  @default(now())
+  rawCallbackPayload Json?
+  createdAt          DateTime  @default(now())
 
   @@index([checkInId])
   @@map("mpesa_transactions")

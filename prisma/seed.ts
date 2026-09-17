@@ -20,6 +20,11 @@ const CLINICS: Array<{ name: string; county: string; ussdCode: string }> = [
   { name: 'Nuru Family Clinic', county: 'Machakos', ussdCode: '488' },
 ];
 
+/// Shared, platform-wide department list — see the note on the Department
+/// model in schema.prisma. Extending this list later is just a new row, no
+/// code change (both the USSD and web check-in flows read it live).
+const DEPARTMENTS = ['General', 'Gynecology', 'Dental', 'Pediatrics'];
+
 async function main() {
   const clinics = await Promise.all(
     CLINICS.map((clinic) =>
@@ -27,6 +32,16 @@ async function main() {
         where: { ussdCode: clinic.ussdCode },
         update: {},
         create: clinic,
+      }),
+    ),
+  );
+
+  await Promise.all(
+    DEPARTMENTS.map((name) =>
+      prisma.department.upsert({
+        where: { name },
+        update: {},
+        create: { name },
       }),
     ),
   );
@@ -46,7 +61,9 @@ async function main() {
     },
   });
 
-  console.log(`Seeded ${clinics.length} clinics and one staff login (+254700000001, PIN 1234) at "${primaryClinic.name}".`);
+  console.log(
+    `Seeded ${clinics.length} clinics, ${DEPARTMENTS.length} departments, and one staff login (+254700000001, PIN 1234) at "${primaryClinic.name}".`,
+  );
 }
 
 main()

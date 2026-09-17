@@ -36,19 +36,23 @@ describe('proceedToPatientLookup', () => {
   it('routes a returning patient straight to confirmation', async () => {
     mockFindPatient.mockResolvedValue({ id: 'patient-1' });
 
-    const session = freshSession();
-    const result = await proceedToPatientLookup(session, { id: 'clinic-1', name: 'Sunrise Clinic' });
+    const session: UssdSessionContext = {
+      ...freshSession(),
+      data: { clinicId: 'clinic-1', clinicName: 'Sunrise Clinic', departmentId: 'dept-1', departmentName: 'General' },
+    };
+    const result = await proceedToPatientLookup(session);
 
     expect(result.nextState).toBe('CHECKIN_CONFIRM');
     expect(session.data.patientId).toBe('patient-1');
-    expect(session.data.clinicId).toBe('clinic-1');
     expect(result.response).toContain('Sunrise Clinic');
+    expect(result.response).toContain('General');
   });
 
   it('routes a new patient to the consent prompt', async () => {
     mockFindPatient.mockResolvedValue(null);
 
-    const result = await proceedToPatientLookup(freshSession(), { id: 'clinic-1', name: 'Sunrise Clinic' });
+    const session = { ...freshSession(), data: { clinicId: 'clinic-1', clinicName: 'Sunrise Clinic', departmentId: 'dept-1', departmentName: 'General' } };
+    const result = await proceedToPatientLookup(session);
 
     expect(result.nextState).toBe('CHECKIN_CONSENT');
     expect(result.response).toContain('Agree');
@@ -70,7 +74,7 @@ describe('checkinConsent', () => {
 
 describe('checkinConfirm', () => {
   it('cancels without calling initiateCheckIn', async () => {
-    const session = { ...freshSession(), data: { clinicName: 'Sunrise Clinic' } };
+    const session = { ...freshSession(), data: { clinicName: 'Sunrise Clinic', departmentName: 'General' } };
     const result = await checkinConfirm(session, '2');
     expect(result.continueSession).toBe(false);
     expect(mockInitiateCheckIn).not.toHaveBeenCalled();
@@ -84,12 +88,18 @@ describe('checkinConfirm', () => {
 
     const session = {
       ...freshSession(),
-      data: { clinicName: 'Sunrise Clinic', clinicId: 'clinic-1', patientId: 'patient-1' },
+      data: {
+        clinicName: 'Sunrise Clinic',
+        clinicId: 'clinic-1',
+        departmentName: 'General',
+        departmentId: 'dept-1',
+        patientId: 'patient-1',
+      },
     };
     const result = await checkinConfirm(session, '1');
 
     expect(mockInitiateCheckIn).toHaveBeenCalledWith(
-      expect.objectContaining({ clinicId: 'clinic-1', patientId: 'patient-1' }),
+      expect.objectContaining({ clinicId: 'clinic-1', patientId: 'patient-1', departmentId: 'dept-1', channel: 'USSD' }),
     );
     expect(result.continueSession).toBe(false);
     expect(result.response).toContain('M-Pesa prompt');

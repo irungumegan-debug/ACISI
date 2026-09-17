@@ -1,9 +1,9 @@
 import { NextFunction, Request, Response, Router } from 'express';
 import { z } from 'zod';
-import { redis } from '../config/redis';
 import { env } from '../config/env';
 import { LOGIN_RATE_LIMIT_MAX_ATTEMPTS, LOGIN_RATE_LIMIT_WINDOW_SECONDS, DASHBOARD_SESSION_TTL_SECONDS } from '../config/constants';
 import { InvalidPhoneNumberError, toE164 } from '../utils/phone';
+import { isRateLimited as isKeyRateLimited, recordAttempt, clearRateLimit as clearKeyRateLimit } from '../utils/rateLimit';
 import { findActiveStaffWithClinicByPhone, verifyStaffPin } from '../services/staffService';
 import {
   createDashboardSession,
@@ -23,20 +23,15 @@ function rateLimitKey(phoneNumberE164: string): string {
 }
 
 async function isRateLimited(phoneNumberE164: string): Promise<boolean> {
-  const count = await redis.get(rateLimitKey(phoneNumberE164));
-  return Number(count ?? 0) >= LOGIN_RATE_LIMIT_MAX_ATTEMPTS;
+  return isKeyRateLimited(rateLimitKey(phoneNumberE164), LOGIN_RATE_LIMIT_MAX_ATTEMPTS);
 }
 
 async function recordFailedAttempt(phoneNumberE164: string): Promise<void> {
-  const k = rateLimitKey(phoneNumberE164);
-  const count = await redis.incr(k);
-  if (count === 1) {
-    await redis.expire(k, LOGIN_RATE_LIMIT_WINDOW_SECONDS);
-  }
+  await recordAttempt(rateLimitKey(phoneNumberE164), LOGIN_RATE_LIMIT_WINDOW_SECONDS);
 }
 
 async function clearRateLimit(phoneNumberE164: string): Promise<void> {
-  await redis.del(rateLimitKey(phoneNumberE164));
+  await clearKeyRateLimit(rateLimitKey(phoneNumberE164));
 }
 
 const loginSchema = z.object({

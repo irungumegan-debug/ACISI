@@ -1,4 +1,4 @@
-import { CheckIn } from '@prisma/client';
+import { CheckIn, CheckInChannel } from '@prisma/client';
 import { prisma } from '../db/prisma';
 import { env } from '../config/env';
 import { logger } from '../utils/logger';
@@ -9,10 +9,13 @@ import { enqueueSmsReceipt, scheduleStkStatusCheck } from '../jobs/queue';
 import { publishCheckInPaid } from './realtimeEvents';
 
 interface InitiateCheckInInput {
+  /** Africa's Talking sessionId for USSD, or a client-generated request id for WEB — see the comment on CheckIn.ussdSessionId. */
   ussdSessionId: string;
   patientId: string;
   clinicId: string;
   clinicName: string;
+  departmentId?: string;
+  channel?: CheckInChannel;
   phoneNumberE164: string;
 }
 
@@ -38,6 +41,8 @@ export async function initiateCheckIn(input: InitiateCheckInInput): Promise<Init
     data: {
       patientId: input.patientId,
       clinicId: input.clinicId,
+      departmentId: input.departmentId,
+      channel: input.channel ?? 'USSD',
       ussdSessionId: input.ussdSessionId,
       amountKes: env.CHECKIN_FEE_AMOUNT_KES,
       status: 'PENDING_PAYMENT',

@@ -1,6 +1,5 @@
 import { Sex } from '@prisma/client';
 import { UssdSessionContext, UssdStateHandler, UssdStateResult } from '../types';
-import { ClinicListItem } from '../../services/clinicService';
 import { findPatientByPhone, registerPatient } from '../../services/patientService';
 import { initiateCheckIn } from '../../services/checkInService';
 import { env } from '../../config/env';
@@ -9,27 +8,25 @@ import { logger } from '../../utils/logger';
 
 const CURRENT_YEAR = new Date().getFullYear();
 
-function confirmPrompt(clinicName: string): string {
-  return `CON Check in at ${clinicName} for KES ${env.CHECKIN_FEE_AMOUNT_KES}?\n1. Confirm\n2. Cancel`;
+function confirmPrompt(clinicName: string, departmentName: string): string {
+  return `CON Check in at ${clinicName} (${departmentName}) for KES ${env.CHECKIN_FEE_AMOUNT_KES}?\n1. Confirm\n2. Cancel`;
 }
 
 /**
- * Shared tail of the "clinic chosen" step, reached once a clinic has been
- * picked from the selection menu (src/ussd/states/clinicSelect.ts): look the
- * patient up by their session phone number and branch into either the
+ * Shared tail of the "department chosen" step, reached once both a clinic
+ * (src/ussd/states/clinicSelect.ts) and a department
+ * (src/ussd/states/departmentSelect.ts) are already on session.data: look
+ * the patient up by their session phone number and branch into either the
  * returning-patient confirm prompt or the new-patient consent gate.
  */
-export async function proceedToPatientLookup(
-  session: UssdSessionContext,
-  clinic: ClinicListItem,
-): Promise<UssdStateResult> {
-  session.data.clinicId = clinic.id;
-  session.data.clinicName = clinic.name;
+export async function proceedToPatientLookup(session: UssdSessionContext): Promise<UssdStateResult> {
+  const clinicName = session.data.clinicName as string;
+  const departmentName = session.data.departmentName as string;
 
   const patient = await findPatientByPhone(session.phoneNumberE164);
   if (patient) {
     session.data.patientId = patient.id;
-    return { response: confirmPrompt(clinic.name), continueSession: true, nextState: 'CHECKIN_CONFIRM' };
+    return { response: confirmPrompt(clinicName, departmentName), continueSession: true, nextState: 'CHECKIN_CONFIRM' };
   }
 
   return { response: `CON ${CONSENT_PROMPT_TEXT}\n1. Yes, I agree\n2. No`, continueSession: true, nextState: 'CHECKIN_CONSENT' };
@@ -84,6 +81,7 @@ export const checkinNewPatientSex: UssdStateHandler = async (session, input) => 
   }
 
   const clinicName = session.data.clinicName as string;
+  const departmentName = session.data.departmentName as string;
 
   try {
     const patient = await registerPatient({
@@ -100,18 +98,22 @@ export const checkinNewPatientSex: UssdStateHandler = async (session, input) => 
     return { response: 'END Something went wrong registering you. Please try again shortly.', continueSession: false };
   }
 
-  return { response: confirmPrompt(clinicName), continueSession: true, nextState: 'CHECKIN_CONFIRM' };
+  return { response: confirmPrompt(clinicName, departmentName), continueSession: true, nextState: 'CHECKIN_CONFIRM' };
 };
 
 export const checkinConfirm: UssdStateHandler = async (session, input) => {
   const clinicName = session.data.clinicName as string;
+  const departmentName = session.data.departmentName as string;
 
   if (input === '2') {
     return { response: 'END Check-in cancelled.', continueSession: false };
   }
 
   if (input !== '1') {
-    return { response: `CON Please choose 1 or 2.\n${confirmPrompt(clinicName).replace('CON ', '')}`, continueSession: true };
+    return {
+      response: `CON Please choose 1 or 2.\n${confirmPrompt(clinicName, departmentName).replace('CON ', '')}`,
+      continueSession: true,
+    };
   }
 
   try {
@@ -120,6 +122,8 @@ export const checkinConfirm: UssdStateHandler = async (session, input) => {
       patientId: session.data.patientId as string,
       clinicId: session.data.clinicId as string,
       clinicName,
+      departmentId: session.data.departmentId as string,
+      channel: 'USSD',
       phoneNumberE164: session.phoneNumberE164,
     });
 

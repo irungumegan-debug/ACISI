@@ -1,7 +1,7 @@
 import { UssdStateHandler } from '../types';
 import { ClinicListItem, listActiveClinics } from '../../services/clinicService';
 import { CLINICS_PER_PAGE } from '../../config/constants';
-import { proceedToPatientLookup } from './patientCheckIn';
+import { beginDepartmentSelection } from './departmentSelect';
 
 /** Renders one page of the clinic list as a full "CON ..." USSD response. */
 export function buildClinicSelectionPrompt(clinics: ClinicListItem[], page: number): string {
@@ -46,7 +46,9 @@ export const checkinSelectClinic: UssdStateHandler = async (session, input) => {
   const selected = Number.isInteger(choice) ? pageClinics[choice - 1] : undefined;
 
   if (selected) {
-    return proceedToPatientLookup(session, selected);
+    session.data.clinicId = selected.id;
+    session.data.clinicName = selected.name;
+    return beginDepartmentSelection(session);
   }
 
   return {
