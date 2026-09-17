@@ -120,6 +120,26 @@ use your own phone number and real Africa's Talking sandbox credentials in
 (visible in the server logs / a 502 from the relevant endpoint) rather than
 silently, which is deliberate.
 
+### Testing the staff dashboard queue without a real M-Pesa sandbox
+
+With placeholder Daraja credentials, a check-in never reaches
+`PENDING_PAYMENT` — the STK push call fails immediately and the check-in is
+marked `FAILED`, so there's nothing to see in the queue. To test Start
+consultation / Check out without a real Daraja sandbox account, run a
+check-in via the portal or USSD (it'll report a payment error — that's
+expected), then force it to `PAID`:
+
+```bash
+npm run dev:mark-paid -- 0712345678   # the phone number you checked in with
+# or: npm run dev:mark-paid -- <checkInId>
+```
+
+This does the same two writes a real Daraja callback would (mark the
+check-in `PAID`, create the `Encounter`) without calling M-Pesa or sending
+an SMS, so it shows up as Waiting in the dashboard for the clinic you
+checked into. It refuses to run when `NODE_ENV=production` — **dev/local
+testing only, never point this at a real clinic's data.**
+
 In production, the backend also serves `portal/dist` directly from the
 same origin, at `/portal` (the dashboard keeps `/`) — still no separate
 frontend service, no CORS.
