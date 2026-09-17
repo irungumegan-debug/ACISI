@@ -17,3 +17,8 @@ export async function listActiveClinics(): Promise<ClinicListItem[]> {
     select: { id: true, name: true },
   });
 }
+
+/** Used by the patient portal's web check-in to validate a clinicId and get its name for the STK push description. */
+export async function getActiveClinicById(id: string): Promise<ClinicListItem | null> {
+  return prisma.clinic.findFirst({ where: { id, isActive: true }, select: { id: true, name: true } });
+}

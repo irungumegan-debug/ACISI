@@ -18,3 +18,8 @@ export async function listActiveDepartments(): Promise<DepartmentListItem[]> {
     select: { id: true, name: true },
   });
 }
+
+/** Used by the patient portal's web check-in to validate a departmentId before it's stored on a CheckIn. */
+export async function getActiveDepartmentById(id: string): Promise<DepartmentListItem | null> {
+  return prisma.department.findFirst({ where: { id, isActive: true }, select: { id: true, name: true } });
+}
