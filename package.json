@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "dev:dashboard": "npm run dev --prefix dashboard",
-    "build": "tsc -p tsconfig.build.json && npm install --prefix dashboard && npm run build --prefix dashboard",
+    "dev:portal": "npm run dev --prefix portal",
+    "build": "tsc -p tsconfig.build.json && npm install --prefix dashboard && npm run build --prefix dashboard && npm install --prefix portal && npm run build --prefix portal",
     "start": "node dist/index.js",
     "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
