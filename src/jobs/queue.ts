@@ -12,6 +12,10 @@ export interface StkStatusCheckJobData {
   checkoutRequestId: string;
 }
 
+export interface VisitSummarySmsJobData {
+  encounterId: string;
+}
+
 export const smsReceiptQueue = new Queue<SmsReceiptJobData>('sms-receipts', {
   connection: redisQueueConnection,
 });
@@ -20,8 +24,20 @@ export const stkStatusCheckQueue = new Queue<StkStatusCheckJobData>('stk-status-
   connection: redisQueueConnection,
 });
 
+/** Separate from smsReceiptQueue: this is the checkout visit-summary SMS (prescription/notes), a different message sent at a different point in the flow. */
+export const visitSummarySmsQueue = new Queue<VisitSummarySmsJobData>('visit-summary-sms', {
+  connection: redisQueueConnection,
+});
+
 export async function enqueueSmsReceipt(data: SmsReceiptJobData): Promise<void> {
   await smsReceiptQueue.add('send-receipt', data, {
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 5000 },
+  });
+}
+
+export async function enqueueVisitSummarySms(data: VisitSummarySmsJobData): Promise<void> {
+  await visitSummarySmsQueue.add('send-visit-summary', data, {
     attempts: 3,
     backoff: { type: 'exponential', delay: 5000 },
   });

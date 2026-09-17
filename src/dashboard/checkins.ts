@@ -1,30 +1,80 @@
 import { Router } from 'express';
-import dayjs from 'dayjs';
-import { prisma } from '../db/prisma';
+import { z } from 'zod';
 import { requireStaffSession, AuthenticatedRequest } from './auth';
+import {
+  completeConsultation,
+  EncounterNotFoundError,
+  InvalidConsultationTransitionError,
+  listTodayQueue,
+  startConsultation,
+} from '../services/consultationService';
 
 export const checkinsRouter = Router();
 
 checkinsRouter.use(requireStaffSession);
 
-/** Initial snapshot of today's arrivals; live updates arrive via /events (SSE) after this loads. */
+/**
+ * Today's front-desk queue for this clinic, optionally filtered by
+ * department. Initial snapshot on page load; the dashboard polls this every
+ * few seconds to pick up status changes from other staff tabs and new
+ * arrivals — see docs/ARCHITECTURE.md for why polling (not a second SSE
+ * channel) was enough here.
+ */
 checkinsRouter.get('/today', async (req, res) => {
   const { clinicId } = (req as AuthenticatedRequest).dashboardSession;
-  const startOfToday = dayjs().startOf('day').toDate();
+  const departmentId = typeof req.query.department === 'string' ? req.query.department : undefined;
 
-  const checkIns = await prisma.checkIn.findMany({
-    where: { clinicId, status: 'PAID', paidAt: { gte: startOfToday } },
-    orderBy: { paidAt: 'desc' },
-    include: { patient: { select: { firstName: true, lastName: true } } },
-  });
+  const queue = await listTodayQueue(clinicId, departmentId);
+  res.json({ queue });
+});
 
-  res.json({
-    checkIns: checkIns.map((c) => ({
-      checkInId: c.id,
-      patientId: c.patientId,
-      patientName: `${c.patient.firstName} ${c.patient.lastName}`,
-      amountKes: Number(c.amountKes),
-      paidAt: c.paidAt,
-    })),
-  });
+checkinsRouter.post('/:encounterId/start', async (req, res) => {
+  const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  const encounterId = req.params.encounterId as string;
+
+  try {
+    const encounter = await startConsultation(encounterId, { staffId, clinicId });
+    res.json({ encounterId: encounter.id, consultationStatus: encounter.consultationStatus });
+  } catch (err) {
+    if (err instanceof EncounterNotFoundError) {
+      res.status(404).json({ error: err.message });
+      return;
+    }
+    if (err instanceof InvalidConsultationTransitionError) {
+      res.status(409).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
+});
+
+const checkoutSchema = z.object({
+  notes: z.string().trim().max(2000).optional(),
+  prescription: z.string().trim().max(2000).optional(),
+});
+
+checkinsRouter.post('/:encounterId/checkout', async (req, res) => {
+  const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  const encounterId = req.params.encounterId as string;
+
+  const parsed = checkoutSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid checkout details' });
+    return;
+  }
+
+  try {
+    const encounter = await completeConsultation(encounterId, { staffId, clinicId }, parsed.data);
+    res.json({ encounterId: encounter.id, consultationStatus: encounter.consultationStatus });
+  } catch (err) {
+    if (err instanceof EncounterNotFoundError) {
+      res.status(404).json({ error: err.message });
+      return;
+    }
+    if (err instanceof InvalidConsultationTransitionError) {
+      res.status(409).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
 });

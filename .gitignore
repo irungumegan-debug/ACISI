@@ -17,3 +17,4 @@ prisma/migrations/dev/
 
 .vscode/
 .idea/
+dump.rdb
