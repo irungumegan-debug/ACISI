@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../db/prisma';
 import { requireStaffSession, AuthenticatedRequest } from './auth';
-import { getPortableHistory } from '../services/patientService';
+import { getScopedHistory } from '../services/patientService';
 import { recordAuditEvent } from '../services/auditService';
 
 export const patientsRouter = Router();
@@ -67,7 +67,7 @@ patientsRouter.get('/:id', async (req, res) => {
     return;
   }
 
-  const history = await getPortableHistory(patient.id);
+  const { history, hasHiddenHistoryElsewhere } = await getScopedHistory(patient.id, clinicId);
 
   await recordAuditEvent({
     actorType: 'STAFF',
@@ -87,5 +87,6 @@ patientsRouter.get('/:id', async (req, res) => {
     dateOfBirth: patient.dateOfBirth,
     sex: patient.sex,
     history,
+    hasHiddenHistoryElsewhere,
   });
 });

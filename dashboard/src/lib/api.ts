@@ -15,8 +15,12 @@ export interface PatientListItem {
 }
 
 export interface VisitHistoryEntry {
+  encounterId: string;
   clinicName: string;
   visitedAt: string;
+  diagnosis: string | null;
+  prescription: string | null;
+  isOwnClinic: boolean;
 }
 
 export interface PatientDetail {
@@ -27,6 +31,7 @@ export interface PatientDetail {
   dateOfBirth: string | null;
   sex: string;
   history: VisitHistoryEntry[];
+  hasHiddenHistoryElsewhere: boolean;
 }
 
 export type CheckInStatus = 'PENDING_PAYMENT' | 'PAID' | 'FAILED' | 'CANCELLED';

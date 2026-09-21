@@ -1,9 +1,8 @@
 import { Encounter, EncounterStatus } from '@prisma/client';
 import { prisma } from '../db/prisma';
 import { recordAuditEvent } from './auditService';
-import { hasActiveDataSharingConsent } from './patientService';
+import { getScopedHistory, ScopedHistoryEntry } from './patientService';
 import { enqueueVisitSummarySms } from '../jobs/queue';
-import { HISTORY_ENCOUNTER_LIMIT } from '../config/constants';
 
 export interface DoctorQueueItem {
   encounterId: string;
@@ -52,15 +51,6 @@ export class EncounterNotAccessibleError extends Error {
   }
 }
 
-export interface HistoryEntry {
-  encounterId: string;
-  clinicName: string;
-  visitedAt: Date;
-  diagnosis: string | null;
-  prescription: string | null;
-  isOwnClinic: boolean;
-}
-
 export interface EncounterDetail {
   encounterId: string;
   patientId: string;
@@ -68,7 +58,7 @@ export interface EncounterDetail {
   patientName: string;
   phoneNumber: string;
   status: EncounterStatus;
-  history: HistoryEntry[];
+  history: ScopedHistoryEntry[];
   /** True when the patient has encounters at other clinics that exist but aren't shown, because they haven't consented to cross-clinic sharing. */
   hasHiddenHistoryElsewhere: boolean;
 }
@@ -116,19 +106,7 @@ export async function getEncounterForDoctor(
     metadata: { viewedByClinicId: clinicId, channel: 'DOCTOR_DASHBOARD', encounterId: encounter.id },
   });
 
-  const priorEncounters = await prisma.encounter.findMany({
-    where: { patientId: encounter.patientId, id: { not: encounter.id } },
-    orderBy: { createdAt: 'desc' },
-    take: HISTORY_ENCOUNTER_LIMIT,
-    include: { clinic: { select: { name: true } } },
-  });
-
-  const ownClinicEntries = priorEncounters.filter((e) => e.clinicId === clinicId);
-  const otherClinicEntries = priorEncounters.filter((e) => e.clinicId !== clinicId);
-  const hasConsent = otherClinicEntries.length > 0 ? await hasActiveDataSharingConsent(encounter.patientId) : true;
-
-  const visible = hasConsent ? [...ownClinicEntries, ...otherClinicEntries] : ownClinicEntries;
-  visible.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  const { history, hasHiddenHistoryElsewhere } = await getScopedHistory(encounter.patientId, clinicId, encounter.id);
 
   return {
     encounterId: encounter.id,
@@ -137,15 +115,8 @@ export async function getEncounterForDoctor(
     patientName: `${patient.firstName} ${patient.lastName}`,
     phoneNumber: patient.phoneNumber,
     status: currentStatus,
-    history: visible.map((e) => ({
-      encounterId: e.id,
-      clinicName: e.clinic.name,
-      visitedAt: e.createdAt,
-      diagnosis: e.diagnosis,
-      prescription: e.prescription,
-      isOwnClinic: e.clinicId === clinicId,
-    })),
-    hasHiddenHistoryElsewhere: !hasConsent && otherClinicEntries.length > 0,
+    history,
+    hasHiddenHistoryElsewhere,
   };
 }
 

@@ -255,11 +255,21 @@ who have a `CheckIn` or `Encounter` at the logged-in staff member's own
 *both* endpoints, not just hidden in the search UI: a staff member can't
 view an arbitrary patient by guessing/crafting an ID for a patient who's
 never been to their clinic. Once a patient does have a relationship with the
-clinic, the detail view shows their full portable history across all
-clinics (`getPortableHistory`, same function the USSD staff-history lookup
-uses) — that cross-clinic visibility is the whole point of the platform, it's
-just gated behind having a legitimate reason to be looking at this patient
-at all.
+clinic, `patientService.getScopedHistory` decides what history they see —
+this clinic's own encounters always (that's not "cross-clinic sharing", it's
+the clinic's own data), other clinics' encounters only if the patient has an
+active `CROSS_CLINIC_RECORD_SHARING` consent, otherwise just a
+`hasHiddenHistoryElsewhere` flag with no contents. This is the same function
+the doctor dashboard's `getEncounterForDoctor` uses (`src/services/encounterService.ts`)
+— one place decides the consent-gating rule, not two copies that could drift.
+The doctor path adds its own, tighter layer on top: it can only ever be
+reached for a patient currently in the doctor's own department's queue at
+their own clinic (`assertEncounterInDoctorQueue` — keyed by `encounterId`,
+scoped by `clinicId` + `checkIn.departmentId`; a mismatch is
+indistinguishable from "doesn't exist," so a doctor can't probe for other
+clinics'/departments' patients), and every view writes a
+`PATIENT_HISTORY_VIEWED` audit row (who, when, which patient) regardless of
+which of the two paths was used.
 
 **Live check-in queue.** `src/services/realtimeEvents.ts` is a small
 in-process pub/sub (Node `EventEmitter`, channel-per-`clinicId`) that
