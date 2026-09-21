@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "dev:dashboard": "npm run dev --prefix dashboard",
-    "build": "tsc -p tsconfig.build.json && npm install --prefix dashboard && npm run build --prefix dashboard",
+    "build": "tsc -p tsconfig.build.json && npm install --prefix dashboard && npm run build --prefix dashboard && npm install --prefix web && npm run build --prefix web",
+    "dev:web": "npm run dev --prefix web",
     "start": "node dist/index.js",
     "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
@@ -33,6 +34,7 @@
     "dayjs": "^1.11.13",
     "dotenv": "^16.4.5",
     "express": "^4.21.0",
+    "express-async-errors": "^3.1.1",
     "ioredis": "^5.4.1",
     "pino": "^9.4.0",
     "pino-http": "^10.3.0",

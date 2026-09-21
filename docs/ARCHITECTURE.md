@@ -7,7 +7,11 @@
 - **Session state / job queue:** Redis + BullMQ
 - **USSD gateway:** Africa's Talking
 - **Payments:** M-Pesa Daraja (STK Push)
-- **Staff dashboard:** Vite + React + TypeScript + Tailwind (`dashboard/`), served by the same Express process
+- **Staff/doctor console:** Vite + React + TypeScript + Tailwind (`dashboard/`), served under `/console`
+- **Marketing site + patient portal:** Vite + React + TypeScript (`web/`), served at `/`
+
+Both frontends are served by the same Express process — see "Two frontend
+SPAs, one origin" below.
 
 See the README for the trade-off reasoning behind each choice.
 
@@ -292,10 +296,42 @@ call sites, different transport) — not done now because it isn't needed yet.
 **No schema changes for the dashboard.** All four MVP dashboard features
 (login, search, patient detail, live queue) are read-only against data the
 USSD side already writes — `Patient`, `Clinic`, `Staff`, `CheckIn`,
-`Encounter`. Patient detail is deliberately read-only for this build (no
-notes/diagnosis editing) — a real write surface on clinical data is a
-meaningfully bigger scope than a read view, and wasn't worth the risk on a
-one-week timeline to a demo.
+`Encounter`. Front-desk patient detail is deliberately still read-only
+(diagnosis/prescription only get written by the doctor console's
+consultation form, `encounterService.submitConsultation`) — front desk's job
+is payment/checkout, not clinical notes, so it never needed its own write path.
+
+## Two frontend SPAs, one origin
+
+`web/` (marketing site, signup/login, patient portal) and `dashboard/`
+(staff/doctor console) are separate Vite builds, served by the same Express
+process with no CORS anywhere: `web/dist` at `/`, `dashboard/dist` under
+`/console` (`src/app.ts`). `dashboard/vite.config.ts` sets
+`base: '/console/'` only for the production build (so its asset URLs
+resolve correctly once served from that path) and its `<BrowserRouter
+basename>` matches it — both stay `/` in dev, where each app runs on its own
+Vite dev server port with its own `/api` proxy, same pattern as before.
+Doctor/staff login (`web/src/pages/LoginPage.tsx`) calls the same
+`/api/staff/auth/login` the console's own login form does, then does a full
+`window.location.href` navigation to `/console/...` rather than a
+client-side route change — it's a different SPA bundle, but the session
+cookie the login call already set carries over unchanged (same origin), so
+the console's own `AuthContext` just picks it up on load. The console keeps
+its own internal `/console/login` too (reached if an unauthenticated visit
+lands there directly) — a harmless, fully-functional fallback against the
+same endpoint, not a second identity system.
+
+**Async route-handler errors no longer crash the process.** Discovered
+while smoke-testing this routing change: Express 4 (unlike 5) does not
+forward a rejected promise from an `async (req, res) => ...` handler to
+`next(err)` automatically, and virtually every handler in this codebase is
+written that way with no try/catch. A transient failure (e.g. Postgres
+briefly unreachable) on any request became an unhandled rejection that took
+the whole server down — a real, unrelated production-readiness bug this
+change surfaced, not something introduced by it. Fixed by importing
+`express-async-errors` once at the top of `src/app.ts`, which patches
+Express's shared Router/Route prototypes so those rejections now reach
+`errorHandler` (a clean `500`) instead. No route handler code changed.
 
 ## Known MVP limitations / deliberate scope cuts
 

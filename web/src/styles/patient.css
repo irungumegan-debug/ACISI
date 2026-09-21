@@ -1,0 +1,297 @@
+/* Ported from acisi-demo-v2.html (design reference) — light navy/gold theme,
+   scoped under .patient-portal so it can coexist with the dark marketing
+   theme's :root tokens of the same names without clashing. */
+
+.patient-portal {
+  --ink: #16202c;
+  --ink-soft: #5b6b7a;
+  --paper: #eef1f5;
+  --paper-raised: #ffffff;
+  --line: #d7dde5;
+  --navy: #14213d;
+  --navy-deep: #0b1130;
+  --gold: #c9a227;
+  --gold-deep: #a3821a;
+  --teal: #2b6f86;
+  --teal-tint: #e0edf1;
+  --gold-tint: #f5ecd8;
+  --serif: 'Fraunces', Georgia, serif;
+  --sans: 'IBM Plex Sans', -apple-system, 'Segoe UI', sans-serif;
+
+  min-height: 100svh;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+}
+
+.patient-portal h1 {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 27px;
+  margin: 0 0 5px 0;
+  color: var(--navy-deep);
+}
+.patient-portal .lede {
+  color: var(--ink-soft);
+  font-size: 14.5px;
+  margin: 0 0 28px 0;
+  max-width: 52ch;
+  line-height: 1.55;
+}
+
+.patient-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 28px;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper-raised);
+}
+.patient-header .brand {
+  font-family: var(--serif);
+  font-size: 21px;
+  color: var(--navy-deep);
+  text-decoration: none;
+}
+.patient-header .who {
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+.patient-header nav {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.patient-header button {
+  background: none;
+  border: none;
+  color: var(--ink-soft);
+  font-family: var(--sans);
+  font-size: 13px;
+  cursor: pointer;
+}
+.patient-header button:hover {
+  color: var(--navy-deep);
+}
+.patient-main {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 38px 24px;
+}
+
+.patient-portal .panel {
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 22px;
+}
+.patient-portal .panel + .panel {
+  margin-top: 14px;
+}
+
+.patient-portal .field {
+  margin-bottom: 16px;
+}
+.patient-portal .field label {
+  display: block;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  margin-bottom: 6px;
+}
+.patient-portal .field input,
+.patient-portal .field select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: var(--sans);
+  background: #fbfcfd;
+  color: var(--ink);
+}
+.patient-portal .field input:focus,
+.patient-portal .field select:focus {
+  outline: 2px solid var(--teal);
+  outline-offset: 1px;
+}
+
+.patient-portal .chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.patient-portal .chip {
+  padding: 8px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: #fbfcfd;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--ink-soft);
+}
+.patient-portal .chip.selected {
+  background: var(--navy);
+  border-color: var(--navy);
+  color: #eaf0f6;
+}
+
+.patient-portal .btn {
+  display: inline-block;
+  padding: 11px 20px;
+  border-radius: 6px;
+  border: none;
+  font-size: 13.5px;
+  font-family: var(--sans);
+  font-weight: 600;
+  cursor: pointer;
+}
+.patient-portal .btn-primary {
+  background: var(--gold);
+  color: #2b1c04;
+}
+.patient-portal .btn-primary:hover {
+  background: var(--gold-deep);
+}
+.patient-portal .btn-primary:disabled {
+  background: #e2dbc9;
+  color: #a29a80;
+  cursor: not-allowed;
+}
+
+.patient-portal .confirm {
+  text-align: center;
+  padding: 34px 18px;
+}
+.patient-portal .confirm .badge {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--teal);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  margin: 0 auto 16px auto;
+}
+.patient-portal .confirm h2 {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 21px;
+  margin: 0 0 6px 0;
+}
+.patient-portal .confirm p {
+  color: var(--ink-soft);
+  font-size: 14px;
+  margin: 3px 0;
+}
+.patient-portal .patient-id {
+  display: inline-block;
+  font-family: var(--serif);
+  font-size: 15px;
+  background: var(--gold-tint);
+  color: var(--gold-deep);
+  padding: 5px 14px;
+  border-radius: 6px;
+  margin: 12px 0;
+}
+
+.patient-portal .timeline {
+  position: relative;
+  padding-left: 22px;
+}
+.patient-portal .timeline::before {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 6px;
+  bottom: 6px;
+  width: 1px;
+  background: var(--line);
+}
+.patient-portal .t-entry {
+  position: relative;
+  padding-bottom: 22px;
+}
+.patient-portal .t-entry:last-child {
+  padding-bottom: 0;
+}
+.patient-portal .t-entry::before {
+  content: '';
+  position: absolute;
+  left: -22px;
+  top: 5px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--teal);
+  border: 2px solid var(--paper-raised);
+  box-shadow: 0 0 0 1px var(--teal);
+}
+.patient-portal .t-date {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  margin-bottom: 3px;
+}
+.patient-portal .t-dept {
+  display: inline-block;
+  font-size: 11.5px;
+  background: var(--teal-tint);
+  color: var(--teal);
+  padding: 2px 9px;
+  border-radius: 5px;
+  margin-left: 8px;
+}
+.patient-portal .t-body {
+  font-size: 14px;
+  line-height: 1.55;
+  margin-top: 4px;
+}
+.patient-portal .t-body b {
+  color: var(--navy-deep);
+}
+
+.patient-portal .tabs {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 22px;
+  border-bottom: 1px solid var(--line);
+}
+.patient-portal .tab {
+  padding: 9px 2px;
+  font-size: 13.5px;
+  color: var(--ink-soft);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  background: none;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  font-family: var(--sans);
+}
+.patient-portal .tab.active {
+  color: var(--navy-deep);
+  border-color: var(--gold);
+  font-weight: 600;
+}
+
+.patient-portal .error-text {
+  font-size: 13px;
+  color: #b3261e;
+  margin: -6px 0 14px 0;
+}
+.patient-portal .note {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  text-align: center;
+  margin-top: 16px;
+}
+.patient-portal .note button {
+  background: none;
+  border: none;
+  color: var(--teal);
+  font-family: var(--sans);
+  font-size: inherit;
+  cursor: pointer;
+  padding: 0;
+}

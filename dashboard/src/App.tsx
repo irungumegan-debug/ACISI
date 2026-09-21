@@ -16,9 +16,13 @@ function HomeRedirect() {
   return <Navigate to={target} replace />;
 }
 
+// Matches vite.config.ts's base: only prefixed in production, where this
+// app is served under /console rather than at the dev server's own root.
+const basename = import.meta.env.PROD ? '/console' : '/';
+
 export function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={basename}>
       <AuthProvider>
         <Routes>
           <Route path="/login" element={<LoginPage />} />

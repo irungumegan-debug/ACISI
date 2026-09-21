@@ -14,6 +14,12 @@ clinicsRouter.get('/', async (_req, res) => {
   res.json({ clinics });
 });
 
+/** Used by the web check-in form (patient portal) to populate a department picker once a clinic is chosen. */
+clinicsRouter.get('/:id/departments', async (req, res) => {
+  const departments = await listActiveDepartments(req.params.id as string);
+  res.json({ departments });
+});
+
 /**
  * Public lookup used by the doctor/staff signup form: given the invite code
  * the prospective doctor was handed, list the clinic's departments so they

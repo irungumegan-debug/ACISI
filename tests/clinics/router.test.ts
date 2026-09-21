@@ -4,13 +4,21 @@ import request from 'supertest';
 jest.mock('../../src/services/clinicService', () => ({
   listActiveClinics: jest.fn(),
   registerClinic: jest.fn(),
+  findClinicByInviteCode: jest.fn(),
 }));
 
-import { listActiveClinics, registerClinic } from '../../src/services/clinicService';
+jest.mock('../../src/services/departmentService', () => ({
+  listActiveDepartments: jest.fn(),
+}));
+
+import { findClinicByInviteCode, listActiveClinics, registerClinic } from '../../src/services/clinicService';
+import { listActiveDepartments } from '../../src/services/departmentService';
 import { clinicsRouter } from '../../src/clinics/router';
 
 const mockListClinics = listActiveClinics as jest.Mock;
 const mockRegisterClinic = registerClinic as jest.Mock;
+const mockFindClinicByInviteCode = findClinicByInviteCode as jest.Mock;
+const mockListDepartments = listActiveDepartments as jest.Mock;
 
 function buildApp() {
   const app = express();
@@ -29,6 +37,35 @@ describe('GET /clinics', () => {
     const res = await request(buildApp()).get('/clinics');
     expect(res.status).toBe(200);
     expect(res.body.clinics).toHaveLength(1);
+  });
+});
+
+describe('GET /clinics/:id/departments', () => {
+  it("returns the clinic's active departments", async () => {
+    mockListDepartments.mockResolvedValue([{ id: 'dept-1', name: 'General' }]);
+    const res = await request(buildApp()).get('/clinics/clinic-1/departments');
+    expect(res.status).toBe(200);
+    expect(res.body.departments).toHaveLength(1);
+    expect(mockListDepartments).toHaveBeenCalledWith('clinic-1');
+  });
+});
+
+describe('GET /clinics/invite-code/:code/departments', () => {
+  it('returns 404 for an unrecognized invite code', async () => {
+    mockFindClinicByInviteCode.mockResolvedValue(null);
+    const res = await request(buildApp()).get('/clinics/invite-code/BOGUS-0000/departments');
+    expect(res.status).toBe(404);
+  });
+
+  it('returns the clinic name and departments for a valid invite code', async () => {
+    mockFindClinicByInviteCode.mockResolvedValue({ id: 'clinic-1', name: 'Sunrise Family Clinic', isActive: true });
+    mockListDepartments.mockResolvedValue([{ id: 'dept-1', name: 'General' }]);
+
+    const res = await request(buildApp()).get('/clinics/invite-code/SUNRISE-7F2K/departments');
+
+    expect(res.status).toBe(200);
+    expect(res.body.clinicName).toBe('Sunrise Family Clinic');
+    expect(res.body.departments).toHaveLength(1);
   });
 });
 

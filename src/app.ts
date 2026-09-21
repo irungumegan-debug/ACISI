@@ -1,5 +1,11 @@
 import path from 'node:path';
 import express, { Express } from 'express';
+// Patches Express's shared Router/Route prototypes so a rejected promise
+// from an async route handler is forwarded to errorHandler below instead of
+// becoming an unhandled rejection that crashes the process — Express 4
+// doesn't do this itself (Express 5 does), and virtually every handler in
+// this codebase is `async (req, res) => ...` with no try/catch.
+import 'express-async-errors';
 import cookieParser from 'cookie-parser';
 import { ussdRouter } from './ussd/router';
 import { mpesaRouter } from './mpesa/router';
@@ -29,18 +35,26 @@ export function createApp(): Express {
   app.use('/api/clinics', clinicsRouter);
 
   if (env.NODE_ENV === 'production') {
-    // The dashboard SPA is a separate build (dashboard/dist), served
-    // statically from this same process/origin — no CORS needed, and the
-    // staff session cookie works the same way it does in dev via the Vite
-    // proxy.
+    // Two separate SPA builds, served statically from this same
+    // process/origin — no CORS needed, and session cookies work the same
+    // way they do in dev via each app's Vite proxy. The staff/doctor
+    // console lives under /console; everything else (marketing site,
+    // signup/login, patient portal) is the web/ app at the root.
+    const webDist = path.join(__dirname, '../web/dist');
     const dashboardDist = path.join(__dirname, '../dashboard/dist');
-    app.use(express.static(dashboardDist));
+
+    app.use('/console', express.static(dashboardDist));
+    app.get('/console/*', (_req, res) => {
+      res.sendFile(path.join(dashboardDist, 'index.html'));
+    });
+
+    app.use(express.static(webDist));
     app.get('*', (req, res, next) => {
       if (req.path.startsWith('/api/')) {
         next();
         return;
       }
-      res.sendFile(path.join(dashboardDist, 'index.html'));
+      res.sendFile(path.join(webDist, 'index.html'));
     });
   }
 
