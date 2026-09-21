@@ -5,6 +5,7 @@ import { ussdRouter } from './ussd/router';
 import { mpesaRouter } from './mpesa/router';
 import { dashboardRouter } from './dashboard/router';
 import { portalRouter } from './portal/router';
+import { clinicsRouter } from './clinics/router';
 import { requestLogger } from './middleware/requestLogger';
 import { errorHandler } from './middleware/errorHandler';
 import { env } from './config/env';
@@ -25,6 +26,7 @@ export function createApp(): Express {
   app.use('/api/mpesa', mpesaRouter);
   app.use('/api/staff', dashboardRouter);
   app.use('/api/patients', portalRouter);
+  app.use('/api/clinics', clinicsRouter);
 
   if (env.NODE_ENV === 'production') {
     // The dashboard SPA is a separate build (dashboard/dist), served

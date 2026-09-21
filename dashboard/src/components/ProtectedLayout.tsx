@@ -28,6 +28,11 @@ export function ProtectedLayout() {
             <Link to="/patients" className="text-slate-600 hover:text-slate-900">
               Patients
             </Link>
+            {session.role === 'ADMIN' && (
+              <Link to="/settings" className="text-slate-600 hover:text-slate-900">
+                Settings
+              </Link>
+            )}
             <button onClick={() => void logout()} className="text-slate-600 hover:text-slate-900">
               Log out
             </button>

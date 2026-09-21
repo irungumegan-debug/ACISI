@@ -90,6 +90,14 @@ export const api = {
   getTodayCheckIns() {
     return request<{ checkIns: QueueItem[] }>('/checkins/today');
   },
+
+  getInviteCode() {
+    return request<{ inviteCode: string }>('/clinic/invite-code');
+  },
+
+  regenerateInviteCode() {
+    return request<{ inviteCode: string }>('/clinic/invite-code/regenerate', { method: 'POST' });
+  },
 };
 
 export { ApiError };

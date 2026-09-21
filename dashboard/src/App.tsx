@@ -5,6 +5,7 @@ import { LoginPage } from './pages/LoginPage';
 import { QueuePage } from './pages/QueuePage';
 import { PatientsPage } from './pages/PatientsPage';
 import { PatientDetailPage } from './pages/PatientDetailPage';
+import { SettingsPage } from './pages/SettingsPage';
 
 export function App() {
   return (
@@ -17,6 +18,7 @@ export function App() {
             <Route path="/queue" element={<QueuePage />} />
             <Route path="/patients" element={<PatientsPage />} />
             <Route path="/patients/:id" element={<PatientDetailPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
           </Route>
         </Routes>
       </AuthProvider>

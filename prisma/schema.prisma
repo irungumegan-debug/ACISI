@@ -68,6 +68,11 @@ model Clinic {
   /// Short numeric code staff give patients to select this clinic within
   /// the shared USSD menu, e.g. "482". Not a phone number, not secret.
   ussdCode   String   @unique
+  /// Persistent invite code (e.g. "SUNRISE-7F2K") shared with prospective
+  /// doctors/staff so their signup can attach to this clinic. Regenerable by
+  /// a clinic admin — regenerating invalidates the old code for future
+  /// signups, but never affects staff who already joined with it.
+  inviteCode String   @unique
   isActive   Boolean  @default(true)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt

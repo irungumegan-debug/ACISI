@@ -40,3 +40,8 @@ export function generateClinicInviteCode(clinicName: string): string {
 export function generateOtpCode(): string {
   return String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
 }
+
+/** Three-digit USSD clinic-selection code, e.g. "482". */
+export function generateUssdCode(): string {
+  return String(crypto.randomInt(100, 1000));
+}

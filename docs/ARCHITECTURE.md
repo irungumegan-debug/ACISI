@@ -194,6 +194,21 @@ Web check-in (`POST /api/patients/checkin`) calls the exact same
 `checkInService.initiateCheckIn` USSD uses, so payment/idempotency/SMS
 behavior is identical regardless of channel.
 
+**Clinic onboarding (`src/clinics/`, `src/dashboard/registration.ts`,
+`src/dashboard/clinicSettings.ts`).** Two distinct signup paths, both public
+(no session required):
+`POST /api/clinics/register` creates a brand-new `Clinic` — with a
+persistent, regenerable `inviteCode` (e.g. `SUNRISE-7F2K`,
+`clinicService.registerClinic`) — plus its first `Staff` row with role
+`ADMIN`, in one transaction. `POST /api/staff/register` is how everyone
+else (doctors, front-desk staff) joins an *existing* clinic: it requires
+that clinic's current `inviteCode` and never creates an ADMIN
+(`staffService.registerStaffViaInviteCode`, `SIGNUP_ROLES` excludes
+`ADMIN`). An admin can view or regenerate their clinic's invite code from
+the dashboard settings page — `GET`/`POST /api/staff/clinic/invite-code`,
+gated by `requireAdmin` — without any broader staff-management UI; that's
+deliberately out of scope for now.
+
 **Authorization scoping.** Patient search (`GET /api/staff/patients`) and
 patient detail (`GET /api/staff/patients/:id`) are both scoped to patients
 who have a `CheckIn` or `Encounter` at the logged-in staff member's own

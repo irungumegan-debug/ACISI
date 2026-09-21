@@ -10,14 +10,14 @@ const prisma = new PrismaClient();
  * Seeds 7 clinics (not just 1) so the paginated clinic-selection menu
  * actually has a second page to exercise during manual testing.
  */
-const CLINICS: Array<{ name: string; county: string; ussdCode: string }> = [
-  { name: 'Sunrise Family Clinic', county: 'Nairobi', ussdCode: '482' },
-  { name: 'Baraka Health Centre', county: 'Nairobi', ussdCode: '483' },
-  { name: 'Uzima Medical Clinic', county: 'Kiambu', ussdCode: '484' },
-  { name: 'Tumaini Community Clinic', county: 'Nakuru', ussdCode: '485' },
-  { name: 'Amani Health Point', county: 'Mombasa', ussdCode: '486' },
-  { name: 'Jipe Moyo Clinic', county: 'Kisumu', ussdCode: '487' },
-  { name: 'Nuru Family Clinic', county: 'Machakos', ussdCode: '488' },
+const CLINICS: Array<{ name: string; county: string; ussdCode: string; inviteCode: string }> = [
+  { name: 'Sunrise Family Clinic', county: 'Nairobi', ussdCode: '482', inviteCode: 'SUNRISE-7F2K' },
+  { name: 'Baraka Health Centre', county: 'Nairobi', ussdCode: '483', inviteCode: 'BARAKA-3M9X' },
+  { name: 'Uzima Medical Clinic', county: 'Kiambu', ussdCode: '484', inviteCode: 'UZIMA-5Q8T' },
+  { name: 'Tumaini Community Clinic', county: 'Nakuru', ussdCode: '485', inviteCode: 'TUMAINI-2R6H' },
+  { name: 'Amani Health Point', county: 'Mombasa', ussdCode: '486', inviteCode: 'AMANI-9K4Z' },
+  { name: 'Jipe Moyo Clinic', county: 'Kisumu', ussdCode: '487', inviteCode: 'JIPEMOYO-6N3P' },
+  { name: 'Nuru Family Clinic', county: 'Machakos', ussdCode: '488', inviteCode: 'NURU-8W2S' },
 ];
 
 async function main() {
