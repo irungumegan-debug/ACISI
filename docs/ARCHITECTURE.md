@@ -209,6 +209,45 @@ the dashboard settings page — `GET`/`POST /api/staff/clinic/invite-code`,
 gated by `requireAdmin` — without any broader staff-management UI; that's
 deliberately out of scope for now.
 
+**Departments, the doctor dashboard, and checkout (`src/services/departmentService.ts`,
+`src/services/encounterService.ts`, `src/dashboard/doctor.ts`).** A `Department`
+belongs to a `Clinic`; a doctor (`Staff.departmentId`) is assigned to exactly
+one; a `CheckIn` is routed to exactly one at check-in time (USSD's new
+`CHECKIN_SELECT_DEPARTMENT` step, inserted right after clinic selection —
+every clinic gets a default "General" department at registration so there's
+always somewhere to route to). `Encounter` carries its own `EncounterStatus`
+(`WAITING → IN_CONSULTATION → READY_FOR_CHECKOUT → DONE`), deliberately
+separate from `CheckInStatus` (payment-only) — the two start together (a
+successful payment creates the Encounter at `WAITING`) but progress
+independently from there. A doctor's queue (`GET /api/staff/doctor/queue`)
+is `WAITING`/`IN_CONSULTATION` encounters scoped to their own clinic *and*
+department — never another department's or clinic's patients, never a
+general lookup (`getDoctorQueue`, `assertEncounterInDoctorQueue`). Opening a
+patient moves `WAITING → IN_CONSULTATION` and logs a `PATIENT_HISTORY_VIEWED`
+audit row; submitting the consultation form (diagnosis + prescription) moves
+it to `READY_FOR_CHECKOUT` — it never triggers checkout or SMS itself, by
+design (`submitConsultation`). Checkout is a front-desk-only action
+(`checkoutEncounter`, `POST /api/staff/checkins/:id/checkout`) that moves it
+to `DONE` and enqueues a *second*, separate SMS — the visit summary
+(diagnosis/prescription), via a new `visit-summary-sms` BullMQ queue/worker
+— distinct from the payment-receipt SMS `enqueueSmsReceipt` already sends
+right after payment; the two are independent events, not a replacement of
+each other.
+
+**Manual payment confirmation** (`checkInService.confirmCheckInPaidManually`,
+`POST /api/staff/checkins/:id/confirm-payment`) is the real, permanent,
+audited feature for a bank-only clinic (or one taking payment through its
+own till): it shares the exact same "mark paid" tail as a successful M-Pesa
+callback (`finalizePaidCheckIn` — Encounter creation, realtime publish, SMS
+receipt), just skipping the STK push, and logs `CHECK_IN_PAID_MANUALLY` with
+the confirming staff member's ID (audit's `staffId` + `createdAt` is the
+"who and when"). `scripts/devMarkCheckInPaid.ts` is a separate, narrower
+dev-only shortcut (`checkInService.devMarkCheckInPaid`, gated on
+`NODE_ENV !== 'production'`) for local testing without a real M-Pesa
+sandbox — it is not the manual-confirmation feature and carries no staff
+attribution, which is exactly why the real feature above exists as its own
+audited path rather than just relaxing this script's guard.
+
 **Authorization scoping.** Patient search (`GET /api/staff/patients`) and
 patient detail (`GET /api/staff/patients/:id`) are both scoped to patients
 who have a `CheckIn` or `Encounter` at the logged-in staff member's own

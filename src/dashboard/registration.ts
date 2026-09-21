@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { InvalidPhoneNumberError, toE164 } from '../utils/phone';
-import { InvalidInviteCodeError, registerStaffViaInviteCode } from '../services/staffService';
+import { InvalidDepartmentError, InvalidInviteCodeError, registerStaffViaInviteCode } from '../services/staffService';
 
 export const staffRegistrationRouter = Router();
 
@@ -13,6 +13,8 @@ const registerSchema = z.object({
   inviteCode: z.string().min(1),
   pin: z.string().regex(PIN_PATTERN, 'PIN must be 4-6 digits'),
   role: z.enum(['RECEPTIONIST', 'CLINICIAN', 'DOCTOR']),
+  /** Required when role is DOCTOR; see GET /api/clinics/invite-code/:code/departments. */
+  departmentId: z.string().optional(),
 });
 
 /**
@@ -45,11 +47,12 @@ staffRegistrationRouter.post('/', async (req, res) => {
       pin: parsed.data.pin,
       inviteCode: parsed.data.inviteCode,
       role: parsed.data.role,
+      departmentId: parsed.data.departmentId,
     });
 
     res.status(201).json({ staffCode: staff.staffCode });
   } catch (err) {
-    if (err instanceof InvalidInviteCodeError) {
+    if (err instanceof InvalidInviteCodeError || err instanceof InvalidDepartmentError) {
       res.status(400).json({ error: err.message });
       return;
     }

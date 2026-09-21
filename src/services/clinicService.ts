@@ -79,6 +79,11 @@ export async function registerClinic(input: RegisterClinicInput): Promise<Regist
       data: { name: input.name, county: input.county, ussdCode, inviteCode },
     });
 
+    // Every clinic needs at least one department for check-ins to route to —
+    // a brand-new clinic has no way to configure one before its first
+    // check-in, so seed a sensible default. The admin can add more later.
+    await tx.department.create({ data: { clinicId: clinic.id, name: 'General' } });
+
     const adminStaff = await tx.staff.create({
       data: {
         clinicId: clinic.id,

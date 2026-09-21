@@ -5,6 +5,7 @@ import { recordAuditEvent } from './auditService';
 import { generateStaffCode } from '../utils/idCodes';
 import { env } from '../config/env';
 import { findClinicByInviteCode } from './clinicService';
+import { findActiveDepartment } from './departmentService';
 
 const MAX_CODE_GENERATION_ATTEMPTS = 10;
 
@@ -29,12 +30,21 @@ interface RegisterStaffInput {
   pin: string;
   inviteCode: string;
   role: StaffRole;
+  /** Required when role is DOCTOR — which department they're joining. Ignored for other roles. */
+  departmentId?: string;
 }
 
 export class InvalidInviteCodeError extends Error {
   constructor() {
     super('That clinic invite code was not recognized');
     this.name = 'InvalidInviteCodeError';
+  }
+}
+
+export class InvalidDepartmentError extends Error {
+  constructor() {
+    super('Please choose a valid department for this clinic');
+    this.name = 'InvalidDepartmentError';
   }
 }
 
@@ -53,6 +63,12 @@ export async function registerStaffViaInviteCode(input: RegisterStaffInput): Pro
     throw new InvalidInviteCodeError();
   }
 
+  if (input.role === 'DOCTOR') {
+    if (!input.departmentId || !(await findActiveDepartment(input.departmentId, clinic.id))) {
+      throw new InvalidDepartmentError();
+    }
+  }
+
   const staffCode = await generateUniqueStaffCode();
   const pinHash = await hashPin(input.pin);
 
@@ -64,6 +80,7 @@ export async function registerStaffViaInviteCode(input: RegisterStaffInput): Pro
       name: input.name,
       pinHash,
       role: input.role,
+      departmentId: input.role === 'DOCTOR' ? input.departmentId : undefined,
     },
   });
 

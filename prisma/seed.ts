@@ -34,9 +34,33 @@ async function main() {
   const primaryClinic = clinics[0]!;
   const pinHash = await bcrypt.hash('1234', 10);
 
-  const staffSeeds: Array<{ staffCode: string; phoneNumber: string; name: string; role: 'RECEPTIONIST' | 'DOCTOR' | 'ADMIN' }> = [
+  const DEPARTMENT_NAMES = ['General', 'Gynecology', 'Dental', 'Pediatrics'];
+  const departments = await Promise.all(
+    DEPARTMENT_NAMES.map((name) =>
+      prisma.department.upsert({
+        where: { clinicId_name: { clinicId: primaryClinic.id, name } },
+        update: {},
+        create: { clinicId: primaryClinic.id, name },
+      }),
+    ),
+  );
+  const generalDepartment = departments[0]!;
+
+  const staffSeeds: Array<{
+    staffCode: string;
+    phoneNumber: string;
+    name: string;
+    role: 'RECEPTIONIST' | 'DOCTOR' | 'ADMIN';
+    departmentId?: string;
+  }> = [
     { staffCode: 'ACI-STF-TEST', phoneNumber: '+254700000001', name: 'Test Receptionist', role: 'RECEPTIONIST' },
-    { staffCode: 'ACI-STF-DEMO', phoneNumber: '+254700000002', name: 'Dr. Amani Wambui', role: 'DOCTOR' },
+    {
+      staffCode: 'ACI-STF-DEMO',
+      phoneNumber: '+254700000002',
+      name: 'Dr. Amani Wambui',
+      role: 'DOCTOR',
+      departmentId: generalDepartment.id,
+    },
     { staffCode: 'ACI-STF-ADMN', phoneNumber: '+254700000003', name: 'Clinic Admin', role: 'ADMIN' },
   ];
 
@@ -52,13 +76,15 @@ async function main() {
           name: staff.name,
           pinHash,
           role: staff.role,
+          departmentId: staff.departmentId,
         },
       }),
     ),
   );
 
   console.log(
-    `Seeded ${clinics.length} clinics and ${staffSeeds.length} staff logins (PIN 1234) at "${primaryClinic.name}": ` +
+    `Seeded ${clinics.length} clinics, ${departments.length} departments at "${primaryClinic.name}", ` +
+      `and ${staffSeeds.length} staff logins (PIN 1234): ` +
       staffSeeds.map((s) => s.staffCode).join(', '),
   );
 }

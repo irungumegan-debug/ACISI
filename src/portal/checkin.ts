@@ -13,7 +13,7 @@ export const portalRecordsRouter = Router();
 portalCheckinRouter.use(requirePatientSession);
 portalRecordsRouter.use(requirePatientSession);
 
-const checkinSchema = z.object({ clinicId: z.string().min(1) });
+const checkinSchema = z.object({ clinicId: z.string().min(1), departmentId: z.string().min(1) });
 
 /**
  * Web equivalent of the USSD check-in flow — calls the exact same
@@ -29,9 +29,10 @@ portalCheckinRouter.post('/', async (req, res) => {
 
   const { patientId } = (req as AuthenticatedPatientRequest).patientSession;
 
-  const [patient, clinic] = await Promise.all([
+  const [patient, clinic, department] = await Promise.all([
     prisma.patient.findUnique({ where: { id: patientId } }),
     prisma.clinic.findUnique({ where: { id: parsed.data.clinicId } }),
+    prisma.department.findFirst({ where: { id: parsed.data.departmentId, clinicId: parsed.data.clinicId, isActive: true } }),
   ]);
 
   if (!patient) {
@@ -42,12 +43,17 @@ portalCheckinRouter.post('/', async (req, res) => {
     res.status(404).json({ error: 'Clinic not found' });
     return;
   }
+  if (!department) {
+    res.status(400).json({ error: 'Please choose a valid department' });
+    return;
+  }
 
   const { checkIn } = await initiateCheckIn({
     ussdSessionId: `WEB-${crypto.randomUUID()}`,
     patientId: patient.id,
     clinicId: clinic.id,
     clinicName: clinic.name,
+    departmentId: department.id,
     phoneNumberE164: patient.phoneNumber,
   });
 

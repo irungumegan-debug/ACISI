@@ -1,7 +1,8 @@
 import { UssdStateHandler } from '../types';
 import { ClinicListItem, listActiveClinics } from '../../services/clinicService';
+import { listActiveDepartments } from '../../services/departmentService';
 import { CLINICS_PER_PAGE } from '../../config/constants';
-import { proceedToPatientLookup } from './patientCheckIn';
+import { buildDepartmentSelectionPrompt } from './departmentSelect';
 
 /** Renders one page of the clinic list as a full "CON ..." USSD response. */
 export function buildClinicSelectionPrompt(clinics: ClinicListItem[], page: number): string {
@@ -46,7 +47,19 @@ export const checkinSelectClinic: UssdStateHandler = async (session, input) => {
   const selected = Number.isInteger(choice) ? pageClinics[choice - 1] : undefined;
 
   if (selected) {
-    return proceedToPatientLookup(session, selected);
+    session.data.clinicId = selected.id;
+    session.data.clinicName = selected.name;
+
+    const departments = await listActiveDepartments(selected.id);
+    if (departments.length === 0) {
+      return { response: 'END This clinic has no departments configured yet. Please speak to reception.', continueSession: false };
+    }
+
+    return {
+      response: buildDepartmentSelectionPrompt(departments),
+      continueSession: true,
+      nextState: 'CHECKIN_SELECT_DEPARTMENT',
+    };
   }
 
   return {

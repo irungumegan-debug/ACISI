@@ -77,6 +77,7 @@ authRouter.post('/login', async (req, res) => {
     role: staff.role,
     clinicId: staff.clinicId,
     clinicName: staff.clinic.name,
+    departmentId: staff.departmentId,
   });
 
   res.cookie(SESSION_COOKIE_NAME, token, {

@@ -9,6 +9,12 @@ jest.mock('../../src/services/staffService', () => ({
       this.name = 'InvalidInviteCodeError';
     }
   },
+  InvalidDepartmentError: class InvalidDepartmentError extends Error {
+    constructor() {
+      super('Please choose a valid department for this clinic');
+      this.name = 'InvalidDepartmentError';
+    }
+  },
 }));
 
 import { registerStaffViaInviteCode, InvalidInviteCodeError } from '../../src/services/staffService';

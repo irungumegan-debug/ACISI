@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { InvalidPhoneNumberError, toE164 } from '../utils/phone';
-import { listActiveClinics, registerClinic } from '../services/clinicService';
+import { findClinicByInviteCode, listActiveClinics, registerClinic } from '../services/clinicService';
+import { listActiveDepartments } from '../services/departmentService';
 
 export const clinicsRouter = Router();
 
@@ -11,6 +12,23 @@ const PIN_PATTERN = /^\d{4,6}$/;
 clinicsRouter.get('/', async (_req, res) => {
   const clinics = await listActiveClinics();
   res.json({ clinics });
+});
+
+/**
+ * Public lookup used by the doctor/staff signup form: given the invite code
+ * the prospective doctor was handed, list the clinic's departments so they
+ * can pick which one they're joining. Doesn't leak anything beyond
+ * department names, and requires the same valid invite code signup itself does.
+ */
+clinicsRouter.get('/invite-code/:code/departments', async (req, res) => {
+  const clinic = await findClinicByInviteCode(req.params.code);
+  if (!clinic || !clinic.isActive) {
+    res.status(404).json({ error: 'Invite code not recognized' });
+    return;
+  }
+
+  const departments = await listActiveDepartments(clinic.id);
+  res.json({ clinicName: clinic.name, departments });
 });
 
 const registerSchema = z.object({

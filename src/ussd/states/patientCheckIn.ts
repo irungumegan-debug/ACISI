@@ -145,6 +145,7 @@ export const checkinConfirm: UssdStateHandler = async (session, input) => {
       patientId: session.data.patientId as string,
       clinicId: session.data.clinicId as string,
       clinicName,
+      departmentId: session.data.departmentId as string,
       phoneNumberE164: session.phoneNumberE164,
     });
 

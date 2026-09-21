@@ -10,6 +10,7 @@ export interface UssdWebhookPayload {
 export type UssdStateName =
   | 'MAIN_MENU'
   | 'CHECKIN_SELECT_CLINIC'
+  | 'CHECKIN_SELECT_DEPARTMENT'
   | 'CHECKIN_CONSENT'
   | 'CHECKIN_NEW_PATIENT_NAME'
   | 'CHECKIN_NEW_PATIENT_DOB'
