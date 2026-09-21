@@ -27,6 +27,7 @@ datasource db {
 enum StaffRole {
   RECEPTIONIST
   CLINICIAN
+  DOCTOR
   ADMIN
 }
 
@@ -55,6 +56,11 @@ enum ActorType {
   SYSTEM
 }
 
+/// Purpose of a one-time code sent to a patient's phone. Currently only PIN reset.
+enum OtpPurpose {
+  PIN_RESET
+}
+
 model Clinic {
   id         String   @id @default(cuid())
   name       String
@@ -77,7 +83,12 @@ model Staff {
   id          String     @id @default(cuid())
   clinicId    String
   clinic      Clinic     @relation(fields: [clinicId], references: [id])
-  /// E.164 phone number, e.g. "+2547XXXXXXXX" — doubles as the USSD login identifier.
+  /// System-generated login identifier, e.g. "ACI-STF-7F2K". Never
+  /// self-chosen or clinic-supplied. This — not phoneNumber — is what staff
+  /// and doctors authenticate with, on both the dashboard and USSD.
+  staffCode   String     @unique
+  /// E.164 phone number, e.g. "+2547XXXXXXXX". Contact/SMS purposes only —
+  /// never used to authenticate.
   phoneNumber String     @unique
   name        String
   /// bcrypt hash of a staff-chosen numeric PIN. Never store or log the raw PIN.
@@ -96,6 +107,10 @@ model Staff {
 
 model Patient {
   id          String      @id @default(cuid())
+  /// System-generated human-readable ID, e.g. "ACI-7F2K" — separate from
+  /// the phone number and from the internal cuid `id`. Usable as an
+  /// alternate login identifier alongside the phone number.
+  patientCode String      @unique
   /// E.164 phone number — the primary lookup key, since Africa's Talking
   /// gives us the caller's number on every USSD session.
   phoneNumber String      @unique
@@ -104,14 +119,38 @@ model Patient {
   dateOfBirth DateTime?
   sex         Sex         @default(UNKNOWN)
   county      String?
+  /// bcrypt hash of the patient's chosen numeric PIN. Everyday login
+  /// credential; OTP (see Otp model) is reset-only, not primary login.
+  /// Null for a patient registered via USSD check-in who has never set one —
+  /// they use the same OTP flow to set their first PIN as to reset it.
+  pinHash     String?
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
   consents    Consent[]
   encounters  Encounter[]
   checkIns    CheckIn[]
+  otps        Otp[]
 
   @@map("patients")
+}
+
+/// One-time codes sent by SMS. Currently used only to let a patient who has
+/// forgotten their PIN reset it — never for everyday login.
+model Otp {
+  id         String     @id @default(cuid())
+  patientId  String
+  patient    Patient    @relation(fields: [patientId], references: [id])
+  purpose    OtpPurpose
+  /// bcrypt hash of the OTP. Never store or log the raw code.
+  codeHash   String
+  attempts   Int        @default(0)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime   @default(now())
+
+  @@index([patientId])
+  @@map("otps")
 }
 
 /// One row per consent grant or revocation. Never mutated after creation —

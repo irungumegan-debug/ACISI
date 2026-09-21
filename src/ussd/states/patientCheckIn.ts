@@ -4,7 +4,7 @@ import { ClinicListItem } from '../../services/clinicService';
 import { findPatientByPhone, registerPatient } from '../../services/patientService';
 import { initiateCheckIn } from '../../services/checkInService';
 import { env } from '../../config/env';
-import { CONSENT_PROMPT_TEXT } from '../../config/constants';
+import { CONSENT_PROMPT_TEXT, CROSS_CLINIC_CONSENT_PROMPT_TEXT } from '../../config/constants';
 import { logger } from '../../utils/logger';
 
 const CURRENT_YEAR = new Date().getFullYear();
@@ -83,6 +83,30 @@ export const checkinNewPatientSex: UssdStateHandler = async (session, input) => 
     return { response: 'CON Please choose 1, 2 or 3.\nSelect sex:\n1. Male\n2. Female\n3. Other / prefer not to say', continueSession: true };
   }
 
+  session.data.sex = sex;
+
+  return {
+    response: `CON ${CROSS_CLINIC_CONSENT_PROMPT_TEXT}\n1. Yes, share with other clinics\n2. No, only this clinic`,
+    continueSession: true,
+    nextState: 'CHECKIN_CROSS_CLINIC_CONSENT',
+  };
+};
+
+/**
+ * Separate from the platform-registration consent gate in checkinConsent
+ * above (which is required to register at all): this one is optional and
+ * defaults to declined either way, so answering "No" still lets the patient
+ * register and check in — it just keeps their record clinic-local until
+ * they opt in.
+ */
+export const checkinCrossClinicConsent: UssdStateHandler = async (session, input) => {
+  if (input !== '1' && input !== '2') {
+    return {
+      response: `CON Please choose 1 or 2.\n${CROSS_CLINIC_CONSENT_PROMPT_TEXT}\n1. Yes, share with other clinics\n2. No, only this clinic`,
+      continueSession: true,
+    };
+  }
+
   const clinicName = session.data.clinicName as string;
 
   try {
@@ -91,8 +115,9 @@ export const checkinNewPatientSex: UssdStateHandler = async (session, input) => 
       firstName: session.data.firstName as string,
       lastName: session.data.lastName as string,
       dateOfBirth: new Date(Date.UTC(session.data.birthYear as number, 0, 1)),
-      sex,
+      sex: session.data.sex as Sex,
       consentChannel: 'USSD',
+      crossClinicConsent: input === '1',
     });
     session.data.patientId = patient.id;
   } catch (err) {

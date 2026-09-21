@@ -39,19 +39,20 @@ jest.mock('../../src/config/redis', () => ({
 }));
 
 jest.mock('../../src/services/staffService', () => ({
-  findActiveStaffWithClinicByPhone: jest.fn(),
+  findActiveStaffWithClinicByCode: jest.fn(),
   verifyStaffPin: jest.fn(),
 }));
 
-import { findActiveStaffWithClinicByPhone, verifyStaffPin } from '../../src/services/staffService';
+import { findActiveStaffWithClinicByCode, verifyStaffPin } from '../../src/services/staffService';
 import { authRouter } from '../../src/dashboard/auth';
 import { LOGIN_RATE_LIMIT_MAX_ATTEMPTS } from '../../src/config/constants';
 
-const mockFindStaff = findActiveStaffWithClinicByPhone as jest.Mock;
+const mockFindStaff = findActiveStaffWithClinicByCode as jest.Mock;
 const mockVerifyPin = verifyStaffPin as jest.Mock;
 
 const STAFF = {
   id: 'staff-1',
+  staffCode: 'ACI-STF-7F2K',
   name: 'Test Receptionist',
   clinicId: 'clinic-1',
   clinic: { id: 'clinic-1', name: 'Sunrise Family Clinic' },
@@ -75,31 +76,31 @@ beforeEach(() => {
 });
 
 describe('POST /auth/login', () => {
-  it('rejects a missing phone number or PIN', async () => {
-    const res = await request(buildApp()).post('/auth/login').send({ phoneNumber: '0712345678' });
+  it('rejects a missing staff ID or PIN', async () => {
+    const res = await request(buildApp()).post('/auth/login').send({ staffCode: 'ACI-STF-7F2K' });
     expect(res.status).toBe(400);
   });
 
-  it('returns the same 401 for an unknown phone number as for a wrong PIN (no enumeration)', async () => {
+  it('returns the same 401 for an unknown staff ID as for a wrong PIN (no enumeration)', async () => {
     mockFindStaff.mockResolvedValue(null);
-    const res = await request(buildApp()).post('/auth/login').send({ phoneNumber: '0712345678', pin: '1234' });
+    const res = await request(buildApp()).post('/auth/login').send({ staffCode: 'ACI-STF-7F2K', pin: '1234' });
     expect(res.status).toBe(401);
-    expect(res.body.error).toBe('Invalid phone number or PIN');
+    expect(res.body.error).toBe('Invalid staff ID or PIN');
   });
 
   it('rejects a wrong PIN with the same message', async () => {
     mockFindStaff.mockResolvedValue(STAFF);
     mockVerifyPin.mockResolvedValue(false);
-    const res = await request(buildApp()).post('/auth/login').send({ phoneNumber: '0712345678', pin: '9999' });
+    const res = await request(buildApp()).post('/auth/login').send({ staffCode: 'ACI-STF-7F2K', pin: '9999' });
     expect(res.status).toBe(401);
-    expect(res.body.error).toBe('Invalid phone number or PIN');
+    expect(res.body.error).toBe('Invalid staff ID or PIN');
   });
 
   it('logs in successfully and sets a session cookie', async () => {
     mockFindStaff.mockResolvedValue(STAFF);
     mockVerifyPin.mockResolvedValue(true);
 
-    const res = await request(buildApp()).post('/auth/login').send({ phoneNumber: '0712345678', pin: '1234' });
+    const res = await request(buildApp()).post('/auth/login').send({ staffCode: 'ACI-STF-7F2K', pin: '1234' });
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ staffName: 'Test Receptionist', clinicName: 'Sunrise Family Clinic', role: 'RECEPTIONIST' });
@@ -107,16 +108,16 @@ describe('POST /auth/login', () => {
     expect(res.headers['set-cookie']?.[0]).toContain('HttpOnly');
   });
 
-  it('rate-limits after repeated failed attempts from the same phone number', async () => {
+  it('rate-limits after repeated failed attempts from the same staff ID', async () => {
     mockFindStaff.mockResolvedValue(null);
     const app = buildApp();
 
     for (let i = 0; i < LOGIN_RATE_LIMIT_MAX_ATTEMPTS; i++) {
-      const res = await request(app).post('/auth/login').send({ phoneNumber: '0712345678', pin: '1234' });
+      const res = await request(app).post('/auth/login').send({ staffCode: 'ACI-STF-7F2K', pin: '1234' });
       expect(res.status).toBe(401);
     }
 
-    const res = await request(app).post('/auth/login').send({ phoneNumber: '0712345678', pin: '1234' });
+    const res = await request(app).post('/auth/login').send({ staffCode: 'ACI-STF-7F2K', pin: '1234' });
     expect(res.status).toBe(429);
   });
 
@@ -124,18 +125,18 @@ describe('POST /auth/login', () => {
     const app = buildApp();
     mockFindStaff.mockResolvedValue(null);
 
-    await request(app).post('/auth/login').send({ phoneNumber: '0712345678', pin: 'wrong' });
-    await request(app).post('/auth/login').send({ phoneNumber: '0712345678', pin: 'wrong' });
+    await request(app).post('/auth/login').send({ staffCode: 'ACI-STF-7F2K', pin: 'wrong' });
+    await request(app).post('/auth/login').send({ staffCode: 'ACI-STF-7F2K', pin: 'wrong' });
 
     mockFindStaff.mockResolvedValue(STAFF);
     mockVerifyPin.mockResolvedValue(true);
-    const success = await request(app).post('/auth/login').send({ phoneNumber: '0712345678', pin: '1234' });
+    const success = await request(app).post('/auth/login').send({ staffCode: 'ACI-STF-7F2K', pin: '1234' });
     expect(success.status).toBe(200);
 
     // Rate limit counter should be cleared, so failures start fresh again.
     mockFindStaff.mockResolvedValue(null);
     for (let i = 0; i < LOGIN_RATE_LIMIT_MAX_ATTEMPTS - 1; i++) {
-      const res = await request(app).post('/auth/login').send({ phoneNumber: '0712345678', pin: 'wrong' });
+      const res = await request(app).post('/auth/login').send({ staffCode: 'ACI-STF-7F2K', pin: 'wrong' });
       expect(res.status).toBe(401);
     }
   });
@@ -152,7 +153,7 @@ describe('GET /auth/me', () => {
     mockVerifyPin.mockResolvedValue(true);
 
     const agent = request.agent(buildApp());
-    await agent.post('/auth/login').send({ phoneNumber: '0712345678', pin: '1234' });
+    await agent.post('/auth/login').send({ staffCode: 'ACI-STF-7F2K', pin: '1234' });
 
     const res = await agent.get('/auth/me');
 
@@ -167,7 +168,7 @@ describe('POST /auth/logout', () => {
     mockVerifyPin.mockResolvedValue(true);
 
     const agent = request.agent(buildApp());
-    await agent.post('/auth/login').send({ phoneNumber: '0712345678', pin: '1234' });
+    await agent.post('/auth/login').send({ staffCode: 'ACI-STF-7F2K', pin: '1234' });
     expect((await agent.get('/auth/me')).status).toBe(200);
 
     await agent.post('/auth/logout');

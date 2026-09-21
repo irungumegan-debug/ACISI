@@ -22,7 +22,7 @@ export const mainMenu: UssdStateHandler = async (session, input) => {
   }
 
   if (input === '2') {
-    return { response: 'CON Enter your 4-digit staff PIN:', continueSession: true, nextState: 'STAFF_ENTER_PIN' };
+    return { response: 'CON Enter your staff ID (e.g. ACI-STF-7F2K):', continueSession: true, nextState: 'STAFF_ENTER_CODE' };
   }
 
   if (input === '3') {

@@ -1,6 +1,8 @@
 export interface StaffSession {
   staffId: string;
+  staffCode: string;
   staffName: string;
+  role: string;
   clinicId: string;
   clinicName: string;
 }
@@ -62,10 +64,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  login(phoneNumber: string, pin: string) {
+  login(staffCode: string, pin: string) {
     return request<{ staffName: string; clinicName: string; role: string }>('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ phoneNumber, pin }),
+      body: JSON.stringify({ staffCode, pin }),
     });
   },
 

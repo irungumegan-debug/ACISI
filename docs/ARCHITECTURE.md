@@ -101,9 +101,16 @@ See `prisma/schema.prisma` for full field-level comments. Key decisions:
   is still a cheap single query. Every grant records the `version` of the
   consent copy shown (`CONSENT_VERSION` in `src/config/constants.ts`), so we
   can always reproduce exactly what a patient agreed to.
-- **Consent before collection, not after:** the check-in flow asks for
-  consent (`CHECKIN_CONSENT`) *before* asking a new patient for their name,
-  DOB, or sex — declining ends the session with nothing persisted.
+- **Two separate consents, not one:** `ConsentType` distinguishes
+  `PLATFORM_REGISTRATION` (required to have a record at all — the check-in
+  flow asks for this, `CHECKIN_CONSENT`, *before* asking a new patient for
+  their name, DOB, or sex; declining ends the session with nothing
+  persisted, agreeing is recorded as a granted consent row by
+  `registerPatient` once registration completes) from
+  `CROSS_CLINIC_RECORD_SHARING` (optional, asked afterward at
+  `CHECKIN_CROSS_CLINIC_CONSENT`, defaults to **not shared** unless the
+  patient explicitly opts in — declining still registers and checks the
+  patient in, it just keeps the record clinic-local).
 - **Audit trail:** `AuditLog` is intended to be append-only at the
   application level (no update/delete code paths call it). Every patient
   data access — not just mutations — should log a row; see
@@ -152,21 +159,40 @@ the dashboard, staff never touch USSD (per the two-pillar architecture).
 They share only `services/` and the Postgres/Redis layer underneath —
 `src/dashboard/` never imports from `src/ussd/` or vice versa.
 
-**Auth.** `src/dashboard/auth.ts` reuses the exact staff PIN verification
-already built for USSD login (`staffService.findActiveStaffWithClinicByPhone`
-+ `verifyStaffPin` — same bcrypt compare, same audit log write). What's new
-is the session mechanism: a browser needs a persistent login, so a
-successful login creates an opaque token (`crypto.randomBytes`, not a JWT —
-no signing/verification complexity needed) mapped to `{staffId, clinicId,
-staffName, clinicName}` in Redis (`src/dashboard/session.ts`), TTL'd to
+**Auth.** Staff and doctors authenticate with `staffCode` (a system-generated
+`ACI-STF-XXXX` identifier, `Staff.staffCode`) + PIN — never phone number.
+Phone number is still collected and stored on `Staff` for SMS/contact
+purposes, but it authenticates nothing; both the dashboard
+(`src/dashboard/auth.ts`) and USSD staff login (`src/ussd/states/staffLogin.ts`,
+which now has a `STAFF_ENTER_CODE` step before `STAFF_ENTER_PIN`) look staff
+up by `staffCode` (`staffService.findActiveStaffWithClinicByCode` /
+`findActiveStaffByCode`) and share the same `verifyStaffPin` — same bcrypt
+compare, same audit log write. The dashboard session mechanism: a browser
+needs a persistent login, so a successful login creates an opaque token
+(`crypto.randomBytes`, not a JWT — no signing/verification complexity
+needed) mapped to `{staffId, staffCode, staffName, role, clinicId,
+clinicName}` in Redis (`src/dashboard/session.ts`), TTL'd to
 `DASHBOARD_SESSION_TTL_SECONDS` (8h, roughly a shift), handed to the browser
 as an httpOnly cookie. Same "server holds the truth, client just holds a
 lookup key" pattern as the USSD session store — logout is a single Redis
-delete. The login endpoint itself is rate-limited per phone number
+delete. The login endpoint itself is rate-limited per staffCode
 (`LOGIN_RATE_LIMIT_MAX_ATTEMPTS` failures per `LOGIN_RATE_LIMIT_WINDOW_SECONDS`,
 tracked in Redis) — a 4-digit PIN with no throttling would be trivially
 brute-forceable, and this endpoint gates access to every patient at the
 clinic, so it gets the same security treatment as everything else patient-data-adjacent in this codebase.
+
+**Patient portal (`src/portal/`).** A third surface, alongside USSD and the
+staff dashboard, for patients on the web: register, login, forgot/reset PIN,
+web check-in, and records — all under `/api/patients`. Patients log in with
+their phone number or `patientCode` (`ACI-XXXX`, `Patient.patientCode`) plus
+a PIN (`Patient.pinHash`), using the same opaque-Redis-session pattern as the
+staff dashboard (`src/portal/session.ts`, cookie `acisi_patient_session`).
+OTP (`Otp` model, SMS via Africa's Talking) is reset-only — sent when a
+patient forgets their PIN, or to let a patient who registered via USSD (and
+so never set one) set their first PIN; it is never used for everyday login.
+Web check-in (`POST /api/patients/checkin`) calls the exact same
+`checkInService.initiateCheckIn` USSD uses, so payment/idempotency/SMS
+behavior is identical regardless of channel.
 
 **Authorization scoping.** Patient search (`GET /api/staff/patients`) and
 patient detail (`GET /api/staff/patients/:id`) are both scoped to patients

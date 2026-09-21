@@ -10,7 +10,9 @@ export const SESSION_COOKIE_NAME = 'acisi_staff_session';
 
 export interface DashboardSession {
   staffId: string;
+  staffCode: string;
   staffName: string;
+  role: string;
   clinicId: string;
   clinicName: string;
 }

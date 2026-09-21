@@ -34,19 +34,33 @@ async function main() {
   const primaryClinic = clinics[0]!;
   const pinHash = await bcrypt.hash('1234', 10);
 
-  await prisma.staff.upsert({
-    where: { phoneNumber: '+254700000001' },
-    update: {},
-    create: {
-      clinicId: primaryClinic.id,
-      phoneNumber: '+254700000001',
-      name: 'Test Receptionist',
-      pinHash,
-      role: 'RECEPTIONIST',
-    },
-  });
+  const staffSeeds: Array<{ staffCode: string; phoneNumber: string; name: string; role: 'RECEPTIONIST' | 'DOCTOR' | 'ADMIN' }> = [
+    { staffCode: 'ACI-STF-TEST', phoneNumber: '+254700000001', name: 'Test Receptionist', role: 'RECEPTIONIST' },
+    { staffCode: 'ACI-STF-DEMO', phoneNumber: '+254700000002', name: 'Dr. Amani Wambui', role: 'DOCTOR' },
+    { staffCode: 'ACI-STF-ADMN', phoneNumber: '+254700000003', name: 'Clinic Admin', role: 'ADMIN' },
+  ];
 
-  console.log(`Seeded ${clinics.length} clinics and one staff login (+254700000001, PIN 1234) at "${primaryClinic.name}".`);
+  await Promise.all(
+    staffSeeds.map((staff) =>
+      prisma.staff.upsert({
+        where: { staffCode: staff.staffCode },
+        update: {},
+        create: {
+          clinicId: primaryClinic.id,
+          staffCode: staff.staffCode,
+          phoneNumber: staff.phoneNumber,
+          name: staff.name,
+          pinHash,
+          role: staff.role,
+        },
+      }),
+    ),
+  );
+
+  console.log(
+    `Seeded ${clinics.length} clinics and ${staffSeeds.length} staff logins (PIN 1234) at "${primaryClinic.name}": ` +
+      staffSeeds.map((s) => s.staffCode).join(', '),
+  );
 }
 
 main()
