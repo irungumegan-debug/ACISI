@@ -7,7 +7,11 @@
 - **Session state / job queue:** Redis + BullMQ
 - **USSD gateway:** Africa's Talking
 - **Payments:** M-Pesa Daraja (STK Push)
-- **Staff dashboard:** Vite + React + TypeScript + Tailwind (`dashboard/`), served by the same Express process
+- **Staff/doctor console:** Vite + React + TypeScript + Tailwind (`dashboard/`), served under `/console`
+- **Marketing site + patient portal:** Vite + React + TypeScript (`web/`), served at `/`
+
+Both frontends are served by the same Express process — see "Two frontend
+SPAs, one origin" below.
 
 See the README for the trade-off reasoning behind each choice.
 
@@ -101,9 +105,16 @@ See `prisma/schema.prisma` for full field-level comments. Key decisions:
   is still a cheap single query. Every grant records the `version` of the
   consent copy shown (`CONSENT_VERSION` in `src/config/constants.ts`), so we
   can always reproduce exactly what a patient agreed to.
-- **Consent before collection, not after:** the check-in flow asks for
-  consent (`CHECKIN_CONSENT`) *before* asking a new patient for their name,
-  DOB, or sex — declining ends the session with nothing persisted.
+- **Two separate consents, not one:** `ConsentType` distinguishes
+  `PLATFORM_REGISTRATION` (required to have a record at all — the check-in
+  flow asks for this, `CHECKIN_CONSENT`, *before* asking a new patient for
+  their name, DOB, or sex; declining ends the session with nothing
+  persisted, agreeing is recorded as a granted consent row by
+  `registerPatient` once registration completes) from
+  `CROSS_CLINIC_RECORD_SHARING` (optional, asked afterward at
+  `CHECKIN_CROSS_CLINIC_CONSENT`, defaults to **not shared** unless the
+  patient explicitly opts in — declining still registers and checks the
+  patient in, it just keeps the record clinic-local).
 - **Audit trail:** `AuditLog` is intended to be append-only at the
   application level (no update/delete code paths call it). Every patient
   data access — not just mutations — should log a row; see
@@ -152,21 +163,94 @@ the dashboard, staff never touch USSD (per the two-pillar architecture).
 They share only `services/` and the Postgres/Redis layer underneath —
 `src/dashboard/` never imports from `src/ussd/` or vice versa.
 
-**Auth.** `src/dashboard/auth.ts` reuses the exact staff PIN verification
-already built for USSD login (`staffService.findActiveStaffWithClinicByPhone`
-+ `verifyStaffPin` — same bcrypt compare, same audit log write). What's new
-is the session mechanism: a browser needs a persistent login, so a
-successful login creates an opaque token (`crypto.randomBytes`, not a JWT —
-no signing/verification complexity needed) mapped to `{staffId, clinicId,
-staffName, clinicName}` in Redis (`src/dashboard/session.ts`), TTL'd to
+**Auth.** Staff and doctors authenticate with `staffCode` (a system-generated
+`ACI-STF-XXXX` identifier, `Staff.staffCode`) + PIN — never phone number.
+Phone number is still collected and stored on `Staff` for SMS/contact
+purposes, but it authenticates nothing; both the dashboard
+(`src/dashboard/auth.ts`) and USSD staff login (`src/ussd/states/staffLogin.ts`,
+which now has a `STAFF_ENTER_CODE` step before `STAFF_ENTER_PIN`) look staff
+up by `staffCode` (`staffService.findActiveStaffWithClinicByCode` /
+`findActiveStaffByCode`) and share the same `verifyStaffPin` — same bcrypt
+compare, same audit log write. The dashboard session mechanism: a browser
+needs a persistent login, so a successful login creates an opaque token
+(`crypto.randomBytes`, not a JWT — no signing/verification complexity
+needed) mapped to `{staffId, staffCode, staffName, role, clinicId,
+clinicName}` in Redis (`src/dashboard/session.ts`), TTL'd to
 `DASHBOARD_SESSION_TTL_SECONDS` (8h, roughly a shift), handed to the browser
 as an httpOnly cookie. Same "server holds the truth, client just holds a
 lookup key" pattern as the USSD session store — logout is a single Redis
-delete. The login endpoint itself is rate-limited per phone number
+delete. The login endpoint itself is rate-limited per staffCode
 (`LOGIN_RATE_LIMIT_MAX_ATTEMPTS` failures per `LOGIN_RATE_LIMIT_WINDOW_SECONDS`,
 tracked in Redis) — a 4-digit PIN with no throttling would be trivially
 brute-forceable, and this endpoint gates access to every patient at the
 clinic, so it gets the same security treatment as everything else patient-data-adjacent in this codebase.
+
+**Patient portal (`src/portal/`).** A third surface, alongside USSD and the
+staff dashboard, for patients on the web: register, login, forgot/reset PIN,
+web check-in, and records — all under `/api/patients`. Patients log in with
+their phone number or `patientCode` (`ACI-XXXX`, `Patient.patientCode`) plus
+a PIN (`Patient.pinHash`), using the same opaque-Redis-session pattern as the
+staff dashboard (`src/portal/session.ts`, cookie `acisi_patient_session`).
+OTP (`Otp` model, SMS via Africa's Talking) is reset-only — sent when a
+patient forgets their PIN, or to let a patient who registered via USSD (and
+so never set one) set their first PIN; it is never used for everyday login.
+Web check-in (`POST /api/patients/checkin`) calls the exact same
+`checkInService.initiateCheckIn` USSD uses, so payment/idempotency/SMS
+behavior is identical regardless of channel.
+
+**Clinic onboarding (`src/clinics/`, `src/dashboard/registration.ts`,
+`src/dashboard/clinicSettings.ts`).** Two distinct signup paths, both public
+(no session required):
+`POST /api/clinics/register` creates a brand-new `Clinic` — with a
+persistent, regenerable `inviteCode` (e.g. `SUNRISE-7F2K`,
+`clinicService.registerClinic`) — plus its first `Staff` row with role
+`ADMIN`, in one transaction. `POST /api/staff/register` is how everyone
+else (doctors, front-desk staff) joins an *existing* clinic: it requires
+that clinic's current `inviteCode` and never creates an ADMIN
+(`staffService.registerStaffViaInviteCode`, `SIGNUP_ROLES` excludes
+`ADMIN`). An admin can view or regenerate their clinic's invite code from
+the dashboard settings page — `GET`/`POST /api/staff/clinic/invite-code`,
+gated by `requireAdmin` — without any broader staff-management UI; that's
+deliberately out of scope for now.
+
+**Departments, the doctor dashboard, and checkout (`src/services/departmentService.ts`,
+`src/services/encounterService.ts`, `src/dashboard/doctor.ts`).** A `Department`
+belongs to a `Clinic`; a doctor (`Staff.departmentId`) is assigned to exactly
+one; a `CheckIn` is routed to exactly one at check-in time (USSD's new
+`CHECKIN_SELECT_DEPARTMENT` step, inserted right after clinic selection —
+every clinic gets a default "General" department at registration so there's
+always somewhere to route to). `Encounter` carries its own `EncounterStatus`
+(`WAITING → IN_CONSULTATION → READY_FOR_CHECKOUT → DONE`), deliberately
+separate from `CheckInStatus` (payment-only) — the two start together (a
+successful payment creates the Encounter at `WAITING`) but progress
+independently from there. A doctor's queue (`GET /api/staff/doctor/queue`)
+is `WAITING`/`IN_CONSULTATION` encounters scoped to their own clinic *and*
+department — never another department's or clinic's patients, never a
+general lookup (`getDoctorQueue`, `assertEncounterInDoctorQueue`). Opening a
+patient moves `WAITING → IN_CONSULTATION` and logs a `PATIENT_HISTORY_VIEWED`
+audit row; submitting the consultation form (diagnosis + prescription) moves
+it to `READY_FOR_CHECKOUT` — it never triggers checkout or SMS itself, by
+design (`submitConsultation`). Checkout is a front-desk-only action
+(`checkoutEncounter`, `POST /api/staff/checkins/:id/checkout`) that moves it
+to `DONE` and enqueues a *second*, separate SMS — the visit summary
+(diagnosis/prescription), via a new `visit-summary-sms` BullMQ queue/worker
+— distinct from the payment-receipt SMS `enqueueSmsReceipt` already sends
+right after payment; the two are independent events, not a replacement of
+each other.
+
+**Manual payment confirmation** (`checkInService.confirmCheckInPaidManually`,
+`POST /api/staff/checkins/:id/confirm-payment`) is the real, permanent,
+audited feature for a bank-only clinic (or one taking payment through its
+own till): it shares the exact same "mark paid" tail as a successful M-Pesa
+callback (`finalizePaidCheckIn` — Encounter creation, realtime publish, SMS
+receipt), just skipping the STK push, and logs `CHECK_IN_PAID_MANUALLY` with
+the confirming staff member's ID (audit's `staffId` + `createdAt` is the
+"who and when"). `scripts/devMarkCheckInPaid.ts` is a separate, narrower
+dev-only shortcut (`checkInService.devMarkCheckInPaid`, gated on
+`NODE_ENV !== 'production'`) for local testing without a real M-Pesa
+sandbox — it is not the manual-confirmation feature and carries no staff
+attribution, which is exactly why the real feature above exists as its own
+audited path rather than just relaxing this script's guard.
 
 **Authorization scoping.** Patient search (`GET /api/staff/patients`) and
 patient detail (`GET /api/staff/patients/:id`) are both scoped to patients
@@ -175,11 +259,21 @@ who have a `CheckIn` or `Encounter` at the logged-in staff member's own
 *both* endpoints, not just hidden in the search UI: a staff member can't
 view an arbitrary patient by guessing/crafting an ID for a patient who's
 never been to their clinic. Once a patient does have a relationship with the
-clinic, the detail view shows their full portable history across all
-clinics (`getPortableHistory`, same function the USSD staff-history lookup
-uses) — that cross-clinic visibility is the whole point of the platform, it's
-just gated behind having a legitimate reason to be looking at this patient
-at all.
+clinic, `patientService.getScopedHistory` decides what history they see —
+this clinic's own encounters always (that's not "cross-clinic sharing", it's
+the clinic's own data), other clinics' encounters only if the patient has an
+active `CROSS_CLINIC_RECORD_SHARING` consent, otherwise just a
+`hasHiddenHistoryElsewhere` flag with no contents. This is the same function
+the doctor dashboard's `getEncounterForDoctor` uses (`src/services/encounterService.ts`)
+— one place decides the consent-gating rule, not two copies that could drift.
+The doctor path adds its own, tighter layer on top: it can only ever be
+reached for a patient currently in the doctor's own department's queue at
+their own clinic (`assertEncounterInDoctorQueue` — keyed by `encounterId`,
+scoped by `clinicId` + `checkIn.departmentId`; a mismatch is
+indistinguishable from "doesn't exist," so a doctor can't probe for other
+clinics'/departments' patients), and every view writes a
+`PATIENT_HISTORY_VIEWED` audit row (who, when, which patient) regardless of
+which of the two paths was used.
 
 **Live check-in queue.** `src/services/realtimeEvents.ts` is a small
 in-process pub/sub (Node `EventEmitter`, channel-per-`clinicId`) that
@@ -202,10 +296,42 @@ call sites, different transport) — not done now because it isn't needed yet.
 **No schema changes for the dashboard.** All four MVP dashboard features
 (login, search, patient detail, live queue) are read-only against data the
 USSD side already writes — `Patient`, `Clinic`, `Staff`, `CheckIn`,
-`Encounter`. Patient detail is deliberately read-only for this build (no
-notes/diagnosis editing) — a real write surface on clinical data is a
-meaningfully bigger scope than a read view, and wasn't worth the risk on a
-one-week timeline to a demo.
+`Encounter`. Front-desk patient detail is deliberately still read-only
+(diagnosis/prescription only get written by the doctor console's
+consultation form, `encounterService.submitConsultation`) — front desk's job
+is payment/checkout, not clinical notes, so it never needed its own write path.
+
+## Two frontend SPAs, one origin
+
+`web/` (marketing site, signup/login, patient portal) and `dashboard/`
+(staff/doctor console) are separate Vite builds, served by the same Express
+process with no CORS anywhere: `web/dist` at `/`, `dashboard/dist` under
+`/console` (`src/app.ts`). `dashboard/vite.config.ts` sets
+`base: '/console/'` only for the production build (so its asset URLs
+resolve correctly once served from that path) and its `<BrowserRouter
+basename>` matches it — both stay `/` in dev, where each app runs on its own
+Vite dev server port with its own `/api` proxy, same pattern as before.
+Doctor/staff login (`web/src/pages/LoginPage.tsx`) calls the same
+`/api/staff/auth/login` the console's own login form does, then does a full
+`window.location.href` navigation to `/console/...` rather than a
+client-side route change — it's a different SPA bundle, but the session
+cookie the login call already set carries over unchanged (same origin), so
+the console's own `AuthContext` just picks it up on load. The console keeps
+its own internal `/console/login` too (reached if an unauthenticated visit
+lands there directly) — a harmless, fully-functional fallback against the
+same endpoint, not a second identity system.
+
+**Async route-handler errors no longer crash the process.** Discovered
+while smoke-testing this routing change: Express 4 (unlike 5) does not
+forward a rejected promise from an `async (req, res) => ...` handler to
+`next(err)` automatically, and virtually every handler in this codebase is
+written that way with no try/catch. A transient failure (e.g. Postgres
+briefly unreachable) on any request became an unhandled rejection that took
+the whole server down — a real, unrelated production-readiness bug this
+change surfaced, not something introduced by it. Fixed by importing
+`express-async-errors` once at the top of `src/app.ts`, which patches
+Express's shared Router/Route prototypes so those rejections now reach
+`errorHandler` (a clean `500`) instead. No route handler code changed.
 
 ## Known MVP limitations / deliberate scope cuts
 

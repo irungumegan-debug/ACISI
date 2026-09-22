@@ -3,10 +3,12 @@ import { env } from './config/env';
 import { logger } from './utils/logger';
 import { startSmsReceiptWorker } from './jobs/workers/smsReceiptWorker';
 import { startStkStatusWorker } from './jobs/workers/stkStatusWorker';
+import { startVisitSummarySmsWorker } from './jobs/workers/visitSummarySmsWorker';
 
 const app = createApp();
 const smsWorker = startSmsReceiptWorker();
 const stkStatusWorker = startStkStatusWorker();
+const visitSummaryWorker = startVisitSummarySmsWorker();
 
 const server = app.listen(env.PORT, () => {
   logger.info({ port: env.PORT, env: env.NODE_ENV }, 'ACISI server listening');
@@ -15,7 +17,7 @@ const server = app.listen(env.PORT, () => {
 async function shutdown(signal: string): Promise<void> {
   logger.info({ signal }, 'Shutting down');
   server.close();
-  await Promise.all([smsWorker.close(), stkStatusWorker.close()]);
+  await Promise.all([smsWorker.close(), stkStatusWorker.close(), visitSummaryWorker.close()]);
   process.exit(0);
 }
 

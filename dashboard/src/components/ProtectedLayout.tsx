@@ -22,12 +22,25 @@ export function ProtectedLayout() {
             <p className="text-sm text-slate-500">{session.staffName}</p>
           </div>
           <nav className="flex items-center gap-4 text-sm">
-            <Link to="/queue" className="text-slate-600 hover:text-slate-900">
-              Queue
-            </Link>
-            <Link to="/patients" className="text-slate-600 hover:text-slate-900">
-              Patients
-            </Link>
+            {session.role === 'DOCTOR' ? (
+              <Link to="/doctor/queue" className="text-slate-600 hover:text-slate-900">
+                My queue
+              </Link>
+            ) : (
+              <>
+                <Link to="/queue" className="text-slate-600 hover:text-slate-900">
+                  Queue
+                </Link>
+                <Link to="/patients" className="text-slate-600 hover:text-slate-900">
+                  Patients
+                </Link>
+                {session.role === 'ADMIN' && (
+                  <Link to="/settings" className="text-slate-600 hover:text-slate-900">
+                    Settings
+                  </Link>
+                )}
+              </>
+            )}
             <button onClick={() => void logout()} className="text-slate-600 hover:text-slate-900">
               Log out
             </button>

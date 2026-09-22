@@ -10,9 +10,13 @@ export const SESSION_COOKIE_NAME = 'acisi_staff_session';
 
 export interface DashboardSession {
   staffId: string;
+  staffCode: string;
   staffName: string;
+  role: string;
   clinicId: string;
   clinicName: string;
+  /** Set only for department-scoped roles (doctors). Null for front desk/admin. */
+  departmentId: string | null;
 }
 
 function key(token: string): string {

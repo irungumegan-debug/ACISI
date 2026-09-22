@@ -3,8 +3,7 @@ import { z } from 'zod';
 import { redis } from '../config/redis';
 import { env } from '../config/env';
 import { LOGIN_RATE_LIMIT_MAX_ATTEMPTS, LOGIN_RATE_LIMIT_WINDOW_SECONDS, DASHBOARD_SESSION_TTL_SECONDS } from '../config/constants';
-import { InvalidPhoneNumberError, toE164 } from '../utils/phone';
-import { findActiveStaffWithClinicByPhone, verifyStaffPin } from '../services/staffService';
+import { findActiveStaffWithClinicByCode, verifyStaffPin } from '../services/staffService';
 import {
   createDashboardSession,
   destroyDashboardSession,
@@ -18,29 +17,29 @@ export interface AuthenticatedRequest extends Request {
   dashboardSession: DashboardSession;
 }
 
-function rateLimitKey(phoneNumberE164: string): string {
-  return `dashboard:login_attempts:${phoneNumberE164}`;
+function rateLimitKey(staffCode: string): string {
+  return `dashboard:login_attempts:${staffCode}`;
 }
 
-async function isRateLimited(phoneNumberE164: string): Promise<boolean> {
-  const count = await redis.get(rateLimitKey(phoneNumberE164));
+async function isRateLimited(staffCode: string): Promise<boolean> {
+  const count = await redis.get(rateLimitKey(staffCode));
   return Number(count ?? 0) >= LOGIN_RATE_LIMIT_MAX_ATTEMPTS;
 }
 
-async function recordFailedAttempt(phoneNumberE164: string): Promise<void> {
-  const k = rateLimitKey(phoneNumberE164);
+async function recordFailedAttempt(staffCode: string): Promise<void> {
+  const k = rateLimitKey(staffCode);
   const count = await redis.incr(k);
   if (count === 1) {
     await redis.expire(k, LOGIN_RATE_LIMIT_WINDOW_SECONDS);
   }
 }
 
-async function clearRateLimit(phoneNumberE164: string): Promise<void> {
-  await redis.del(rateLimitKey(phoneNumberE164));
+async function clearRateLimit(staffCode: string): Promise<void> {
+  await redis.del(rateLimitKey(staffCode));
 }
 
 const loginSchema = z.object({
-  phoneNumber: z.string().min(1),
+  staffCode: z.string().min(1),
   pin: z.string().min(1),
 });
 
@@ -49,42 +48,36 @@ export const authRouter = Router();
 authRouter.post('/login', async (req, res) => {
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: 'Phone number and PIN are required' });
+    res.status(400).json({ error: 'Staff ID and PIN are required' });
     return;
   }
 
-  let phoneE164: string;
-  try {
-    phoneE164 = toE164(parsed.data.phoneNumber);
-  } catch (err) {
-    if (err instanceof InvalidPhoneNumberError) {
-      res.status(400).json({ error: 'Invalid phone number' });
-      return;
-    }
-    throw err;
-  }
+  const staffCode = parsed.data.staffCode.trim().toUpperCase();
 
-  if (await isRateLimited(phoneE164)) {
+  if (await isRateLimited(staffCode)) {
     res.status(429).json({ error: 'Too many failed attempts. Try again in a few minutes.' });
     return;
   }
 
-  const staff = await findActiveStaffWithClinicByPhone(phoneE164);
+  const staff = await findActiveStaffWithClinicByCode(staffCode);
   const isValid = staff ? await verifyStaffPin(staff, parsed.data.pin) : false;
 
   if (!staff || !isValid) {
-    await recordFailedAttempt(phoneE164);
-    res.status(401).json({ error: 'Invalid phone number or PIN' });
+    await recordFailedAttempt(staffCode);
+    res.status(401).json({ error: 'Invalid staff ID or PIN' });
     return;
   }
 
-  await clearRateLimit(phoneE164);
+  await clearRateLimit(staffCode);
 
   const token = await createDashboardSession({
     staffId: staff.id,
+    staffCode: staff.staffCode,
     staffName: staff.name,
+    role: staff.role,
     clinicId: staff.clinicId,
     clinicName: staff.clinic.name,
+    departmentId: staff.departmentId,
   });
 
   res.cookie(SESSION_COOKIE_NAME, token, {
@@ -129,4 +122,13 @@ export async function requireStaffSession(req: Request, res: Response, next: Nex
     logger.error({ err }, 'Failed to validate dashboard session');
     res.status(500).json({ error: 'Internal server error' });
   }
+}
+
+export function requireAdmin(req: Request, res: Response, next: NextFunction): void {
+  const { role } = (req as AuthenticatedRequest).dashboardSession;
+  if (role !== 'ADMIN') {
+    res.status(403).json({ error: 'Admin access required' });
+    return;
+  }
+  next();
 }

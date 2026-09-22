@@ -7,7 +7,7 @@ export function LoginPage() {
   const { session, login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [phoneNumber, setPhoneNumber] = useState('');
+  const [staffCode, setStaffCode] = useState('');
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -22,7 +22,7 @@ export function LoginPage() {
     setError(null);
     setSubmitting(true);
     try {
-      await login(phoneNumber, pin);
+      await login(staffCode, pin);
       navigate('/queue', { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong. Try again.');
@@ -35,21 +35,21 @@ export function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
       <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white p-8 shadow-sm">
         <h1 className="mb-1 text-xl font-semibold text-slate-900">ACISI Staff Login</h1>
-        <p className="mb-6 text-sm text-slate-500">Sign in with your registered phone number and PIN.</p>
+        <p className="mb-6 text-sm text-slate-500">Sign in with your staff ID and PIN.</p>
         <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="phone">
-              Phone number
+            <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="staffCode">
+              Staff ID
             </label>
             <input
-              id="phone"
-              type="tel"
-              autoComplete="tel"
+              id="staffCode"
+              type="text"
+              autoComplete="username"
               required
-              value={phoneNumber}
-              onChange={(e) => setPhoneNumber(e.target.value)}
-              placeholder="0712345678"
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+              value={staffCode}
+              onChange={(e) => setStaffCode(e.target.value)}
+              placeholder="ACI-STF-7F2K"
+              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm uppercase focus:border-slate-500 focus:outline-none"
             />
           </div>
           <div>

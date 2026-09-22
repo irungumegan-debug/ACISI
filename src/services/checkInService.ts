@@ -13,6 +13,7 @@ interface InitiateCheckInInput {
   patientId: string;
   clinicId: string;
   clinicName: string;
+  departmentId: string;
   phoneNumberE164: string;
 }
 
@@ -38,6 +39,7 @@ export async function initiateCheckIn(input: InitiateCheckInInput): Promise<Init
     data: {
       patientId: input.patientId,
       clinicId: input.clinicId,
+      departmentId: input.departmentId,
       ussdSessionId: input.ussdSessionId,
       amountKes: env.CHECKIN_FEE_AMOUNT_KES,
       status: 'PENDING_PAYMENT',
@@ -50,7 +52,7 @@ export async function initiateCheckIn(input: InitiateCheckInInput): Promise<Init
     action: 'CHECK_IN_CREATED',
     entityType: 'CheckIn',
     entityId: checkIn.id,
-    metadata: { clinicId: input.clinicId },
+    metadata: { clinicId: input.clinicId, departmentId: input.departmentId },
   });
 
   try {
@@ -78,6 +80,39 @@ export async function initiateCheckIn(input: InitiateCheckInInput): Promise<Init
     const failed = await prisma.checkIn.update({ where: { id: checkIn.id }, data: { status: 'FAILED' } });
     return { checkIn: failed, wasAlreadyInitiated: false };
   }
+}
+
+/**
+ * Shared tail of "this CheckIn just got paid," whatever the payment method:
+ * marks it PAID, creates the Encounter (WAITING — this is what makes the
+ * visit show up in the doctor's queue and the patient's portable history),
+ * publishes the live-queue event, and enqueues the payment receipt SMS.
+ * Callers are responsible for anything method-specific before this (e.g.
+ * recording the MpesaTransaction row) and for their own audit event.
+ */
+async function finalizePaidCheckIn(checkIn: CheckIn): Promise<CheckIn> {
+  const updated = await prisma.checkIn.update({
+    where: { id: checkIn.id },
+    data: { status: 'PAID', paidAt: new Date() },
+    include: { patient: true },
+  });
+
+  await prisma.encounter.create({
+    data: { patientId: checkIn.patientId, clinicId: checkIn.clinicId, checkInId: checkIn.id },
+  });
+
+  publishCheckInPaid({
+    checkInId: updated.id,
+    patientId: updated.patientId,
+    patientName: `${updated.patient.firstName} ${updated.patient.lastName}`,
+    clinicId: updated.clinicId,
+    amountKes: Number(updated.amountKes),
+    paidAt: (updated.paidAt as Date).toISOString(),
+  });
+
+  await enqueueSmsReceipt({ checkInId: updated.id, patientId: updated.patientId, succeeded: true });
+
+  return updated;
 }
 
 /**
@@ -118,25 +153,11 @@ export async function applyPaymentResult(parsed: ParsedStkCallback, rawPayload: 
 
   const succeeded = parsed.resultCode === 0;
 
-  const updated = await prisma.checkIn.update({
-    where: { id: checkIn.id },
-    data: { status: succeeded ? 'PAID' : 'FAILED', paidAt: succeeded ? new Date() : null },
-    include: { patient: true },
-  });
-
   if (succeeded) {
-    await prisma.encounter.create({
-      data: { patientId: checkIn.patientId, clinicId: checkIn.clinicId, checkInId: checkIn.id },
-    });
-
-    publishCheckInPaid({
-      checkInId: updated.id,
-      patientId: updated.patientId,
-      patientName: `${updated.patient.firstName} ${updated.patient.lastName}`,
-      clinicId: updated.clinicId,
-      amountKes: Number(updated.amountKes),
-      paidAt: (updated.paidAt as Date).toISOString(),
-    });
+    await finalizePaidCheckIn(checkIn);
+  } else {
+    await prisma.checkIn.update({ where: { id: checkIn.id }, data: { status: 'FAILED' } });
+    await enqueueSmsReceipt({ checkInId: checkIn.id, patientId: checkIn.patientId, succeeded: false });
   }
 
   await recordAuditEvent({
@@ -146,10 +167,70 @@ export async function applyPaymentResult(parsed: ParsedStkCallback, rawPayload: 
     entityId: checkIn.id,
     metadata: { resultCode: parsed.resultCode, resultDesc: parsed.resultDesc },
   });
+}
 
-  await enqueueSmsReceipt({
-    checkInId: checkIn.id,
-    patientId: checkIn.patientId,
-    succeeded,
+export class CheckInNotPendingError extends Error {
+  constructor() {
+    super('This check-in is not awaiting payment');
+    this.name = 'CheckInNotPendingError';
+  }
+}
+
+/**
+ * Real, permanent, audited manual payment confirmation — for clinics that
+ * are bank-only or take payment through their own till directly, without an
+ * M-Pesa STK push. Never bypasses the STK flow for a check-in that already
+ * has one in progress; only usable while still PENDING_PAYMENT. Scoped to
+ * the confirming staff member's own clinic by the caller (dashboard route),
+ * same as every other staff-facing check-in action.
+ */
+export async function confirmCheckInPaidManually(checkInId: string, clinicId: string, staffId: string): Promise<CheckIn> {
+  const checkIn = await prisma.checkIn.findFirst({ where: { id: checkInId, clinicId } });
+  if (!checkIn) {
+    throw new Error('Check-in not found');
+  }
+  if (checkIn.status !== 'PENDING_PAYMENT') {
+    throw new CheckInNotPendingError();
+  }
+
+  const updated = await finalizePaidCheckIn(checkIn);
+
+  await recordAuditEvent({
+    actorType: 'STAFF',
+    actorId: staffId,
+    staffId,
+    action: 'CHECK_IN_PAID_MANUALLY',
+    entityType: 'CheckIn',
+    entityId: checkIn.id,
+    metadata: { confirmedByStaffId: staffId },
   });
+
+  return updated;
+}
+
+/**
+ * Dev-only convenience for local testing without a real M-Pesa sandbox —
+ * never used by the real, staff-audited manual payment confirmation feature
+ * above (confirmCheckInPaidManually). Callers (scripts/devMarkCheckInPaid.ts)
+ * must gate this behind NODE_ENV !== 'production' themselves.
+ */
+export async function devMarkCheckInPaid(checkInId: string): Promise<CheckIn> {
+  const checkIn = await prisma.checkIn.findUnique({ where: { id: checkInId } });
+  if (!checkIn) {
+    throw new Error('Check-in not found');
+  }
+  if (checkIn.status !== 'PENDING_PAYMENT') {
+    throw new CheckInNotPendingError();
+  }
+
+  const updated = await finalizePaidCheckIn(checkIn);
+
+  await recordAuditEvent({
+    actorType: 'SYSTEM',
+    action: 'CHECK_IN_PAID_DEV_SCRIPT',
+    entityType: 'CheckIn',
+    entityId: checkIn.id,
+  });
+
+  return updated;
 }

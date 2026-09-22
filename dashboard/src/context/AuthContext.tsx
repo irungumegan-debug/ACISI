@@ -4,7 +4,7 @@ import { api, StaffSession } from '../lib/api';
 interface AuthContextValue {
   session: StaffSession | null;
   loading: boolean;
-  login: (phoneNumber: string, pin: string) => Promise<void>;
+  login: (staffCode: string, pin: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -22,8 +22,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => setLoading(false));
   }, []);
 
-  async function login(phoneNumber: string, pin: string): Promise<void> {
-    await api.login(phoneNumber, pin);
+  async function login(staffCode: string, pin: string): Promise<void> {
+    await api.login(staffCode, pin);
     setSession(await api.me());
   }
 

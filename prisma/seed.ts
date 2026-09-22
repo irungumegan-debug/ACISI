@@ -10,14 +10,14 @@ const prisma = new PrismaClient();
  * Seeds 7 clinics (not just 1) so the paginated clinic-selection menu
  * actually has a second page to exercise during manual testing.
  */
-const CLINICS: Array<{ name: string; county: string; ussdCode: string }> = [
-  { name: 'Sunrise Family Clinic', county: 'Nairobi', ussdCode: '482' },
-  { name: 'Baraka Health Centre', county: 'Nairobi', ussdCode: '483' },
-  { name: 'Uzima Medical Clinic', county: 'Kiambu', ussdCode: '484' },
-  { name: 'Tumaini Community Clinic', county: 'Nakuru', ussdCode: '485' },
-  { name: 'Amani Health Point', county: 'Mombasa', ussdCode: '486' },
-  { name: 'Jipe Moyo Clinic', county: 'Kisumu', ussdCode: '487' },
-  { name: 'Nuru Family Clinic', county: 'Machakos', ussdCode: '488' },
+const CLINICS: Array<{ name: string; county: string; ussdCode: string; inviteCode: string }> = [
+  { name: 'Sunrise Family Clinic', county: 'Nairobi', ussdCode: '482', inviteCode: 'SUNRISE-7F2K' },
+  { name: 'Baraka Health Centre', county: 'Nairobi', ussdCode: '483', inviteCode: 'BARAKA-3M9X' },
+  { name: 'Uzima Medical Clinic', county: 'Kiambu', ussdCode: '484', inviteCode: 'UZIMA-5Q8T' },
+  { name: 'Tumaini Community Clinic', county: 'Nakuru', ussdCode: '485', inviteCode: 'TUMAINI-2R6H' },
+  { name: 'Amani Health Point', county: 'Mombasa', ussdCode: '486', inviteCode: 'AMANI-9K4Z' },
+  { name: 'Jipe Moyo Clinic', county: 'Kisumu', ussdCode: '487', inviteCode: 'JIPEMOYO-6N3P' },
+  { name: 'Nuru Family Clinic', county: 'Machakos', ussdCode: '488', inviteCode: 'NURU-8W2S' },
 ];
 
 async function main() {
@@ -34,19 +34,59 @@ async function main() {
   const primaryClinic = clinics[0]!;
   const pinHash = await bcrypt.hash('1234', 10);
 
-  await prisma.staff.upsert({
-    where: { phoneNumber: '+254700000001' },
-    update: {},
-    create: {
-      clinicId: primaryClinic.id,
-      phoneNumber: '+254700000001',
-      name: 'Test Receptionist',
-      pinHash,
-      role: 'RECEPTIONIST',
-    },
-  });
+  const DEPARTMENT_NAMES = ['General', 'Gynecology', 'Dental', 'Pediatrics'];
+  const departments = await Promise.all(
+    DEPARTMENT_NAMES.map((name) =>
+      prisma.department.upsert({
+        where: { clinicId_name: { clinicId: primaryClinic.id, name } },
+        update: {},
+        create: { clinicId: primaryClinic.id, name },
+      }),
+    ),
+  );
+  const generalDepartment = departments[0]!;
 
-  console.log(`Seeded ${clinics.length} clinics and one staff login (+254700000001, PIN 1234) at "${primaryClinic.name}".`);
+  const staffSeeds: Array<{
+    staffCode: string;
+    phoneNumber: string;
+    name: string;
+    role: 'RECEPTIONIST' | 'DOCTOR' | 'ADMIN';
+    departmentId?: string;
+  }> = [
+    { staffCode: 'ACI-STF-TEST', phoneNumber: '+254700000001', name: 'Test Receptionist', role: 'RECEPTIONIST' },
+    {
+      staffCode: 'ACI-STF-DEMO',
+      phoneNumber: '+254700000002',
+      name: 'Dr. Amani Wambui',
+      role: 'DOCTOR',
+      departmentId: generalDepartment.id,
+    },
+    { staffCode: 'ACI-STF-ADMN', phoneNumber: '+254700000003', name: 'Clinic Admin', role: 'ADMIN' },
+  ];
+
+  await Promise.all(
+    staffSeeds.map((staff) =>
+      prisma.staff.upsert({
+        where: { staffCode: staff.staffCode },
+        update: {},
+        create: {
+          clinicId: primaryClinic.id,
+          staffCode: staff.staffCode,
+          phoneNumber: staff.phoneNumber,
+          name: staff.name,
+          pinHash,
+          role: staff.role,
+          departmentId: staff.departmentId,
+        },
+      }),
+    ),
+  );
+
+  console.log(
+    `Seeded ${clinics.length} clinics, ${departments.length} departments at "${primaryClinic.name}", ` +
+      `and ${staffSeeds.length} staff logins (PIN 1234): ` +
+      staffSeeds.map((s) => s.staffCode).join(', '),
+  );
 }
 
 main()

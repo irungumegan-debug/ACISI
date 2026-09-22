@@ -27,6 +27,7 @@ datasource db {
 enum StaffRole {
   RECEPTIONIST
   CLINICIAN
+  DOCTOR
   ADMIN
 }
 
@@ -55,6 +56,24 @@ enum ActorType {
   SYSTEM
 }
 
+/// Purpose of a one-time code sent to a patient's phone. Currently only PIN reset.
+enum OtpPurpose {
+  PIN_RESET
+}
+
+/// Clinical lifecycle of a visit, independent of CheckInStatus (which is
+/// payment-only). WAITING is set the moment payment succeeds; a doctor
+/// opening the patient moves it to IN_CONSULTATION; submitting the
+/// consultation form moves it to READY_FOR_CHECKOUT (front desk's job from
+/// there — never set by the doctor's submission itself); front desk
+/// checkout moves it to DONE and triggers the visit-summary SMS.
+enum EncounterStatus {
+  WAITING
+  IN_CONSULTATION
+  READY_FOR_CHECKOUT
+  DONE
+}
+
 model Clinic {
   id         String   @id @default(cuid())
   name       String
@@ -62,40 +81,83 @@ model Clinic {
   /// Short numeric code staff give patients to select this clinic within
   /// the shared USSD menu, e.g. "482". Not a phone number, not secret.
   ussdCode   String   @unique
+  /// Persistent invite code (e.g. "SUNRISE-7F2K") shared with prospective
+  /// doctors/staff so their signup can attach to this clinic. Regenerable by
+  /// a clinic admin — regenerating invalidates the old code for future
+  /// signups, but never affects staff who already joined with it.
+  inviteCode String   @unique
   isActive   Boolean  @default(true)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  staff      Staff[]
-  checkIns   CheckIn[]
-  encounters Encounter[]
+  staff       Staff[]
+  checkIns    CheckIn[]
+  encounters  Encounter[]
+  departments Department[]
 
   @@map("clinics")
+}
+
+/// A clinical department at a clinic (e.g. "General", "Dental"). A doctor is
+/// assigned to exactly one; a CheckIn is routed to exactly one at check-in
+/// time. Every new clinic gets a default "General" department at
+/// registration (clinicService.registerClinic) so there's always somewhere
+/// for a check-in to route to.
+model Department {
+  id        String   @id @default(cuid())
+  clinicId  String
+  clinic    Clinic   @relation(fields: [clinicId], references: [id])
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  staff    Staff[]
+  checkIns CheckIn[]
+
+  @@unique([clinicId, name])
+  @@index([clinicId])
+  @@map("departments")
 }
 
 model Staff {
   id          String     @id @default(cuid())
   clinicId    String
   clinic      Clinic     @relation(fields: [clinicId], references: [id])
-  /// E.164 phone number, e.g. "+2547XXXXXXXX" — doubles as the USSD login identifier.
+  /// System-generated login identifier, e.g. "ACI-STF-7F2K". Never
+  /// self-chosen or clinic-supplied. This — not phoneNumber — is what staff
+  /// and doctors authenticate with, on both the dashboard and USSD.
+  staffCode   String     @unique
+  /// E.164 phone number, e.g. "+2547XXXXXXXX". Contact/SMS purposes only —
+  /// never used to authenticate.
   phoneNumber String     @unique
   name        String
   /// bcrypt hash of a staff-chosen numeric PIN. Never store or log the raw PIN.
   pinHash     String
   role        StaffRole  @default(RECEPTIONIST)
+  /// The one department this staff member (a doctor, typically) works in —
+  /// null for roles that aren't department-scoped (front desk, admin).
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id])
   isActive    Boolean    @default(true)
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
-  checkIns    CheckIn[]
-  auditLogs   AuditLog[]
+  checkIns             CheckIn[]
+  auditLogs            AuditLog[]
+  consultedEncounters  Encounter[] @relation("EncounterConsultedBy")
+  checkedOutEncounters Encounter[] @relation("EncounterCheckedOutBy")
 
   @@index([clinicId])
+  @@index([departmentId])
   @@map("staff")
 }
 
 model Patient {
   id          String      @id @default(cuid())
+  /// System-generated human-readable ID, e.g. "ACI-7F2K" — separate from
+  /// the phone number and from the internal cuid `id`. Usable as an
+  /// alternate login identifier alongside the phone number.
+  patientCode String      @unique
   /// E.164 phone number — the primary lookup key, since Africa's Talking
   /// gives us the caller's number on every USSD session.
   phoneNumber String      @unique
@@ -104,14 +166,38 @@ model Patient {
   dateOfBirth DateTime?
   sex         Sex         @default(UNKNOWN)
   county      String?
+  /// bcrypt hash of the patient's chosen numeric PIN. Everyday login
+  /// credential; OTP (see Otp model) is reset-only, not primary login.
+  /// Null for a patient registered via USSD check-in who has never set one —
+  /// they use the same OTP flow to set their first PIN as to reset it.
+  pinHash     String?
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
   consents    Consent[]
   encounters  Encounter[]
   checkIns    CheckIn[]
+  otps        Otp[]
 
   @@map("patients")
+}
+
+/// One-time codes sent by SMS. Currently used only to let a patient who has
+/// forgotten their PIN reset it — never for everyday login.
+model Otp {
+  id         String     @id @default(cuid())
+  patientId  String
+  patient    Patient    @relation(fields: [patientId], references: [id])
+  purpose    OtpPurpose
+  /// bcrypt hash of the OTP. Never store or log the raw code.
+  codeHash   String
+  attempts   Int        @default(0)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime   @default(now())
+
+  @@index([patientId])
+  @@map("otps")
 }
 
 /// One row per consent grant or revocation. Never mutated after creation —
@@ -133,19 +219,37 @@ model Consent {
   @@map("consents")
 }
 
-/// A single visit at a clinic. Deliberately minimal — this is a portable
-/// history pointer ("patient X visited clinic Y on date Z"), not a full EMR.
+/// A single visit at a clinic. Created the moment payment succeeds (status
+/// WAITING) — this is both the portable cross-clinic history pointer
+/// ("patient X visited clinic Y on date Z") and the doctor's clinical
+/// working record for that visit (diagnosis/prescription), which is why it
+/// carries EncounterStatus alongside CheckInStatus rather than folding the
+/// two together: payment and clinical progress are genuinely independent
+/// concerns that just happen to start at the same moment.
 model Encounter {
-  id          String   @id @default(cuid())
+  id          String           @id @default(cuid())
   patientId   String
-  patient     Patient  @relation(fields: [patientId], references: [id])
+  patient     Patient          @relation(fields: [patientId], references: [id])
   clinicId    String
-  clinic      Clinic   @relation(fields: [clinicId], references: [id])
-  checkInId   String   @unique
-  checkIn     CheckIn  @relation(fields: [checkInId], references: [id])
+  clinic      Clinic           @relation(fields: [clinicId], references: [id])
+  checkInId   String           @unique
+  checkIn     CheckIn          @relation(fields: [checkInId], references: [id])
+  status      EncounterStatus  @default(WAITING)
   /// Optional free text a staff member can add later via a richer channel.
   /// Not collected over USSD at MVP.
   visitReason String?
+  /// Set by the doctor's consultation submission — never by the doctor's
+  /// mere viewing of the patient.
+  diagnosis   String?
+  prescription String?
+  consultedByStaffId String?
+  consultedByStaff   Staff?   @relation("EncounterConsultedBy", fields: [consultedByStaffId], references: [id])
+  consultedAt        DateTime?
+  /// Set by the front-desk checkout action — the point at which the SMS
+  /// visit summary goes out. Never set by the doctor's own submission.
+  checkedOutByStaffId String?
+  checkedOutByStaff   Staff?   @relation("EncounterCheckedOutBy", fields: [checkedOutByStaffId], references: [id])
+  checkedOutAt        DateTime?
   createdAt   DateTime @default(now())
 
   @@index([patientId])
@@ -161,6 +265,8 @@ model CheckIn {
   clinic                 Clinic        @relation(fields: [clinicId], references: [id])
   staffId                String?
   staff                  Staff?        @relation(fields: [staffId], references: [id])
+  departmentId           String
+  department             Department    @relation(fields: [departmentId], references: [id])
   /// Idempotency guard: one CheckIn per USSD session, so a dropped-session
   /// replay (see docs/ARCHITECTURE.md) can never trigger a second STK push.
   ussdSessionId          String        @unique
@@ -176,6 +282,7 @@ model CheckIn {
 
   @@index([patientId])
   @@index([clinicId])
+  @@index([departmentId])
   @@map("check_ins")
 }
 

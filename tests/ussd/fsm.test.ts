@@ -71,7 +71,7 @@ describe('mainMenu', () => {
 
   it('routes "2" to the staff login flow', async () => {
     const result = await mainMenu(freshSession(), '2');
-    expect(result.nextState).toBe('STAFF_ENTER_PIN');
+    expect(result.nextState).toBe('STAFF_ENTER_CODE');
   });
 
   it('tells an unregistered caller they have no records on "3"', async () => {

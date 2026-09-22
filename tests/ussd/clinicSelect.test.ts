@@ -1,6 +1,7 @@
 import { UssdSessionContext } from '../../src/ussd/types';
 
 jest.mock('../../src/services/clinicService', () => ({ listActiveClinics: jest.fn() }));
+jest.mock('../../src/services/departmentService', () => ({ listActiveDepartments: jest.fn() }));
 jest.mock('../../src/services/patientService', () => ({
   findPatientByPhone: jest.fn(),
   registerPatient: jest.fn(),
@@ -8,11 +9,15 @@ jest.mock('../../src/services/patientService', () => ({
 jest.mock('../../src/services/checkInService', () => ({ initiateCheckIn: jest.fn() }));
 
 import { listActiveClinics } from '../../src/services/clinicService';
+import { listActiveDepartments } from '../../src/services/departmentService';
 import { findPatientByPhone } from '../../src/services/patientService';
 import { buildClinicSelectionPrompt, checkinSelectClinic } from '../../src/ussd/states/clinicSelect';
 
 const mockListClinics = listActiveClinics as jest.Mock;
+const mockListDepartments = listActiveDepartments as jest.Mock;
 const mockFindPatient = findPatientByPhone as jest.Mock;
+
+const DEPARTMENTS = [{ id: 'dept-1', name: 'General' }];
 
 const ONE_PAGE_CLINICS = [
   { id: 'c1', name: 'Sunrise Family Clinic' },
@@ -42,6 +47,7 @@ function freshSession(): UssdSessionContext {
 
 beforeEach(() => {
   jest.resetAllMocks();
+  mockListDepartments.mockResolvedValue(DEPARTMENTS);
 });
 
 describe('buildClinicSelectionPrompt', () => {
@@ -107,7 +113,7 @@ describe('checkinSelectClinic', () => {
     expect(result.response).toContain('page 1/2');
   });
 
-  it('routes a valid selection into the patient lookup flow', async () => {
+  it('routes a valid selection into department selection', async () => {
     mockListClinics.mockResolvedValue(ONE_PAGE_CLINICS);
     mockFindPatient.mockResolvedValue(null);
 
@@ -116,7 +122,8 @@ describe('checkinSelectClinic', () => {
 
     expect(session.data.clinicId).toBe('c2');
     expect(session.data.clinicName).toBe('Baraka Health Centre');
-    expect(result.nextState).toBe('CHECKIN_CONSENT');
+    expect(result.nextState).toBe('CHECKIN_SELECT_DEPARTMENT');
+    expect(result.response).toContain('General');
   });
 
   it('selects from the current page, not the whole list, after paging forward', async () => {
@@ -129,7 +136,17 @@ describe('checkinSelectClinic', () => {
     const result = await checkinSelectClinic(session, '1');
 
     expect(session.data.clinicId).toBe('c6'); // Clinic F, not Clinic A
-    expect(result.nextState).toBe('CHECKIN_CONFIRM');
+    expect(result.nextState).toBe('CHECKIN_SELECT_DEPARTMENT');
+  });
+
+  it('ends the session if the clinic has no departments configured', async () => {
+    mockListClinics.mockResolvedValue(ONE_PAGE_CLINICS);
+    mockListDepartments.mockResolvedValue([]);
+
+    const result = await checkinSelectClinic(freshSession(), '1');
+
+    expect(result.continueSession).toBe(false);
+    expect(result.response).toContain('no departments configured');
   });
 
   it('re-prompts on an out-of-range or non-numeric choice', async () => {
