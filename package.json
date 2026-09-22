@@ -6,6 +6,7 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "postinstall": "prisma generate",
     "dev:dashboard": "npm run dev --prefix dashboard",
     "build": "tsc -p tsconfig.build.json && npm install --prefix dashboard && npm run build --prefix dashboard && npm install --prefix web && npm run build --prefix web",
     "dev:web": "npm run dev --prefix web",
