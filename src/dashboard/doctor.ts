@@ -26,8 +26,8 @@ function requireDoctor(req: Request, res: Response, next: NextFunction): void {
 doctorRouter.use(requireDoctor);
 
 doctorRouter.get('/queue', async (req, res) => {
-  const { clinicId, departmentId } = (req as AuthenticatedRequest).dashboardSession;
-  const queue = await getDoctorQueue(clinicId, departmentId as string);
+  const { clinicId, departmentId, staffId } = (req as AuthenticatedRequest).dashboardSession;
+  const queue = await getDoctorQueue(clinicId, departmentId as string, staffId);
   res.json({ queue });
 });
 

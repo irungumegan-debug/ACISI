@@ -7,6 +7,7 @@ import { initiateStkPush } from '../mpesa/stkPush';
 import { ParsedStkCallback } from '../mpesa/types';
 import { enqueueSmsReceipt, scheduleStkStatusCheck } from '../jobs/queue';
 import { publishCheckInPaid } from './realtimeEvents';
+import { assignDoctorForCheckIn } from './doctorAssignmentService';
 
 interface InitiateCheckInInput {
   ussdSessionId: string;
@@ -86,9 +87,11 @@ export async function initiateCheckIn(input: InitiateCheckInInput): Promise<Init
  * Shared tail of "this CheckIn just got paid," whatever the payment method:
  * marks it PAID, creates the Encounter (WAITING — this is what makes the
  * visit show up in the doctor's queue and the patient's portable history),
- * publishes the live-queue event, and enqueues the payment receipt SMS.
- * Callers are responsible for anything method-specific before this (e.g.
- * recording the MpesaTransaction row) and for their own audit event.
+ * assigns it to a specific doctor in the check-in's department (see
+ * doctorAssignmentService), publishes the live-queue event, and enqueues the
+ * payment receipt SMS. Callers are responsible for anything method-specific
+ * before this (e.g. recording the MpesaTransaction row) and for their own
+ * audit event.
  */
 async function finalizePaidCheckIn(checkIn: CheckIn): Promise<CheckIn> {
   const updated = await prisma.checkIn.update({
@@ -97,8 +100,10 @@ async function finalizePaidCheckIn(checkIn: CheckIn): Promise<CheckIn> {
     include: { patient: true },
   });
 
+  const assignedDoctorId = await assignDoctorForCheckIn(checkIn.clinicId, checkIn.departmentId);
+
   await prisma.encounter.create({
-    data: { patientId: checkIn.patientId, clinicId: checkIn.clinicId, checkInId: checkIn.id },
+    data: { patientId: checkIn.patientId, clinicId: checkIn.clinicId, checkInId: checkIn.id, assignedDoctorId },
   });
 
   publishCheckInPaid({

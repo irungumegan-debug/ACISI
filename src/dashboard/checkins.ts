@@ -25,7 +25,7 @@ checkinsRouter.get('/today', async (req, res) => {
     include: {
       patient: { select: { firstName: true, lastName: true, patientCode: true, phoneNumber: true } },
       department: { select: { name: true } },
-      encounter: { select: { id: true, status: true } },
+      encounter: { select: { id: true, status: true, assignedDoctor: { select: { name: true } } } },
     },
   });
 
@@ -41,6 +41,7 @@ checkinsRouter.get('/today', async (req, res) => {
       amountKes: Number(c.amountKes),
       checkInStatus: c.status,
       encounterStatus: c.encounter?.status ?? null,
+      assignedDoctorName: c.encounter?.assignedDoctor?.name ?? null,
       paidAt: c.paidAt,
       createdAt: c.createdAt,
     })),

@@ -48,6 +48,7 @@ export interface QueueItem {
   amountKes: number;
   checkInStatus: CheckInStatus;
   encounterStatus: EncounterStatus | null;
+  assignedDoctorName: string | null;
   paidAt: string | null;
   createdAt: string;
 }

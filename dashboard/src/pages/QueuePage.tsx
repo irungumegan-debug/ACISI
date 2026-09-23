@@ -92,7 +92,7 @@ export function QueuePage() {
                 <Link to={`/patients/${item.patientId}`} className="min-w-0 flex-1 hover:underline">
                   <p className="truncate font-medium text-slate-900">{item.patientName}</p>
                   <p className="text-xs text-slate-500">
-                    {item.patientCode} · {item.departmentName}
+                    {item.patientCode} · {item.departmentName} · {item.assignedDoctorName ?? 'Unassigned'}
                   </p>
                 </Link>
                 <span className={`whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ${STATUS_CLASS[status] ?? 'bg-slate-100 text-slate-600'}`}>

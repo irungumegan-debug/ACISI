@@ -144,6 +144,7 @@ model Staff {
 
   checkIns             CheckIn[]
   auditLogs            AuditLog[]
+  assignedEncounters   Encounter[] @relation("EncounterAssignedDoctor")
   consultedEncounters  Encounter[] @relation("EncounterConsultedBy")
   checkedOutEncounters Encounter[] @relation("EncounterCheckedOutBy")
 
@@ -235,6 +236,14 @@ model Encounter {
   checkInId   String           @unique
   checkIn     CheckIn          @relation(fields: [checkInId], references: [id])
   status      EncounterStatus  @default(WAITING)
+  /// The doctor this visit is routed to, decided once at the moment the
+  /// CheckIn becomes WAITING (see doctorAssignmentService.assignDoctorForCheckIn)
+  /// — never reassigned afterward (manual reassignment is future work). Null
+  /// only when the department had zero registered doctors at that moment, in
+  /// which case the visit stays open to any doctor in the department, same
+  /// as before this field existed.
+  assignedDoctorId String?
+  assignedDoctor   Staff?  @relation("EncounterAssignedDoctor", fields: [assignedDoctorId], references: [id])
   /// Optional free text a staff member can add later via a richer channel.
   /// Not collected over USSD at MVP.
   visitReason String?
@@ -254,6 +263,7 @@ model Encounter {
 
   @@index([patientId])
   @@index([clinicId])
+  @@index([assignedDoctorId])
   @@map("encounters")
 }
 

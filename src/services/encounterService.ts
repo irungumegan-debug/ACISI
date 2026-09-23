@@ -20,13 +20,22 @@ export interface DoctorQueueItem {
  * general lookup. Only WAITING/IN_CONSULTATION show up here; once a
  * consultation is submitted the encounter moves to READY_FOR_CHECKOUT and
  * drops off (it's front desk's queue from there).
+ *
+ * Further narrowed to this doctor's own assigned patients (see
+ * doctorAssignmentService) — this is a real filter, not just a display
+ * grouping, since the whole point of assignment is that each doctor works
+ * their own queue rather than the whole department's. Unassigned encounters
+ * (assignedDoctorId null — the department had no active doctors at
+ * check-in time) still show up for every doctor in the department, same as
+ * behavior before assignment existed.
  */
-export async function getDoctorQueue(clinicId: string, departmentId: string): Promise<DoctorQueueItem[]> {
+export async function getDoctorQueue(clinicId: string, departmentId: string, staffId: string): Promise<DoctorQueueItem[]> {
   const encounters = await prisma.encounter.findMany({
     where: {
       clinicId,
       status: { in: ['WAITING', 'IN_CONSULTATION'] },
       checkIn: { departmentId },
+      OR: [{ assignedDoctorId: staffId }, { assignedDoctorId: null }],
     },
     include: { patient: true },
     orderBy: { createdAt: 'asc' },
@@ -63,9 +72,14 @@ export interface EncounterDetail {
   hasHiddenHistoryElsewhere: boolean;
 }
 
-async function assertEncounterInDoctorQueue(encounterId: string, clinicId: string, departmentId: string): Promise<Encounter> {
+async function assertEncounterInDoctorQueue(encounterId: string, clinicId: string, departmentId: string, staffId: string): Promise<Encounter> {
   const encounter = await prisma.encounter.findFirst({
-    where: { id: encounterId, clinicId, checkIn: { departmentId } },
+    where: {
+      id: encounterId,
+      clinicId,
+      checkIn: { departmentId },
+      OR: [{ assignedDoctorId: staffId }, { assignedDoctorId: null }],
+    },
   });
   if (!encounter) {
     throw new EncounterNotAccessibleError();
@@ -87,7 +101,7 @@ export async function getEncounterForDoctor(
   departmentId: string,
   viewingStaffId: string,
 ): Promise<EncounterDetail> {
-  const encounter = await assertEncounterInDoctorQueue(encounterId, clinicId, departmentId);
+  const encounter = await assertEncounterInDoctorQueue(encounterId, clinicId, departmentId, viewingStaffId);
 
   const currentStatus: EncounterStatus = encounter.status === 'WAITING' ? 'IN_CONSULTATION' : encounter.status;
   if (encounter.status === 'WAITING') {
@@ -142,7 +156,7 @@ interface SubmitConsultationInput {
  * itself. That stays a front-desk action (encounterService.checkoutEncounter).
  */
 export async function submitConsultation(input: SubmitConsultationInput): Promise<Encounter> {
-  const encounter = await assertEncounterInDoctorQueue(input.encounterId, input.clinicId, input.departmentId);
+  const encounter = await assertEncounterInDoctorQueue(input.encounterId, input.clinicId, input.departmentId, input.staffId);
 
   if (encounter.status !== 'WAITING' && encounter.status !== 'IN_CONSULTATION') {
     throw new EncounterNotConsultableError();
