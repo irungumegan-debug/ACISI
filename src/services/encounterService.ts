@@ -2,6 +2,7 @@ import { Encounter, EncounterStatus } from '@prisma/client';
 import { prisma } from '../db/prisma';
 import { recordAuditEvent } from './auditService';
 import { getScopedHistory, ScopedHistoryEntry } from './patientService';
+import { comparePin, findActiveStaffById } from './staffService';
 import { enqueueVisitSummarySms } from '../jobs/queue';
 
 export interface DoctorQueueItem {
@@ -141,6 +142,13 @@ export class EncounterNotConsultableError extends Error {
   }
 }
 
+export class InvalidPinError extends Error {
+  constructor() {
+    super('Incorrect PIN. Please try again.');
+    this.name = 'InvalidPinError';
+  }
+}
+
 interface SubmitConsultationInput {
   encounterId: string;
   clinicId: string;
@@ -148,18 +156,44 @@ interface SubmitConsultationInput {
   staffId: string;
   diagnosis: string;
   prescription: string;
+  /**
+   * The doctor's own PIN, re-entered as the actual act of signing — the
+   * same mechanism as login (staffService.comparePin), just triggered here
+   * too. This is the real gate: nothing below is persisted unless this
+   * matches, so consultedAt (set only on success) doubles as the signing
+   * timestamp with no separate column needed.
+   */
+  pin: string;
 }
 
 /**
- * Submitting the consultation form moves the encounter to
- * READY_FOR_CHECKOUT — it never marks the visit done or sends the SMS
- * itself. That stays a front-desk action (encounterService.checkoutEncounter).
+ * Submitting the consultation form is the doctor's signing moment, not a
+ * separate step bolted on afterward: it moves the encounter to
+ * READY_FOR_CHECKOUT only once their re-entered PIN is confirmed. Never
+ * marks the visit done or sends the SMS itself — that stays a front-desk
+ * action (encounterService.checkoutEncounter).
  */
 export async function submitConsultation(input: SubmitConsultationInput): Promise<Encounter> {
   const encounter = await assertEncounterInDoctorQueue(input.encounterId, input.clinicId, input.departmentId, input.staffId);
 
   if (encounter.status !== 'WAITING' && encounter.status !== 'IN_CONSULTATION') {
     throw new EncounterNotConsultableError();
+  }
+
+  const staff = await findActiveStaffById(input.staffId);
+  const pinValid = staff ? await comparePin(staff, input.pin) : false;
+
+  await recordAuditEvent({
+    actorType: 'STAFF',
+    actorId: input.staffId,
+    staffId: input.staffId,
+    action: pinValid ? 'CONSULTATION_SIGNED' : 'CONSULTATION_SIGN_FAILED',
+    entityType: 'Encounter',
+    entityId: encounter.id,
+  });
+
+  if (!pinValid) {
+    throw new InvalidPinError();
   }
 
   const updated = await prisma.encounter.update({
@@ -171,15 +205,6 @@ export async function submitConsultation(input: SubmitConsultationInput): Promis
       consultedByStaffId: input.staffId,
       consultedAt: new Date(),
     },
-  });
-
-  await recordAuditEvent({
-    actorType: 'STAFF',
-    actorId: input.staffId,
-    staffId: input.staffId,
-    action: 'CONSULTATION_SUBMITTED',
-    entityType: 'Encounter',
-    entityId: encounter.id,
   });
 
   return updated;

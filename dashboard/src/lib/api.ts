@@ -165,10 +165,10 @@ export const api = {
     return request<EncounterDetail>(`/doctor/encounters/${encounterId}`);
   },
 
-  submitConsultation(encounterId: string, diagnosis: string, prescription: string) {
+  submitConsultation(encounterId: string, diagnosis: string, prescription: string, pin: string) {
     return request<{ encounterId: string; status: EncounterStatus }>(`/doctor/encounters/${encounterId}/consult`, {
       method: 'POST',
-      body: JSON.stringify({ diagnosis, prescription }),
+      body: JSON.stringify({ diagnosis, prescription, pin }),
     });
   },
 };

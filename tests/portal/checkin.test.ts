@@ -91,15 +91,18 @@ describe('GET /records/:encounterId/download', () => {
     expect(mockRenderPdf).not.toHaveBeenCalled();
   });
 
-  it("streams a PDF for the patient's own encounter, with the full visit detail and an attachment header", async () => {
+  it("streams a PDF for the patient's own encounter, with the full visit detail, letterhead, and signature, and an attachment header", async () => {
+    const signedAt = new Date('2026-01-15T09:00:00Z');
     mockFindFirstEncounter.mockResolvedValue({
       id: 'enc-1',
       createdAt: new Date('2026-01-15'),
       diagnosis: 'Flu',
       prescription: 'Paracetamol',
+      consultedAt: signedAt,
       patient: { firstName: 'Jane', lastName: 'Wanjiru', patientCode: 'ACI-7F2K' },
-      clinic: { name: 'Sunrise Family Clinic' },
+      clinic: { name: 'Sunrise Family Clinic', county: 'Nairobi' },
       checkIn: { department: { name: 'General' } },
+      consultedByStaff: { name: 'Dr. Amani Wambui', role: 'DOCTOR' },
     });
     mockRenderPdf.mockResolvedValue(Buffer.from('%PDF-1.3 fake pdf content'));
 
@@ -112,13 +115,34 @@ describe('GET /records/:encounterId/download', () => {
       patientName: 'Jane Wanjiru',
       patientCode: 'ACI-7F2K',
       clinicName: 'Sunrise Family Clinic',
+      clinicCounty: 'Nairobi',
       departmentName: 'General',
       visitedAt: new Date('2026-01-15'),
       diagnosis: 'Flu',
       prescription: 'Paracetamol',
+      signature: { doctorName: 'Dr. Amani Wambui', doctorTitle: 'Doctor', signedAt },
     });
     expect(mockRecordAudit).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'PATIENT_SELF_DOWNLOADED_RECORD', actorId: 'patient-1', entityId: 'enc-1' }),
     );
+  });
+
+  it('passes signature: null for a visit that has not been signed yet, rather than fabricating one', async () => {
+    mockFindFirstEncounter.mockResolvedValue({
+      id: 'enc-2',
+      createdAt: new Date('2026-01-15'),
+      diagnosis: null,
+      prescription: null,
+      consultedAt: null,
+      patient: { firstName: 'Jane', lastName: 'Wanjiru', patientCode: 'ACI-7F2K' },
+      clinic: { name: 'Sunrise Family Clinic', county: 'Nairobi' },
+      checkIn: { department: { name: 'General' } },
+      consultedByStaff: null,
+    });
+    mockRenderPdf.mockResolvedValue(Buffer.from('%PDF-1.3 fake pdf content'));
+
+    await withCookie(request(buildApp()).get('/records/enc-2/download'));
+
+    expect(mockRenderPdf).toHaveBeenCalledWith(expect.objectContaining({ signature: null }));
   });
 });

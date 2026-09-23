@@ -4,6 +4,7 @@ import { requireStaffSession, AuthenticatedRequest } from './auth';
 import {
   EncounterNotAccessibleError,
   EncounterNotConsultableError,
+  InvalidPinError,
   getDoctorQueue,
   getEncounterForDoctor,
   submitConsultation,
@@ -49,12 +50,15 @@ doctorRouter.get('/encounters/:id', async (req, res) => {
 const consultSchema = z.object({
   diagnosis: z.string().min(1),
   prescription: z.string().min(1),
+  // The doctor's own PIN, re-entered as the act of signing — required on
+  // every submission, not optional. See encounterService.submitConsultation.
+  pin: z.string().min(1),
 });
 
 doctorRouter.post('/encounters/:id/consult', async (req, res) => {
   const parsed = consultSchema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: 'Diagnosis and prescription are required' });
+    res.status(400).json({ error: 'Diagnosis, prescription, and your PIN are required' });
     return;
   }
 
@@ -68,6 +72,7 @@ doctorRouter.post('/encounters/:id/consult', async (req, res) => {
       staffId,
       diagnosis: parsed.data.diagnosis,
       prescription: parsed.data.prescription,
+      pin: parsed.data.pin,
     });
     res.json({ encounterId: encounter.id, status: encounter.status });
   } catch (err) {
@@ -77,6 +82,10 @@ doctorRouter.post('/encounters/:id/consult', async (req, res) => {
     }
     if (err instanceof EncounterNotConsultableError) {
       res.status(409).json({ error: err.message });
+      return;
+    }
+    if (err instanceof InvalidPinError) {
+      res.status(401).json({ error: err.message });
       return;
     }
     throw err;
