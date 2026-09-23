@@ -14,7 +14,6 @@ npm-debug.log*
 coverage/
 
 prisma/*.db
-prisma/migrations/dev/
 
 .vscode/
 .idea/
