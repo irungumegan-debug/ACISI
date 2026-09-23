@@ -212,7 +212,7 @@ export async function confirmCheckInPaidManually(checkInId: string, clinicId: st
  * Dev-only convenience for local testing without a real M-Pesa sandbox —
  * never used by the real, staff-audited manual payment confirmation feature
  * above (confirmCheckInPaidManually). Callers (scripts/devMarkCheckInPaid.ts)
- * must gate this behind NODE_ENV !== 'production' themselves.
+ * must gate this behind NODE_ENV/MPESA_ENV themselves.
  */
 export async function devMarkCheckInPaid(checkInId: string): Promise<CheckIn> {
   const checkIn = await prisma.checkIn.findUnique({ where: { id: checkInId } });

@@ -20,6 +20,13 @@ import { logger } from './utils/logger';
 export function createApp(): Express {
   const app = express();
 
+  // Railway (and most PaaS hosts) terminate TLS at an edge proxy and forward
+  // requests to this process over plain HTTP, setting X-Forwarded-Proto to
+  // tell us the original scheme. Without trusting that header, req.secure is
+  // always false behind such a proxy — which is what session cookies' Secure
+  // flag below relies on to know whether it's actually safe to set.
+  app.set('trust proxy', 1);
+
   app.use(requestLogger);
   app.use(express.urlencoded({ extended: true }));
   app.use(express.json());
