@@ -1,6 +1,7 @@
 import { FormEvent, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
+import { usePatientAuth } from '../context/PatientAuthContext';
 
 type Step =
   | { kind: 'picker' }
@@ -77,6 +78,7 @@ function RolePicker({ onPick }: { onPick: (kind: 'patient' | 'doctor' | 'staff' 
 
 function PatientSignupForm({ onBack }: { onBack: () => void }) {
   const navigate = useNavigate();
+  const { setSession } = usePatientAuth();
   const [fullName, setFullName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState('');
@@ -97,7 +99,7 @@ function PatientSignupForm({ onBack }: { onBack: () => void }) {
 
     setSubmitting(true);
     try {
-      await api.registerPatient({
+      const session = await api.registerPatient({
         firstName: parts[0] as string,
         lastName: parts.slice(1).join(' '),
         phoneNumber,
@@ -105,6 +107,12 @@ function PatientSignupForm({ onBack }: { onBack: () => void }) {
         pin,
         crossClinicConsent,
       });
+      // Same fix as patient login: update PatientAuthContext's session
+      // directly (registration already returns it) before navigating
+      // client-side — PatientLayout's guard reads context state, not a
+      // fresh fetch, and this stays within the same SPA so there's no
+      // reload to trigger that fetch for us.
+      setSession(session);
       navigate('/patient', { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.');
