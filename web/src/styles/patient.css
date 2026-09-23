@@ -157,6 +157,16 @@
   color: #a29a80;
   cursor: not-allowed;
 }
+.patient-portal .btn-secondary {
+  background: transparent;
+  border: 1px solid var(--navy);
+  color: var(--navy);
+  text-decoration: none;
+}
+.patient-portal .btn-secondary:hover {
+  background: var(--navy);
+  color: #eaf0f6;
+}
 
 .patient-portal .confirm {
   text-align: center;

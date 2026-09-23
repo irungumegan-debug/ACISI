@@ -8,7 +8,7 @@ jest.mock('../../src/db/prisma', () => ({
 jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
 
 import { prisma } from '../../src/db/prisma';
-import { getScopedHistory } from '../../src/services/patientService';
+import { getOwnVisitHistory, getScopedHistory } from '../../src/services/patientService';
 
 const mockFindManyEncounters = prisma.encounter.findMany as jest.Mock;
 const mockFindFirstConsent = prisma.consent.findFirst as jest.Mock;
@@ -75,5 +75,54 @@ describe('getScopedHistory', () => {
     expect(mockFindManyEncounters).toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ id: { not: 'enc-current' } }) }),
     );
+  });
+});
+
+describe('getOwnVisitHistory', () => {
+  it("returns full diagnosis/prescription/department content, unfiltered by consent, for the patient's own encounters across every clinic", async () => {
+    mockFindManyEncounters.mockResolvedValue([
+      {
+        id: 'enc-1',
+        clinicId: 'clinic-A',
+        createdAt: new Date('2026-01-01'),
+        diagnosis: 'Flu',
+        prescription: 'Paracetamol',
+        clinic: { name: 'Sunrise Family Clinic' },
+        checkIn: { department: { name: 'General' } },
+      },
+    ]);
+
+    const result = await getOwnVisitHistory('patient-1');
+
+    expect(result).toEqual([
+      {
+        encounterId: 'enc-1',
+        clinicName: 'Sunrise Family Clinic',
+        departmentName: 'General',
+        visitedAt: new Date('2026-01-01'),
+        diagnosis: 'Flu',
+        prescription: 'Paracetamol',
+      },
+    ]);
+    expect(mockFindFirstConsent).not.toHaveBeenCalled(); // this is the patient's own data — no consent gate applies
+    expect(mockFindManyEncounters).toHaveBeenCalledWith(expect.objectContaining({ where: { patientId: 'patient-1' } }));
+  });
+
+  it('reports diagnosis/prescription as null when not yet recorded, rather than throwing', async () => {
+    mockFindManyEncounters.mockResolvedValue([
+      {
+        id: 'enc-1',
+        clinicId: 'clinic-A',
+        createdAt: new Date('2026-01-01'),
+        diagnosis: null,
+        prescription: null,
+        clinic: { name: 'Sunrise Family Clinic' },
+        checkIn: { department: { name: 'General' } },
+      },
+    ]);
+
+    const result = await getOwnVisitHistory('patient-1');
+
+    expect(result[0]).toMatchObject({ diagnosis: null, prescription: null });
   });
 });

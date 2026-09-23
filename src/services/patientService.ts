@@ -149,6 +149,9 @@ interface PortableHistoryEntry {
  * context on a new patient" feature. Callers must have already confirmed
  * hasActiveDataSharingConsent() and must record their own audit event for
  * *why* they're viewing it (who's asking), since that's caller-specific.
+ * Deliberately lightweight (clinic + date only, no clinical content) since
+ * this is the shape shown to a *third party* (staff at another clinic) —
+ * see getOwnVisitHistory for the patient's own full-detail portal view.
  */
 export async function getPortableHistory(patientId: string): Promise<PortableHistoryEntry[]> {
   const encounters = await prisma.encounter.findMany({
@@ -159,6 +162,42 @@ export async function getPortableHistory(patientId: string): Promise<PortableHis
   });
 
   return encounters.map((e) => ({ clinicName: e.clinic.name, visitedAt: e.createdAt }));
+}
+
+export interface OwnVisitHistoryEntry {
+  encounterId: string;
+  clinicName: string;
+  departmentName: string;
+  visitedAt: Date;
+  diagnosis: string | null;
+  prescription: string | null;
+}
+
+/**
+ * Full visit history for the patient portal's own "My records" page —
+ * every clinic they've visited, with the full diagnosis/prescription text
+ * from each visit. This is the patient looking at their own data, so unlike
+ * getPortableHistory (shared with a *third party's* consent-gated,
+ * clinic-name-only view), there's no consent check and no reason to
+ * withhold clinical content: a patient always sees everything about their
+ * own visits, in full.
+ */
+export async function getOwnVisitHistory(patientId: string): Promise<OwnVisitHistoryEntry[]> {
+  const encounters = await prisma.encounter.findMany({
+    where: { patientId },
+    orderBy: { createdAt: 'desc' },
+    take: HISTORY_ENCOUNTER_LIMIT,
+    include: { clinic: { select: { name: true } }, checkIn: { include: { department: { select: { name: true } } } } },
+  });
+
+  return encounters.map((e) => ({
+    encounterId: e.id,
+    clinicName: e.clinic.name,
+    departmentName: e.checkIn.department.name,
+    visitedAt: e.createdAt,
+    diagnosis: e.diagnosis,
+    prescription: e.prescription,
+  }));
 }
 
 export interface ScopedHistoryEntry {
