@@ -102,6 +102,16 @@ describe('GET /checkins/today', () => {
     });
   });
 
+  it('includes FAILED check-ins (not just PENDING_PAYMENT/PAID) so front desk can rescue a failed M-Pesa attempt', async () => {
+    mockFindManyCheckIns.mockResolvedValue([]);
+
+    await withCookie(request(buildApp()).get('/checkins/today'));
+
+    expect(mockFindManyCheckIns).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ status: { in: ['PENDING_PAYMENT', 'PAID', 'FAILED'] } }) }),
+    );
+  });
+
   it('reports assignedDoctorName as null when the encounter has no assigned doctor', async () => {
     mockFindManyCheckIns.mockResolvedValue([
       {

@@ -11,16 +11,18 @@ checkinsRouter.use(requireStaffSession);
 
 /**
  * Initial snapshot of today's arrivals; live updates arrive via /events
- * (SSE) after this loads. Includes PENDING_PAYMENT rows too (not just PAID)
- * so front desk can manually confirm payment for a bank-only clinic —
- * FAILED/CANCELLED check-ins aren't actionable so they're left out.
+ * (SSE) after this loads. Includes PENDING_PAYMENT and FAILED rows (not
+ * just PAID) so front desk can manually confirm the ACISI check-in fee
+ * whenever the automated M-Pesa flow hasn't gone through yet or didn't
+ * succeed, for any patient — CANCELLED check-ins aren't actionable so those
+ * are still left out.
  */
 checkinsRouter.get('/today', async (req, res) => {
   const { clinicId } = (req as AuthenticatedRequest).dashboardSession;
   const startOfToday = dayjs().startOf('day').toDate();
 
   const checkIns = await prisma.checkIn.findMany({
-    where: { clinicId, createdAt: { gte: startOfToday }, status: { in: ['PENDING_PAYMENT', 'PAID'] } },
+    where: { clinicId, createdAt: { gte: startOfToday }, status: { in: ['PENDING_PAYMENT', 'PAID', 'FAILED'] } },
     orderBy: { createdAt: 'desc' },
     include: {
       patient: { select: { firstName: true, lastName: true, patientCode: true, phoneNumber: true } },
@@ -49,9 +51,10 @@ checkinsRouter.get('/today', async (req, res) => {
 });
 
 /**
- * Real, permanent, audited manual payment confirmation — for a clinic that
- * is bank-only or takes payment through its own till, without M-Pesa STK.
- * Never touches or replaces the STK push flow.
+ * Real, permanent, audited manual confirmation of ACISI's own check-in fee
+ * — rescues a check-in for any patient at any clinic when the automated
+ * M-Pesa STK flow didn't go through. Never touches or replaces the STK
+ * push flow itself.
  */
 checkinsRouter.post('/:id/confirm-payment', async (req, res) => {
   const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
