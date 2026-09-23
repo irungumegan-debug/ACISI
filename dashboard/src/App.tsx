@@ -16,13 +16,20 @@ function HomeRedirect() {
   return <Navigate to={target} replace />;
 }
 
-// Matches vite.config.ts's base: only prefixed in production, where this
-// app is served under /console rather than at the dev server's own root.
-// (Cache-busting note: if you're staring at this after a "No routes matched
-// /console/..." error in production, check whether the host actually
-// rebuilt this file rather than assuming the logic below is wrong — see
-// the basename value baked into the deployed bundle before touching this.)
-const basename = import.meta.env.PROD ? '/console' : '/';
+// Deliberately NOT `import.meta.env.PROD ? '/console' : '/'` — that was the
+// actual bug. import.meta.env.BASE_URL is populated straight from
+// vite.config.ts's `base` (itself resolved from Vite's `command` argument:
+// 'build' vs 'serve' — never wrong). `import.meta.env.PROD`/`.MODE` go
+// through a *separate* Vite mechanism that, we proved empirically, silently
+// falls back to a development-mode build (unminified, PROD=false) when the
+// host's build environment has NODE_ENV set to anything other than
+// 'production' — which Railway's build container does, for the same reason
+// its runtime container does (see src/app.ts's static-serving fix). That
+// produced a real, deployed bundle with basename='/' baked in, which is why
+// "/console/queue" matched no route: this file was the actual bug, not a
+// stale build. BASE_URL always has a trailing slash ('/' or '/console/'),
+// which React Router's basename prop doesn't want — hence the strip below.
+const basename = import.meta.env.BASE_URL.length > 1 ? import.meta.env.BASE_URL.replace(/\/$/, '') : import.meta.env.BASE_URL;
 
 export function App() {
   return (
