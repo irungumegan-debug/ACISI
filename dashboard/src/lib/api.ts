@@ -7,6 +7,15 @@ export interface StaffSession {
   clinicName: string;
 }
 
+export interface ClinicStaffListItem {
+  id: string;
+  staffCode: string;
+  name: string;
+  role: string;
+  departmentName: string | null;
+  isActive: boolean;
+}
+
 export interface PatientListItem {
   id: string;
   firstName: string;
@@ -143,6 +152,17 @@ export const api = {
 
   regenerateInviteCode() {
     return request<{ inviteCode: string }>('/clinic/invite-code/regenerate', { method: 'POST' });
+  },
+
+  getClinicStaff() {
+    return request<{ staff: ClinicStaffListItem[] }>('/clinic/staff');
+  },
+
+  resetStaffPin(staffId: string, newPin?: string) {
+    return request<{ staffCode: string; name: string; newPin: string }>(`/clinic/staff/${staffId}/reset-pin`, {
+      method: 'POST',
+      body: JSON.stringify({ newPin }),
+    });
   },
 
   confirmCheckInPaid(checkInId: string) {

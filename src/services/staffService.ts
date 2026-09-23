@@ -2,10 +2,12 @@ import bcrypt from 'bcrypt';
 import { prisma } from '../db/prisma';
 import { Clinic, Prisma, Staff, StaffRole } from '@prisma/client';
 import { recordAuditEvent } from './auditService';
-import { generateStaffCode } from '../utils/idCodes';
+import { generateStaffCode, generateTemporaryPin } from '../utils/idCodes';
 import { env } from '../config/env';
 import { findClinicByInviteCode } from './clinicService';
 import { findActiveDepartment } from './departmentService';
+
+const PIN_PATTERN = /^\d{4,6}$/;
 
 const MAX_CODE_GENERATION_ATTEMPTS = 10;
 
@@ -142,4 +144,124 @@ export async function verifyStaffPin(staff: Staff, pin: string): Promise<boolean
     entityId: staff.id,
   });
   return isValid;
+}
+
+export class InvalidPinFormatError extends Error {
+  constructor() {
+    super('PIN must be 4-6 digits');
+    this.name = 'InvalidPinFormatError';
+  }
+}
+
+/**
+ * The shared low-level mechanic behind every PIN reset path (the console
+ * recovery script, the admin dashboard) — just hashes and sets pinHash. No
+ * authorization or audit logging here: those differ meaningfully by
+ * caller (who's allowed to reset whose PIN, and what that means for the
+ * accountability trail), so each caller owns its own check and its own
+ * recordAuditEvent call, same as the rest of this codebase's convention.
+ */
+async function setPin(staffId: string, newPin: string): Promise<Staff> {
+  if (!PIN_PATTERN.test(newPin)) {
+    throw new InvalidPinFormatError();
+  }
+  const pinHash = await hashPin(newPin);
+  return prisma.staff.update({ where: { id: staffId }, data: { pinHash } });
+}
+
+export class StaffNotFoundError extends Error {
+  constructor() {
+    super('Staff member not found');
+    this.name = 'StaffNotFoundError';
+  }
+}
+
+/**
+ * Console-only recovery path (scripts/resetStaffPin.ts) — whoever can run
+ * this already has full production access, so there's no clinic scoping to
+ * enforce here, unlike the admin-dashboard path below. Still leaves its own
+ * audit trail, distinct from a dashboard-initiated reset, since the two are
+ * very different trust contexts worth telling apart later.
+ */
+export async function resetStaffPinViaConsole(staffCode: string, newPin: string): Promise<Staff> {
+  const staff = await prisma.staff.findUnique({ where: { staffCode: staffCode.trim().toUpperCase() } });
+  if (!staff) {
+    throw new StaffNotFoundError();
+  }
+
+  const updated = await setPin(staff.id, newPin);
+
+  await recordAuditEvent({
+    actorType: 'SYSTEM',
+    action: 'STAFF_PIN_RESET_VIA_CONSOLE',
+    entityType: 'Staff',
+    entityId: staff.id,
+  });
+
+  return updated;
+}
+
+export interface ClinicStaffListItem {
+  id: string;
+  staffCode: string;
+  name: string;
+  role: StaffRole;
+  departmentName: string | null;
+  isActive: boolean;
+}
+
+/** For the clinic admin's staff-management view — scoped to their own clinic, same as every other admin-facing list in this codebase. */
+export async function listClinicStaff(clinicId: string): Promise<ClinicStaffListItem[]> {
+  const staff = await prisma.staff.findMany({
+    where: { clinicId },
+    orderBy: { name: 'asc' },
+    include: { department: { select: { name: true } } },
+  });
+
+  return staff.map((s) => ({
+    id: s.id,
+    staffCode: s.staffCode,
+    name: s.name,
+    role: s.role,
+    departmentName: s.department?.name ?? null,
+    isActive: s.isActive,
+  }));
+}
+
+interface ResetStaffPinByAdminInput {
+  clinicId: string;
+  staffId: string;
+  requestedByStaffId: string;
+  /** If omitted, a random temporary PIN is generated. */
+  newPin?: string;
+}
+
+/**
+ * A clinic admin resetting one of their own staff/doctors' PINs. Scoped to
+ * the admin's own clinic — StaffNotFoundError (never a distinct
+ * "wrong clinic" error) covers both a bad id and an attempt to reach
+ * another clinic's staff, same not-found-vs-forbidden pattern used
+ * elsewhere. Returns the new PIN in plaintext exactly once, for the caller
+ * to show the admin — it's never stored or logged anywhere in that form.
+ */
+export async function resetStaffPinByAdmin(input: ResetStaffPinByAdminInput): Promise<{ staffCode: string; name: string; newPin: string }> {
+  const staff = await prisma.staff.findFirst({ where: { id: input.staffId, clinicId: input.clinicId } });
+  if (!staff) {
+    throw new StaffNotFoundError();
+  }
+
+  const newPin = input.newPin ?? generateTemporaryPin();
+  await setPin(staff.id, newPin);
+
+  await recordAuditEvent({
+    actorType: 'STAFF',
+    actorId: input.requestedByStaffId,
+    staffId: input.requestedByStaffId,
+    action: 'STAFF_PIN_RESET',
+    entityType: 'Staff',
+    entityId: staff.id,
+    metadata: { resetStaffId: staff.id, resetStaffCode: staff.staffCode },
+  });
+
+  return { staffCode: staff.staffCode, name: staff.name, newPin };
 }

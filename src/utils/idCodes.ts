@@ -41,6 +41,11 @@ export function generateOtpCode(): string {
   return String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
 }
 
+/** Six-digit numeric temporary PIN — for an admin-initiated PIN reset, not an OTP (this one becomes the new login credential, not a single-use code). */
+export function generateTemporaryPin(): string {
+  return String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
+}
+
 /** Three-digit USSD clinic-selection code, e.g. "482". */
 export function generateUssdCode(): string {
   return String(crypto.randomInt(100, 1000));
