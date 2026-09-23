@@ -85,7 +85,7 @@ describe('GET /checkins/today', () => {
         createdAt: new Date(),
         patient: { firstName: 'Jane', lastName: 'Wanjiru', patientCode: 'ACI-1042', phoneNumber: '+254712345678' },
         department: { name: 'General' },
-        encounter: { id: 'enc-1', status: 'WAITING' },
+        encounter: { id: 'enc-1', status: 'WAITING', assignedDoctor: { name: 'Dr. Amani Wambui' } },
       },
     ]);
 
@@ -98,7 +98,28 @@ describe('GET /checkins/today', () => {
       departmentName: 'General',
       encounterStatus: 'WAITING',
       checkInStatus: 'PAID',
+      assignedDoctorName: 'Dr. Amani Wambui',
     });
+  });
+
+  it('reports assignedDoctorName as null when the encounter has no assigned doctor', async () => {
+    mockFindManyCheckIns.mockResolvedValue([
+      {
+        id: 'ci-2',
+        patientId: 'p-2',
+        amountKes: '50',
+        status: 'PAID',
+        paidAt: new Date(),
+        createdAt: new Date(),
+        patient: { firstName: 'Amos', lastName: 'Kiptoo', patientCode: 'ACI-2091', phoneNumber: '+254798765432' },
+        department: { name: 'General' },
+        encounter: { id: 'enc-2', status: 'WAITING', assignedDoctor: null },
+      },
+    ]);
+
+    const res = await withCookie(request(buildApp()).get('/checkins/today'));
+
+    expect(res.body.checkIns[0]).toMatchObject({ assignedDoctorName: null });
   });
 });
 

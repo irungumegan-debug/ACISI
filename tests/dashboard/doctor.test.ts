@@ -90,7 +90,7 @@ describe('GET /doctor/queue', () => {
     const res = await withCookie(request(buildApp()).get('/doctor/queue'));
 
     expect(res.status).toBe(200);
-    expect(mockGetQueue).toHaveBeenCalledWith('clinic-1', 'dept-1');
+    expect(mockGetQueue).toHaveBeenCalledWith('clinic-1', 'dept-1', 'staff-1');
     expect(res.body.queue).toHaveLength(1);
   });
 });

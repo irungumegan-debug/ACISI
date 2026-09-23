@@ -36,10 +36,10 @@ beforeEach(() => {
 });
 
 describe('getDoctorQueue', () => {
-  it('queries scoped to the given clinic and department, only WAITING/IN_CONSULTATION', async () => {
+  it('queries scoped to the given clinic and department, only WAITING/IN_CONSULTATION, and only this doctor\'s own or unassigned encounters', async () => {
     mockFindMany.mockResolvedValue([]);
 
-    await getDoctorQueue('clinic-A', 'dept-1');
+    await getDoctorQueue('clinic-A', 'dept-1', 'staff-1');
 
     expect(mockFindMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -47,6 +47,7 @@ describe('getDoctorQueue', () => {
           clinicId: 'clinic-A',
           status: { in: ['WAITING', 'IN_CONSULTATION'] },
           checkIn: { departmentId: 'dept-1' },
+          OR: [{ assignedDoctorId: 'staff-1' }, { assignedDoctorId: null }],
         },
       }),
     );
