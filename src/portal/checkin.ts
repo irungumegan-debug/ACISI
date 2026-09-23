@@ -4,8 +4,9 @@ import { z } from 'zod';
 import { prisma } from '../db/prisma';
 import { requirePatientSession, AuthenticatedPatientRequest } from './auth';
 import { initiateCheckIn } from '../services/checkInService';
-import { getPortableHistory } from '../services/patientService';
+import { getOwnVisitHistory } from '../services/patientService';
 import { recordAuditEvent } from '../services/auditService';
+import { renderVisitRecordPdf } from '../services/visitRecordDocument';
 
 export const portalCheckinRouter = Router();
 export const portalRecordsRouter = Router();
@@ -68,7 +69,7 @@ portalCheckinRouter.post('/', async (req, res) => {
 portalRecordsRouter.get('/', async (req, res) => {
   const { patientId } = (req as AuthenticatedPatientRequest).patientSession;
 
-  const history = await getPortableHistory(patientId);
+  const history = await getOwnVisitHistory(patientId);
 
   await recordAuditEvent({
     actorType: 'PATIENT',
@@ -79,4 +80,51 @@ portalRecordsRouter.get('/', async (req, res) => {
   });
 
   res.json({ history });
+});
+
+/**
+ * Downloads a single past visit as a PDF — patient name/ID, clinic,
+ * department, visit date, diagnosis, and prescription, for the patient to
+ * show a pharmacist or keep for their own records. Scoped to the logged-in
+ * patient's own encounters only: a 404 (never a 403, so a mismatched ID
+ * can't be distinguished from one that doesn't exist) covers both a bad ID
+ * and an attempt to reach another patient's visit.
+ */
+portalRecordsRouter.get('/:encounterId/download', async (req, res) => {
+  const { patientId } = (req as unknown as AuthenticatedPatientRequest).patientSession;
+
+  const encounter = await prisma.encounter.findFirst({
+    where: { id: req.params.encounterId, patientId },
+    include: { patient: true, clinic: true, checkIn: { include: { department: true } } },
+  });
+
+  if (!encounter) {
+    res.status(404).json({ error: 'Visit record not found' });
+    return;
+  }
+
+  const pdf = await renderVisitRecordPdf({
+    patientName: `${encounter.patient.firstName} ${encounter.patient.lastName}`,
+    patientCode: encounter.patient.patientCode,
+    clinicName: encounter.clinic.name,
+    departmentName: encounter.checkIn.department.name,
+    visitedAt: encounter.createdAt,
+    diagnosis: encounter.diagnosis,
+    prescription: encounter.prescription,
+  });
+
+  await recordAuditEvent({
+    actorType: 'PATIENT',
+    actorId: patientId,
+    action: 'PATIENT_SELF_DOWNLOADED_RECORD',
+    entityType: 'Encounter',
+    entityId: encounter.id,
+  });
+
+  const dateStamp = encounter.createdAt.toISOString().slice(0, 10);
+  res.set({
+    'Content-Type': 'application/pdf',
+    'Content-Disposition': `attachment; filename="ACISI-visit-${dateStamp}.pdf"`,
+  });
+  res.send(pdf);
 });

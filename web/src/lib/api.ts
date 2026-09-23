@@ -142,6 +142,20 @@ export const api = {
   },
 
   getPatientRecords() {
-    return request<{ history: { clinicName: string; visitedAt: string }[] }>('/patients/records');
+    return request<{ history: VisitHistoryEntry[] }>('/patients/records');
+  },
+
+  /** Not a fetch — same-origin browser navigation already carries the session cookie, so this just builds the href for a plain download link. */
+  recordDownloadUrl(encounterId: string) {
+    return `/api/patients/records/${encodeURIComponent(encounterId)}/download`;
   },
 };
+
+export interface VisitHistoryEntry {
+  encounterId: string;
+  clinicName: string;
+  departmentName: string;
+  visitedAt: string;
+  diagnosis: string | null;
+  prescription: string | null;
+}

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, ApiError, ClinicListItem, DepartmentListItem } from '../lib/api';
+import { api, ApiError, ClinicListItem, DepartmentListItem, VisitHistoryEntry } from '../lib/api';
 import { usePatientAuth } from '../context/PatientAuthContext';
 
 type Tab = 'checkin' | 'records';
@@ -128,7 +128,7 @@ function CheckInPanel({ patientCode }: { patientCode: string }) {
 }
 
 function RecordsPanel({ patientCode }: { patientCode: string }) {
-  const [history, setHistory] = useState<{ clinicName: string; visitedAt: string }[] | null>(null);
+  const [history, setHistory] = useState<VisitHistoryEntry[] | null>(null);
 
   useEffect(() => {
     api.getPatientRecords().then((res) => setHistory(res.history));
@@ -147,10 +147,24 @@ function RecordsPanel({ patientCode }: { patientCode: string }) {
           <p style={{ color: 'var(--ink-soft)', fontSize: 13.5 }}>No visits on record yet.</p>
         ) : (
           <div className="timeline">
-            {history.map((h, i) => (
-              <div className="t-entry" key={i}>
-                <div className="t-date">{new Date(h.visitedAt).toLocaleDateString()}</div>
-                <div className="t-body">{h.clinicName}</div>
+            {history.map((h) => (
+              <div className="t-entry" key={h.encounterId}>
+                <div className="t-date">
+                  {new Date(h.visitedAt).toLocaleDateString()}
+                  <span className="t-dept">{h.departmentName}</span>
+                </div>
+                <div className="t-body">
+                  <b>{h.clinicName}</b>
+                  <p style={{ margin: '6px 0 0' }}>
+                    <b>Diagnosis / notes:</b> {h.diagnosis || 'Not recorded'}
+                  </p>
+                  <p style={{ margin: '4px 0 0' }}>
+                    <b>Prescription:</b> {h.prescription || 'Not recorded'}
+                  </p>
+                  <a className="btn btn-secondary" style={{ marginTop: 10 }} href={api.recordDownloadUrl(h.encounterId)} download>
+                    Download
+                  </a>
+                </div>
               </div>
             ))}
           </div>
