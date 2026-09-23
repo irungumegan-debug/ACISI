@@ -20,7 +20,8 @@
     "prisma:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "prisma:seed": "ts-node prisma/seed.ts",
-    "dev:mark-paid": "ts-node scripts/devMarkCheckInPaid.ts"
+    "dev:mark-paid": "ts-node scripts/devMarkCheckInPaid.ts",
+    "reset-staff-pin": "ts-node scripts/resetStaffPin.ts"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"
