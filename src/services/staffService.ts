@@ -107,6 +107,13 @@ export async function findActiveStaffByCode(staffCode: string): Promise<Staff | 
   return staff;
 }
 
+/** Same as findActiveStaffByCode, but by internal id — for callers (e.g. a logged-in session) that already have the id, not the code. */
+export async function findActiveStaffById(staffId: string): Promise<Staff | null> {
+  const staff = await prisma.staff.findUnique({ where: { id: staffId } });
+  if (!staff || !staff.isActive) return null;
+  return staff;
+}
+
 /** Same as findActiveStaffByCode, but also loads the clinic — for the dashboard/USSD login, which needs the clinic name for the session/UI. */
 export async function findActiveStaffWithClinicByCode(
   staffCode: string,
@@ -119,8 +126,13 @@ export async function findActiveStaffWithClinicByCode(
   return staff;
 }
 
+/** Pure PIN check, no audit side effect — callers record their own accountability event for whatever this comparison means to them (a login attempt, a doctor signing a consultation, etc). */
+export async function comparePin(staff: Staff, pin: string): Promise<boolean> {
+  return bcrypt.compare(pin, staff.pinHash);
+}
+
 export async function verifyStaffPin(staff: Staff, pin: string): Promise<boolean> {
-  const isValid = await bcrypt.compare(pin, staff.pinHash);
+  const isValid = await comparePin(staff, pin);
   await recordAuditEvent({
     actorType: 'STAFF',
     actorId: staff.id,

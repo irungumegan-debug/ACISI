@@ -23,6 +23,12 @@ jest.mock('../../src/services/encounterService', () => ({
       this.name = 'EncounterNotConsultableError';
     }
   },
+  InvalidPinError: class InvalidPinError extends Error {
+    constructor() {
+      super('Incorrect PIN. Please try again.');
+      this.name = 'InvalidPinError';
+    }
+  },
 }));
 
 import { loadDashboardSession, SESSION_COOKIE_NAME } from '../../src/dashboard/session';
@@ -31,6 +37,7 @@ import {
   getEncounterForDoctor,
   submitConsultation,
   EncounterNotAccessibleError,
+  InvalidPinError,
 } from '../../src/services/encounterService';
 import { doctorRouter } from '../../src/dashboard/doctor';
 
@@ -124,20 +131,49 @@ describe('POST /doctor/encounters/:id/consult', () => {
     expect(mockSubmitConsult).not.toHaveBeenCalled();
   });
 
-  it('submits the consultation and moves the encounter to READY_FOR_CHECKOUT', async () => {
+  it('rejects a missing PIN — signing is not optional', async () => {
+    mockLoadSession.mockResolvedValue(DOCTOR_SESSION);
+    const res = await withCookie(
+      request(buildApp()).post('/doctor/encounters/enc-1/consult').send({ diagnosis: 'Flu', prescription: 'Paracetamol 500mg' }),
+    );
+    expect(res.status).toBe(400);
+    expect(mockSubmitConsult).not.toHaveBeenCalled();
+  });
+
+  it('submits the consultation, including the signing PIN, and moves the encounter to READY_FOR_CHECKOUT', async () => {
     mockLoadSession.mockResolvedValue(DOCTOR_SESSION);
     mockSubmitConsult.mockResolvedValue({ id: 'enc-1', status: 'READY_FOR_CHECKOUT' });
 
     const res = await withCookie(
       request(buildApp())
         .post('/doctor/encounters/enc-1/consult')
-        .send({ diagnosis: 'Flu', prescription: 'Paracetamol 500mg' }),
+        .send({ diagnosis: 'Flu', prescription: 'Paracetamol 500mg', pin: '1234' }),
     );
 
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('READY_FOR_CHECKOUT');
     expect(mockSubmitConsult).toHaveBeenCalledWith(
-      expect.objectContaining({ encounterId: 'enc-1', clinicId: 'clinic-1', departmentId: 'dept-1', staffId: 'staff-1' }),
+      expect.objectContaining({
+        encounterId: 'enc-1',
+        clinicId: 'clinic-1',
+        departmentId: 'dept-1',
+        staffId: 'staff-1',
+        pin: '1234',
+      }),
     );
+  });
+
+  it('returns 401 when the signing PIN is wrong, without the frontend losing anything but the PIN field', async () => {
+    mockLoadSession.mockResolvedValue(DOCTOR_SESSION);
+    mockSubmitConsult.mockRejectedValue(new InvalidPinError());
+
+    const res = await withCookie(
+      request(buildApp())
+        .post('/doctor/encounters/enc-1/consult')
+        .send({ diagnosis: 'Flu', prescription: 'Paracetamol 500mg', pin: 'wrong' }),
+    );
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('Incorrect PIN. Please try again.');
   });
 });

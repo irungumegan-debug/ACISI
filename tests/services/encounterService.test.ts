@@ -7,16 +7,19 @@ jest.mock('../../src/db/prisma', () => ({
 
 jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
 jest.mock('../../src/services/patientService', () => ({ getScopedHistory: jest.fn() }));
+jest.mock('../../src/services/staffService', () => ({ findActiveStaffById: jest.fn(), comparePin: jest.fn() }));
 jest.mock('../../src/jobs/queue', () => ({ enqueueVisitSummarySms: jest.fn() }));
 
 import { prisma } from '../../src/db/prisma';
 import { recordAuditEvent } from '../../src/services/auditService';
 import { getScopedHistory } from '../../src/services/patientService';
+import { findActiveStaffById, comparePin } from '../../src/services/staffService';
 import { enqueueVisitSummarySms } from '../../src/jobs/queue';
 import {
   EncounterNotAccessibleError,
   EncounterNotConsultableError,
   EncounterNotReadyForCheckoutError,
+  InvalidPinError,
   checkoutEncounter,
   getDoctorQueue,
   getEncounterForDoctor,
@@ -29,7 +32,11 @@ const mockUpdate = prisma.encounter.update as jest.Mock;
 const mockFindPatient = (prisma as unknown as { patient: { findUniqueOrThrow: jest.Mock } }).patient.findUniqueOrThrow;
 const mockRecordAudit = recordAuditEvent as jest.Mock;
 const mockGetScopedHistory = getScopedHistory as jest.Mock;
+const mockFindActiveStaffById = findActiveStaffById as jest.Mock;
+const mockComparePin = comparePin as jest.Mock;
 const mockEnqueueVisitSms = enqueueVisitSummarySms as jest.Mock;
+
+const DOCTOR_STAFF = { id: 'staff-1', name: 'Dr. Amani Wambui', pinHash: 'hashed' };
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -109,8 +116,10 @@ describe('submitConsultation', () => {
         staffId: 'staff-1',
         diagnosis: 'Flu',
         prescription: 'Paracetamol',
+        pin: '1234',
       }),
     ).rejects.toThrow(EncounterNotAccessibleError);
+    expect(mockFindActiveStaffById).not.toHaveBeenCalled();
   });
 
   it('rejects an encounter already past consultation (READY_FOR_CHECKOUT/DONE)', async () => {
@@ -124,12 +133,58 @@ describe('submitConsultation', () => {
         staffId: 'staff-1',
         diagnosis: 'Flu',
         prescription: 'Paracetamol',
+        pin: '1234',
       }),
     ).rejects.toThrow(EncounterNotConsultableError);
+    expect(mockFindActiveStaffById).not.toHaveBeenCalled();
   });
 
-  it('moves a valid encounter to READY_FOR_CHECKOUT without touching payment/SMS', async () => {
+  it('rejects a wrong PIN — this IS the signing gate, so nothing is persisted and a CONSULTATION_SIGN_FAILED event is recorded', async () => {
     mockFindFirst.mockResolvedValue({ id: 'enc-1', status: 'IN_CONSULTATION' });
+    mockFindActiveStaffById.mockResolvedValue(DOCTOR_STAFF);
+    mockComparePin.mockResolvedValue(false);
+
+    await expect(
+      submitConsultation({
+        encounterId: 'enc-1',
+        clinicId: 'clinic-A',
+        departmentId: 'dept-1',
+        staffId: 'staff-1',
+        diagnosis: 'Flu',
+        prescription: 'Paracetamol',
+        pin: 'wrong',
+      }),
+    ).rejects.toThrow(InvalidPinError);
+
+    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mockRecordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'CONSULTATION_SIGN_FAILED', entityId: 'enc-1', staffId: 'staff-1' }),
+    );
+  });
+
+  it('rejects when the signing staff record cannot be found (e.g. deactivated), same as a wrong PIN', async () => {
+    mockFindFirst.mockResolvedValue({ id: 'enc-1', status: 'IN_CONSULTATION' });
+    mockFindActiveStaffById.mockResolvedValue(null);
+
+    await expect(
+      submitConsultation({
+        encounterId: 'enc-1',
+        clinicId: 'clinic-A',
+        departmentId: 'dept-1',
+        staffId: 'staff-1',
+        diagnosis: 'Flu',
+        prescription: 'Paracetamol',
+        pin: '1234',
+      }),
+    ).rejects.toThrow(InvalidPinError);
+    expect(mockComparePin).not.toHaveBeenCalled();
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it('on a correct PIN, moves a valid encounter to READY_FOR_CHECKOUT, records CONSULTATION_SIGNED, and never touches payment/SMS', async () => {
+    mockFindFirst.mockResolvedValue({ id: 'enc-1', status: 'IN_CONSULTATION' });
+    mockFindActiveStaffById.mockResolvedValue(DOCTOR_STAFF);
+    mockComparePin.mockResolvedValue(true);
     mockUpdate.mockResolvedValue({ id: 'enc-1', status: 'READY_FOR_CHECKOUT' });
 
     await submitConsultation({
@@ -139,10 +194,15 @@ describe('submitConsultation', () => {
       staffId: 'staff-1',
       diagnosis: 'Flu',
       prescription: 'Paracetamol',
+      pin: '1234',
     });
 
+    expect(mockComparePin).toHaveBeenCalledWith(DOCTOR_STAFF, '1234');
     expect(mockUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: 'READY_FOR_CHECKOUT' }) }),
+    );
+    expect(mockRecordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'CONSULTATION_SIGNED', entityId: 'enc-1', staffId: 'staff-1' }),
     );
     expect(mockEnqueueVisitSms).not.toHaveBeenCalled();
   });
