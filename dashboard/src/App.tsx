@@ -18,6 +18,10 @@ function HomeRedirect() {
 
 // Matches vite.config.ts's base: only prefixed in production, where this
 // app is served under /console rather than at the dev server's own root.
+// (Cache-busting note: if you're staring at this after a "No routes matched
+// /console/..." error in production, check whether the host actually
+// rebuilt this file rather than assuming the logic below is wrong — see
+// the basename value baked into the deployed bundle before touching this.)
 const basename = import.meta.env.PROD ? '/console' : '/';
 
 export function App() {
