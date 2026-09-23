@@ -1,7 +1,6 @@
 import { NextFunction, Request, Response, Router } from 'express';
 import { z } from 'zod';
 import { redis } from '../config/redis';
-import { env } from '../config/env';
 import { LOGIN_RATE_LIMIT_MAX_ATTEMPTS, LOGIN_RATE_LIMIT_WINDOW_SECONDS, DASHBOARD_SESSION_TTL_SECONDS } from '../config/constants';
 import { findActiveStaffWithClinicByCode, verifyStaffPin } from '../services/staffService';
 import {
@@ -82,7 +81,11 @@ authRouter.post('/login', async (req, res) => {
 
   res.cookie(SESSION_COOKIE_NAME, token, {
     httpOnly: true,
-    secure: env.NODE_ENV === 'production',
+    // req.secure (not env.NODE_ENV, which Railway never sets to
+    // 'production') reflects whether this request actually arrived over
+    // HTTPS, via the trust proxy setting in app.ts honoring
+    // X-Forwarded-Proto from the platform's TLS-terminating edge proxy.
+    secure: req.secure,
     sameSite: 'lax',
     maxAge: DASHBOARD_SESSION_TTL_SECONDS * 1000,
   });

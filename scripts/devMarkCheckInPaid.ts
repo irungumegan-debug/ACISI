@@ -13,8 +13,13 @@ import { env } from '../src/config/env';
 import { prisma } from '../src/db/prisma';
 import { devMarkCheckInPaid } from '../src/services/checkInService';
 
-if (env.NODE_ENV === 'production') {
-  console.error('devMarkCheckInPaid is a dev-only script and cannot run with NODE_ENV=production.');
+// NODE_ENV alone isn't a reliable guard: some hosts (Railway among them)
+// never set it to 'production' even on a real deployment. MPESA_ENV is the
+// signal that actually matters here — it's the operator's own explicit
+// declaration that this deployment is configured to move real money through
+// the real M-Pesa API, which is exactly what this script must never bypass.
+if (env.NODE_ENV === 'production' || env.MPESA_ENV === 'production') {
+  console.error('devMarkCheckInPaid is a dev-only script and cannot run against a production deployment.');
   process.exit(1);
 }
 
