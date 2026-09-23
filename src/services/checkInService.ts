@@ -176,25 +176,32 @@ export async function applyPaymentResult(parsed: ParsedStkCallback, rawPayload: 
 
 export class CheckInNotPendingError extends Error {
   constructor() {
-    super('This check-in is not awaiting payment');
+    super('This check-in has already been paid or cancelled');
     this.name = 'CheckInNotPendingError';
   }
 }
 
 /**
- * Real, permanent, audited manual payment confirmation — for clinics that
- * are bank-only or take payment through their own till directly, without an
- * M-Pesa STK push. Never bypasses the STK flow for a check-in that already
- * has one in progress; only usable while still PENDING_PAYMENT. Scoped to
- * the confirming staff member's own clinic by the caller (dashboard route),
- * same as every other staff-facing check-in action.
+ * Real, permanent, audited manual confirmation of ACISI's own check-in fee
+ * — a flat platform fee patients pay to use ACISI at all, entirely separate
+ * from however a clinic collects its own consultation fee from the patient.
+ * Exists so staff can rescue a check-in when the automated M-Pesa STK flow
+ * didn't get the patient paid: it never even started, Daraja had an off
+ * moment, the patient's balance was short, a network hiccup, a mistyped
+ * number — any of that can happen occasionally for any patient at any
+ * clinic, not just ones with unusual payment setups. Usable while
+ * PENDING_PAYMENT (STK still in flight/never resolved) or FAILED (STK
+ * resolved unsuccessfully) — never once a check-in is already PAID or
+ * CANCELLED. Scoped to the confirming staff member's own clinic by the
+ * caller (dashboard route), same as every other staff-facing check-in
+ * action.
  */
 export async function confirmCheckInPaidManually(checkInId: string, clinicId: string, staffId: string): Promise<CheckIn> {
   const checkIn = await prisma.checkIn.findFirst({ where: { id: checkInId, clinicId } });
   if (!checkIn) {
     throw new Error('Check-in not found');
   }
-  if (checkIn.status !== 'PENDING_PAYMENT') {
+  if (checkIn.status !== 'PENDING_PAYMENT' && checkIn.status !== 'FAILED') {
     throw new CheckInNotPendingError();
   }
 

@@ -40,12 +40,29 @@ beforeEach(() => {
   });
 });
 
-describe('confirmCheckInPaidManually (Encounter creation carries the automatic doctor assignment)', () => {
-  it('rejects a check-in already past PENDING_PAYMENT', async () => {
+describe('confirmCheckInPaidManually', () => {
+  it('rejects a check-in that is already PAID', async () => {
     mockFindFirstCheckIn.mockResolvedValue({ ...PENDING_CHECK_IN, status: 'PAID' });
 
     await expect(confirmCheckInPaidManually('ci-1', 'clinic-A', 'staff-1')).rejects.toThrow(CheckInNotPendingError);
     expect(mockAssignDoctor).not.toHaveBeenCalled();
+  });
+
+  it('rejects a check-in that is CANCELLED', async () => {
+    mockFindFirstCheckIn.mockResolvedValue({ ...PENDING_CHECK_IN, status: 'CANCELLED' });
+
+    await expect(confirmCheckInPaidManually('ci-1', 'clinic-A', 'staff-1')).rejects.toThrow(CheckInNotPendingError);
+    expect(mockAssignDoctor).not.toHaveBeenCalled();
+  });
+
+  it('rescues a check-in whose automated M-Pesa STK push FAILED — a resilience path for any patient at any clinic, not just PENDING_PAYMENT', async () => {
+    mockFindFirstCheckIn.mockResolvedValue({ ...PENDING_CHECK_IN, status: 'FAILED' });
+    mockAssignDoctor.mockResolvedValue('doc-1');
+
+    const result = await confirmCheckInPaidManually('ci-1', 'clinic-A', 'staff-1');
+
+    expect(result.status).toBe('PAID');
+    expect(mockCreateEncounter).toHaveBeenCalled();
   });
 
   it("assigns a doctor via doctorAssignmentService using the check-in's own clinic and department, and stores it on the new Encounter", async () => {

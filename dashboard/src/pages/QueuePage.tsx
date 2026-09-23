@@ -4,6 +4,7 @@ import { api, ApiError, QueueItem, subscribeToQueue } from '../lib/api';
 
 const STATUS_LABEL: Record<string, string> = {
   PENDING_PAYMENT: 'Awaiting payment',
+  FAILED: 'Payment failed',
   WAITING: 'Waiting',
   IN_CONSULTATION: 'With doctor',
   READY_FOR_CHECKOUT: 'Ready for checkout',
@@ -12,14 +13,20 @@ const STATUS_LABEL: Record<string, string> = {
 
 const STATUS_CLASS: Record<string, string> = {
   PENDING_PAYMENT: 'bg-amber-100 text-amber-800',
+  FAILED: 'bg-red-100 text-red-800',
   WAITING: 'bg-amber-100 text-amber-800',
   IN_CONSULTATION: 'bg-sky-100 text-sky-800',
   READY_FOR_CHECKOUT: 'bg-slate-200 text-slate-800',
   DONE: 'bg-slate-100 text-slate-500',
 };
 
+/** Payment isn't resolved (still pending, or failed and awaiting a manual rescue) — the encounter, if any, hasn't started yet. */
+function isUnresolvedPayment(item: QueueItem): boolean {
+  return item.checkInStatus === 'PENDING_PAYMENT' || item.checkInStatus === 'FAILED';
+}
+
 function displayStatus(item: QueueItem): string {
-  return item.checkInStatus === 'PENDING_PAYMENT' ? 'PENDING_PAYMENT' : (item.encounterStatus ?? 'WAITING');
+  return isUnresolvedPayment(item) ? item.checkInStatus : (item.encounterStatus ?? 'WAITING');
 }
 
 export function QueuePage() {
@@ -100,7 +107,7 @@ export function QueuePage() {
                 </span>
                 <span className="w-16 shrink-0 text-right text-sm text-slate-500">KES {item.amountKes}</span>
                 <div className="w-32 shrink-0 text-right">
-                  {item.checkInStatus === 'PENDING_PAYMENT' && (
+                  {isUnresolvedPayment(item) && (
                     <button
                       onClick={() => void handleConfirmPayment(item.checkInId)}
                       disabled={busyId === item.checkInId}
