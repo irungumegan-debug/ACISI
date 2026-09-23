@@ -1,6 +1,7 @@
 import { FormEvent, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
+import { usePatientAuth } from '../context/PatientAuthContext';
 
 type Step = { kind: 'picker' } | { kind: 'patient' } | { kind: 'doctor' } | { kind: 'staff' } | { kind: 'forgot-pin' };
 
@@ -55,6 +56,7 @@ function RolePicker({ onPick }: { onPick: (kind: 'patient' | 'doctor' | 'staff')
 
 function PatientLoginForm({ onBack, onForgotPin }: { onBack: () => void; onForgotPin: () => void }) {
   const navigate = useNavigate();
+  const { login } = usePatientAuth();
   const [identifier, setIdentifier] = useState('');
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -65,7 +67,10 @@ function PatientLoginForm({ onBack, onForgotPin }: { onBack: () => void; onForgo
     setError(null);
     setSubmitting(true);
     try {
-      await api.patientLogin(identifier, pin);
+      // login() updates PatientAuthContext's session itself — required
+      // before navigating client-side, since PatientLayout's guard reads
+      // that context state, not a fresh fetch.
+      await login(identifier, pin);
       navigate('/patient', { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.');
