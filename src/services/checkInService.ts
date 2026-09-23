@@ -6,7 +6,7 @@ import { recordAuditEvent } from './auditService';
 import { initiateStkPush } from '../mpesa/stkPush';
 import { ParsedStkCallback } from '../mpesa/types';
 import { enqueueSmsReceipt, scheduleStkStatusCheck } from '../jobs/queue';
-import { publishCheckInPaid } from './realtimeEvents';
+import { publishCheckInFailed, publishCheckInPaid } from './realtimeEvents';
 import { assignDoctorForCheckIn } from './doctorAssignmentService';
 
 interface InitiateCheckInInput {
@@ -79,6 +79,12 @@ export async function initiateCheckIn(input: InitiateCheckInInput): Promise<Init
   } catch (err) {
     logger.error({ err, checkInId: checkIn.id }, 'STK push failed to initiate; marking check-in FAILED');
     const failed = await prisma.checkIn.update({ where: { id: checkIn.id }, data: { status: 'FAILED' } });
+    // Without this, a staff member already watching the live queue would
+    // never see this arrival until they manually reload the page — the row
+    // is created and visible on a fresh load either way, but nothing tells
+    // an already-open dashboard to refetch on a failure the way it does on
+    // a successful payment (finalizePaidCheckIn's publishCheckInPaid below).
+    publishCheckInFailed({ checkInId: failed.id, clinicId: failed.clinicId });
     return { checkIn: failed, wasAlreadyInitiated: false };
   }
 }
@@ -163,6 +169,7 @@ export async function applyPaymentResult(parsed: ParsedStkCallback, rawPayload: 
   } else {
     await prisma.checkIn.update({ where: { id: checkIn.id }, data: { status: 'FAILED' } });
     await enqueueSmsReceipt({ checkInId: checkIn.id, patientId: checkIn.patientId, succeeded: false });
+    publishCheckInFailed({ checkInId: checkIn.id, clinicId: checkIn.clinicId });
   }
 
   await recordAuditEvent({

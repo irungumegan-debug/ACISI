@@ -27,6 +27,25 @@ export function publishCheckInPaid(event: CheckInPaidEvent): void {
   emitter.emit(channel(event.clinicId), event);
 }
 
+export interface CheckInFailedEvent {
+  checkInId: string;
+  clinicId: string;
+}
+
+/**
+ * Same live-queue channel as publishCheckInPaid, fired instead when a
+ * check-in's M-Pesa STK push fails (never even started, or resolved
+ * unsuccessfully) rather than succeeds. The dashboard's subscription
+ * doesn't distinguish payload shape — any event on this channel just means
+ * "refetch the queue" — so without this, a check-in that fails while a
+ * staff member already has the queue open would never appear until they
+ * manually reload the page, even though the row is created and visible on
+ * a fresh load the whole time.
+ */
+export function publishCheckInFailed(event: CheckInFailedEvent): void {
+  emitter.emit(channel(event.clinicId), event);
+}
+
 export function subscribeCheckInPaid(clinicId: string, listener: (event: CheckInPaidEvent) => void): () => void {
   emitter.on(channel(clinicId), listener);
   return () => emitter.off(channel(clinicId), listener);
