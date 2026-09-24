@@ -1,7 +1,16 @@
 import path from 'node:path';
 import PDFDocument from 'pdfkit';
+import { StaffRole } from '@prisma/client';
 
 const SIGNATURE_FONT_PATH = path.join(__dirname, '../assets/fonts/DancingScript-Regular.woff');
+
+/** Human-readable label for the signature block — there's no separate professional-title field on Staff, so the role is the closest thing to one. */
+const STAFF_ROLE_LABEL: Record<StaffRole, string> = {
+  DOCTOR: 'Doctor',
+  CLINICIAN: 'Clinician',
+  RECEPTIONIST: 'Receptionist',
+  ADMIN: 'Clinic Administrator',
+};
 
 export interface VisitRecordData {
   patientName: string;
@@ -26,6 +35,44 @@ export interface VisitRecordData {
     doctorTitle: string;
     signedAt: Date;
   } | null;
+}
+
+interface EncounterForVisitRecord {
+  createdAt: Date;
+  diagnosis: string | null;
+  prescription: string | null;
+  consultedAt: Date | null;
+  patient: { firstName: string; lastName: string; patientCode: string };
+  clinic: { name: string; county: string | null };
+  checkIn: { department: { name: string } };
+  consultedByStaff: { name: string; role: StaffRole } | null;
+}
+
+/**
+ * Maps an Encounter (with its patient/clinic/department/consultedByStaff
+ * relations loaded) to the plain data renderVisitRecordPdf needs — shared
+ * by every caller that turns a visit into a PDF (the patient portal's own
+ * download, and the checkout-time email) so they can't drift apart on how
+ * a visit's data becomes a document.
+ */
+export function buildVisitRecordDataFromEncounter(encounter: EncounterForVisitRecord): VisitRecordData {
+  return {
+    patientName: `${encounter.patient.firstName} ${encounter.patient.lastName}`,
+    patientCode: encounter.patient.patientCode,
+    clinicName: encounter.clinic.name,
+    clinicCounty: encounter.clinic.county,
+    departmentName: encounter.checkIn.department.name,
+    visitedAt: encounter.createdAt,
+    diagnosis: encounter.diagnosis,
+    prescription: encounter.prescription,
+    // Only present once the doctor has actually signed (submitConsultation
+    // gates reaching this on a re-entered PIN) — consultedAt is that real
+    // signing timestamp, not a stamp applied with no action behind it.
+    signature:
+      encounter.consultedByStaff && encounter.consultedAt
+        ? { doctorName: encounter.consultedByStaff.name, doctorTitle: STAFF_ROLE_LABEL[encounter.consultedByStaff.role], signedAt: encounter.consultedAt }
+        : null,
+  };
 }
 
 /**

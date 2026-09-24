@@ -3,7 +3,11 @@ import { prisma } from '../db/prisma';
 import { recordAuditEvent } from './auditService';
 import { getScopedHistory, ScopedHistoryEntry } from './patientService';
 import { comparePin, findActiveStaffById } from './staffService';
-import { enqueueVisitSummarySms } from '../jobs/queue';
+import { emailConfigured } from '../config/email';
+import { enqueueVisitSummaryEmail, enqueueVisitSummarySms } from '../jobs/queue';
+import { logger } from '../utils/logger';
+
+export type CheckoutDeliveryMethod = 'sms' | 'sms_and_email';
 
 export interface DoctorQueueItem {
   encounterId: string;
@@ -218,13 +222,28 @@ export class EncounterNotReadyForCheckoutError extends Error {
 }
 
 /**
- * Front-desk-only action: completes the visit and triggers the SMS visit
- * summary (diagnosis/prescription). Deliberately separate from the doctor's
- * consultation submission — a doctor finishing a consult never checks a
- * patient out or sends anything by itself.
+ * Front-desk-only action: completes the visit and triggers the visit
+ * summary. Deliberately separate from the doctor's consultation submission
+ * — a doctor finishing a consult never checks a patient out or sends
+ * anything by itself.
+ *
+ * The SMS summary is unconditional — it fires exactly as it always has,
+ * regardless of deliveryMethod. Email is strictly additive: only enqueued
+ * when staff explicitly asked for it AND the patient actually has an email
+ * on file (re-checked here, not just trusted from the request, in case it
+ * changed since the checkout screen loaded) AND email delivery is
+ * configured at all. None of that ever gates or affects the SMS send.
  */
-export async function checkoutEncounter(encounterId: string, clinicId: string, staffId: string): Promise<Encounter> {
-  const encounter = await prisma.encounter.findFirst({ where: { id: encounterId, clinicId } });
+export async function checkoutEncounter(
+  encounterId: string,
+  clinicId: string,
+  staffId: string,
+  deliveryMethod: CheckoutDeliveryMethod = 'sms',
+): Promise<Encounter> {
+  const encounter = await prisma.encounter.findFirst({
+    where: { id: encounterId, clinicId },
+    include: { patient: { select: { email: true } } },
+  });
   if (!encounter) {
     throw new Error('Visit not found');
   }
@@ -244,9 +263,21 @@ export async function checkoutEncounter(encounterId: string, clinicId: string, s
     action: 'ENCOUNTER_CHECKED_OUT',
     entityType: 'Encounter',
     entityId: encounter.id,
+    metadata: { deliveryMethod },
   });
 
   await enqueueVisitSummarySms({ encounterId: encounter.id });
+
+  if (deliveryMethod === 'sms_and_email') {
+    if (encounter.patient.email && emailConfigured) {
+      await enqueueVisitSummaryEmail({ encounterId: encounter.id });
+    } else {
+      logger.warn(
+        { encounterId: encounter.id, hasEmail: !!encounter.patient.email, emailConfigured },
+        'Email delivery requested at checkout but skipped — no patient email on file, or email is not configured',
+      );
+    }
+  }
 
   return updated;
 }

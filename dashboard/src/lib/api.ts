@@ -53,6 +53,7 @@ export interface QueueItem {
   patientName: string;
   patientCode: string;
   phoneNumber: string;
+  patientEmail: string | null;
   departmentName: string;
   amountKes: number;
   checkInStatus: CheckInStatus;
@@ -61,6 +62,8 @@ export interface QueueItem {
   paidAt: string | null;
   createdAt: string;
 }
+
+export type CheckoutDeliveryMethod = 'sms' | 'sms_and_email';
 
 export interface DoctorQueueItem {
   encounterId: string;
@@ -143,7 +146,7 @@ export const api = {
   },
 
   getTodayCheckIns() {
-    return request<{ checkIns: QueueItem[] }>('/checkins/today');
+    return request<{ checkIns: QueueItem[]; emailDeliveryAvailable: boolean }>('/checkins/today');
   },
 
   getInviteCode() {
@@ -171,9 +174,10 @@ export const api = {
     });
   },
 
-  checkoutCheckIn(checkInId: string) {
+  checkoutCheckIn(checkInId: string, deliveryMethod: CheckoutDeliveryMethod = 'sms') {
     return request<{ encounterId: string; status: EncounterStatus }>(`/checkins/${checkInId}/checkout`, {
       method: 'POST',
+      body: JSON.stringify({ deliveryMethod }),
     });
   },
 

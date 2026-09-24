@@ -41,6 +41,7 @@
     "pdfkit": "^0.20.2",
     "pino": "^9.4.0",
     "pino-http": "^10.3.0",
+    "resend": "^6.28.1",
     "zod": "^3.23.8"
   },
   "devDependencies": {

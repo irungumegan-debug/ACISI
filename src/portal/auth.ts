@@ -62,6 +62,10 @@ const registerSchema = z.object({
   sex: z.enum(['MALE', 'FEMALE', 'OTHER', 'UNKNOWN']).optional(),
   pin: z.string().regex(PIN_PATTERN, 'PIN must be 4-6 digits'),
   crossClinicConsent: z.boolean().optional(),
+  // Optional — many patients won't have one, and nothing else in the
+  // product depends on it (no email login, no email OTP). Only ever used
+  // later for the staff-initiated visit-summary email at checkout.
+  email: z.string().email('Please enter a valid email address').optional().or(z.literal('')),
 });
 
 portalAuthRouter.post('/register', async (req, res) => {
@@ -91,6 +95,7 @@ portalAuthRouter.post('/register', async (req, res) => {
     consentChannel: 'PORTAL',
     crossClinicConsent: parsed.data.crossClinicConsent ?? false,
     pin: parsed.data.pin,
+    email: parsed.data.email || undefined,
   }).catch((err) => {
     if (err?.code === 'P2002') return null;
     throw err;

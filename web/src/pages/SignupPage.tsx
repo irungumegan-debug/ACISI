@@ -82,6 +82,7 @@ function PatientSignupForm({ onBack }: { onBack: () => void }) {
   const [fullName, setFullName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState('');
+  const [email, setEmail] = useState('');
   const [pin, setPin] = useState('');
   const [crossClinicConsent, setCrossClinicConsent] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -104,6 +105,7 @@ function PatientSignupForm({ onBack }: { onBack: () => void }) {
         lastName: parts.slice(1).join(' '),
         phoneNumber,
         dateOfBirth: dateOfBirth || undefined,
+        email: email || undefined,
         pin,
         crossClinicConsent,
       });
@@ -140,6 +142,15 @@ function PatientSignupForm({ onBack }: { onBack: () => void }) {
       <div className="field">
         <label>Date of birth</label>
         <input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} />
+      </div>
+      <div className="field">
+        <label>Email (optional)</label>
+        <input
+          type="email"
+          placeholder="you@example.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
       </div>
       <div className="field">
         <label>Create a PIN</label>

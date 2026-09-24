@@ -131,6 +131,39 @@ describe('GET /checkins/today', () => {
 
     expect(res.body.checkIns[0]).toMatchObject({ assignedDoctorName: null });
   });
+
+  it("includes each row's patientEmail (null when not on file) and a top-level emailDeliveryAvailable flag", async () => {
+    mockFindManyCheckIns.mockResolvedValue([
+      {
+        id: 'ci-3',
+        patientId: 'p-3',
+        amountKes: '50',
+        status: 'PAID',
+        paidAt: new Date(),
+        createdAt: new Date(),
+        patient: { firstName: 'Jane', lastName: 'Wanjiru', patientCode: 'ACI-1042', phoneNumber: '+254712345678', email: 'jane@example.com' },
+        department: { name: 'General' },
+        encounter: null,
+      },
+      {
+        id: 'ci-4',
+        patientId: 'p-4',
+        amountKes: '50',
+        status: 'PAID',
+        paidAt: new Date(),
+        createdAt: new Date(),
+        patient: { firstName: 'Amos', lastName: 'Kiptoo', patientCode: 'ACI-2091', phoneNumber: '+254798765432', email: null },
+        department: { name: 'General' },
+        encounter: null,
+      },
+    ]);
+
+    const res = await withCookie(request(buildApp()).get('/checkins/today'));
+
+    expect(typeof res.body.emailDeliveryAvailable).toBe('boolean');
+    expect(res.body.checkIns[0]).toMatchObject({ patientEmail: 'jane@example.com' });
+    expect(res.body.checkIns[1]).toMatchObject({ patientEmail: null });
+  });
 });
 
 describe('POST /checkins/:id/confirm-payment', () => {
@@ -163,15 +196,32 @@ describe('POST /checkins/:id/checkout', () => {
     expect(mockCheckout).not.toHaveBeenCalled();
   });
 
-  it('checks the visit out once ready', async () => {
+  it("checks the visit out once ready, defaulting to SMS-only delivery when no method is given", async () => {
     mockFindFirstEncounter.mockResolvedValue({ id: 'enc-1' });
     mockCheckout.mockResolvedValue({ id: 'enc-1', status: 'DONE' });
 
     const res = await withCookie(request(buildApp()).post('/checkins/ci-1/checkout'));
 
     expect(res.status).toBe(200);
-    expect(mockCheckout).toHaveBeenCalledWith('enc-1', 'clinic-1', 'staff-1');
+    expect(mockCheckout).toHaveBeenCalledWith('enc-1', 'clinic-1', 'staff-1', 'sms');
     expect(res.body.status).toBe('DONE');
+  });
+
+  it('passes through an explicit sms_and_email delivery choice', async () => {
+    mockFindFirstEncounter.mockResolvedValue({ id: 'enc-1' });
+    mockCheckout.mockResolvedValue({ id: 'enc-1', status: 'DONE' });
+
+    const res = await withCookie(request(buildApp()).post('/checkins/ci-1/checkout').send({ deliveryMethod: 'sms_and_email' }));
+
+    expect(res.status).toBe(200);
+    expect(mockCheckout).toHaveBeenCalledWith('enc-1', 'clinic-1', 'staff-1', 'sms_and_email');
+  });
+
+  it('rejects an invalid delivery method', async () => {
+    const res = await withCookie(request(buildApp()).post('/checkins/ci-1/checkout').send({ deliveryMethod: 'carrier_pigeon' }));
+
+    expect(res.status).toBe(400);
+    expect(mockCheckout).not.toHaveBeenCalled();
   });
 
   it('rejects a visit that is not ready for checkout', async () => {

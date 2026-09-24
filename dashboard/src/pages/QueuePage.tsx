@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, ApiError, QueueItem, subscribeToQueue } from '../lib/api';
+import { api, ApiError, CheckoutDeliveryMethod, QueueItem, subscribeToQueue } from '../lib/api';
 
 const STATUS_LABEL: Record<string, string> = {
   PENDING_PAYMENT: 'Awaiting payment',
@@ -31,12 +31,17 @@ function displayStatus(item: QueueItem): string {
 
 export function QueuePage() {
   const [items, setItems] = useState<QueueItem[]>([]);
+  const [emailDeliveryAvailable, setEmailDeliveryAvailable] = useState(false);
+  const [deliveryChoice, setDeliveryChoice] = useState<Record<string, CheckoutDeliveryMethod>>({});
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
-    return api.getTodayCheckIns().then((res) => setItems(res.checkIns));
+    return api.getTodayCheckIns().then((res) => {
+      setItems(res.checkIns);
+      setEmailDeliveryAvailable(res.emailDeliveryAvailable);
+    });
   }, []);
 
   useEffect(() => {
@@ -73,7 +78,7 @@ export function QueuePage() {
     setBusyId(checkInId);
     setError(null);
     try {
-      await api.checkoutCheckIn(checkInId);
+      await api.checkoutCheckIn(checkInId, deliveryChoice[checkInId] ?? 'sms');
       await refresh();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to check out');
@@ -106,7 +111,7 @@ export function QueuePage() {
                   {STATUS_LABEL[status] ?? status}
                 </span>
                 <span className="w-16 shrink-0 text-right text-sm text-slate-500">KES {item.amountKes}</span>
-                <div className="w-32 shrink-0 text-right">
+                <div className="flex w-44 shrink-0 flex-col items-end gap-1.5">
                   {isUnresolvedPayment(item) && (
                     <button
                       onClick={() => void handleConfirmPayment(item.checkInId)}
@@ -117,13 +122,28 @@ export function QueuePage() {
                     </button>
                   )}
                   {item.encounterStatus === 'READY_FOR_CHECKOUT' && (
-                    <button
-                      onClick={() => void handleCheckout(item.checkInId)}
-                      disabled={busyId === item.checkInId}
-                      className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700 disabled:opacity-50"
-                    >
-                      Checkout
-                    </button>
+                    <>
+                      {emailDeliveryAvailable && item.patientEmail && (
+                        <select
+                          value={deliveryChoice[item.checkInId] ?? 'sms'}
+                          onChange={(e) =>
+                            setDeliveryChoice((prev) => ({ ...prev, [item.checkInId]: e.target.value as CheckoutDeliveryMethod }))
+                          }
+                          disabled={busyId === item.checkInId}
+                          className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-700"
+                        >
+                          <option value="sms">SMS summary only</option>
+                          <option value="sms_and_email">SMS + email PDF</option>
+                        </select>
+                      )}
+                      <button
+                        onClick={() => void handleCheckout(item.checkInId)}
+                        disabled={busyId === item.checkInId}
+                        className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+                      >
+                        Checkout
+                      </button>
+                    </>
                   )}
                 </div>
               </li>

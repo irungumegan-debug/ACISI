@@ -9,7 +9,10 @@ jest.mock('../../src/portal/session', () => ({
 
 jest.mock('../../src/services/patientService', () => ({ getOwnVisitHistory: jest.fn() }));
 jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
-jest.mock('../../src/services/visitRecordDocument', () => ({ renderVisitRecordPdf: jest.fn() }));
+jest.mock('../../src/services/visitRecordDocument', () => ({
+  ...jest.requireActual('../../src/services/visitRecordDocument'),
+  renderVisitRecordPdf: jest.fn(),
+}));
 
 jest.mock('../../src/db/prisma', () => ({
   prisma: { encounter: { findFirst: jest.fn() } },

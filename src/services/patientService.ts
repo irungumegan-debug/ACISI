@@ -49,6 +49,12 @@ interface RegisterPatientInput {
    * the web portal sets one immediately.
    */
   pin?: string;
+  /**
+   * Optional, web-portal-only (USSD has no practical way to collect one).
+   * Used solely for the staff-initiated visit-summary email at checkout —
+   * never for login, never for any other notification.
+   */
+  email?: string;
 }
 
 /**
@@ -70,6 +76,7 @@ export async function registerPatient(input: RegisterPatientInput): Promise<Pati
         lastName: input.lastName,
         dateOfBirth: input.dateOfBirth,
         sex: input.sex,
+        email: input.email,
         pinHash,
       },
     });

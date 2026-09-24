@@ -16,6 +16,10 @@ export interface VisitSummarySmsJobData {
   encounterId: string;
 }
 
+export interface VisitSummaryEmailJobData {
+  encounterId: string;
+}
+
 export const smsReceiptQueue = new Queue<SmsReceiptJobData>('sms-receipts', {
   connection: redisQueueConnection,
 });
@@ -25,6 +29,10 @@ export const stkStatusCheckQueue = new Queue<StkStatusCheckJobData>('stk-status-
 });
 
 export const visitSummarySmsQueue = new Queue<VisitSummarySmsJobData>('visit-summary-sms', {
+  connection: redisQueueConnection,
+});
+
+export const visitSummaryEmailQueue = new Queue<VisitSummaryEmailJobData>('visit-summary-email', {
   connection: redisQueueConnection,
 });
 
@@ -43,6 +51,20 @@ export async function enqueueSmsReceipt(data: SmsReceiptJobData): Promise<void> 
  */
 export async function enqueueVisitSummarySms(data: VisitSummarySmsJobData): Promise<void> {
   await visitSummarySmsQueue.add('send-visit-summary', data, {
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 5000 },
+  });
+}
+
+/**
+ * Only enqueued when staff explicitly chose email delivery at checkout AND
+ * the patient has an email on file — a completely separate queue/worker
+ * from enqueueVisitSummarySms above, so nothing about this path (including
+ * it failing) can ever affect the SMS summary, which fires unconditionally
+ * regardless of this.
+ */
+export async function enqueueVisitSummaryEmail(data: VisitSummaryEmailJobData): Promise<void> {
+  await visitSummaryEmailQueue.add('send-visit-summary-email', data, {
     attempts: 3,
     backoff: { type: 'exponential', delay: 5000 },
   });

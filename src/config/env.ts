@@ -24,6 +24,14 @@ const envSchema = z.object({
 
   CHECKIN_FEE_AMOUNT_KES: z.coerce.number().positive().default(100),
 
+  // --- Email (visit-summary delivery, opt-in at checkout) ---
+  // Both optional, unlike the AT/Daraja vars above: email is a genuinely
+  // optional delivery channel (many patients have none on file, and staff
+  // must actively choose it), so the app must keep working fully — SMS
+  // included — before either of these is ever configured.
+  RESEND_API_KEY: z.string().optional(),
+  EMAIL_FROM_ADDRESS: z.string().optional(),
+
   STAFF_PIN_SALT_ROUNDS: z.coerce.number().int().min(4).max(15).default(10),
 
   USSD_SESSION_TTL_SECONDS: z.coerce.number().int().positive().default(170),
