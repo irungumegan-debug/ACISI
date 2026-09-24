@@ -1,24 +1,15 @@
 import crypto from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
-import { StaffRole } from '@prisma/client';
 import { prisma } from '../db/prisma';
 import { requirePatientSession, AuthenticatedPatientRequest } from './auth';
 import { initiateCheckIn } from '../services/checkInService';
 import { getOwnVisitHistory } from '../services/patientService';
 import { recordAuditEvent } from '../services/auditService';
-import { renderVisitRecordPdf } from '../services/visitRecordDocument';
+import { buildVisitRecordDataFromEncounter, renderVisitRecordPdf } from '../services/visitRecordDocument';
 
 export const portalCheckinRouter = Router();
 export const portalRecordsRouter = Router();
-
-/** Human-readable label for the signature block — there's no separate professional-title field on Staff, so the role is the closest thing to one. */
-const STAFF_ROLE_LABEL: Record<StaffRole, string> = {
-  DOCTOR: 'Doctor',
-  CLINICIAN: 'Clinician',
-  RECEPTIONIST: 'Receptionist',
-  ADMIN: 'Clinic Administrator',
-};
 
 portalCheckinRouter.use(requirePatientSession);
 portalRecordsRouter.use(requirePatientSession);
@@ -112,23 +103,7 @@ portalRecordsRouter.get('/:encounterId/download', async (req, res) => {
     return;
   }
 
-  const pdf = await renderVisitRecordPdf({
-    patientName: `${encounter.patient.firstName} ${encounter.patient.lastName}`,
-    patientCode: encounter.patient.patientCode,
-    clinicName: encounter.clinic.name,
-    clinicCounty: encounter.clinic.county,
-    departmentName: encounter.checkIn.department.name,
-    visitedAt: encounter.createdAt,
-    diagnosis: encounter.diagnosis,
-    prescription: encounter.prescription,
-    // Only present once the doctor has actually signed (submitConsultation
-    // gates reaching this on a re-entered PIN) — consultedAt is that real
-    // signing timestamp, not a stamp applied with no action behind it.
-    signature:
-      encounter.consultedByStaff && encounter.consultedAt
-        ? { doctorName: encounter.consultedByStaff.name, doctorTitle: STAFF_ROLE_LABEL[encounter.consultedByStaff.role], signedAt: encounter.consultedAt }
-        : null,
-  });
+  const pdf = await renderVisitRecordPdf(buildVisitRecordDataFromEncounter(encounter));
 
   await recordAuditEvent({
     actorType: 'PATIENT',

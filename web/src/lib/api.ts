@@ -98,6 +98,7 @@ export const api = {
     dateOfBirth?: string;
     pin: string;
     crossClinicConsent: boolean;
+    email?: string;
   }) {
     return request<PatientSession>('/patients/register', {
       method: 'POST',

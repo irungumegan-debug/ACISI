@@ -121,6 +121,46 @@ describe('POST /patients/register', () => {
     });
     expect(res.status).toBe(409);
   });
+
+  it('registers successfully with no email at all — it stays fully optional', async () => {
+    mockRegisterPatient.mockResolvedValue(PATIENT);
+    const res = await request(buildApp()).post('/patients/register').send({
+      firstName: 'Jane',
+      lastName: 'Wanjiru',
+      phoneNumber: '0712345678',
+      pin: '1234',
+    });
+
+    expect(res.status).toBe(201);
+    expect(mockRegisterPatient).toHaveBeenCalledWith(expect.objectContaining({ email: undefined }));
+  });
+
+  it('passes a provided email through to registerPatient', async () => {
+    mockRegisterPatient.mockResolvedValue(PATIENT);
+    const res = await request(buildApp()).post('/patients/register').send({
+      firstName: 'Jane',
+      lastName: 'Wanjiru',
+      phoneNumber: '0712345678',
+      pin: '1234',
+      email: 'jane@example.com',
+    });
+
+    expect(res.status).toBe(201);
+    expect(mockRegisterPatient).toHaveBeenCalledWith(expect.objectContaining({ email: 'jane@example.com' }));
+  });
+
+  it('rejects a malformed email', async () => {
+    const res = await request(buildApp()).post('/patients/register').send({
+      firstName: 'Jane',
+      lastName: 'Wanjiru',
+      phoneNumber: '0712345678',
+      pin: '1234',
+      email: 'not-an-email',
+    });
+
+    expect(res.status).toBe(400);
+    expect(mockRegisterPatient).not.toHaveBeenCalled();
+  });
 });
 
 describe('POST /patients/login', () => {

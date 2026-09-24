@@ -1,9 +1,11 @@
 import { Router } from 'express';
+import { z } from 'zod';
 import dayjs from 'dayjs';
 import { prisma } from '../db/prisma';
 import { requireStaffSession, AuthenticatedRequest } from './auth';
 import { CheckInNotPendingError, confirmCheckInPaidManually } from '../services/checkInService';
-import { EncounterNotReadyForCheckoutError, checkoutEncounter } from '../services/encounterService';
+import { CheckoutDeliveryMethod, EncounterNotReadyForCheckoutError, checkoutEncounter } from '../services/encounterService';
+import { emailConfigured } from '../config/email';
 
 export const checkinsRouter = Router();
 
@@ -25,13 +27,18 @@ checkinsRouter.get('/today', async (req, res) => {
     where: { clinicId, createdAt: { gte: startOfToday }, status: { in: ['PENDING_PAYMENT', 'PAID', 'FAILED'] } },
     orderBy: { createdAt: 'desc' },
     include: {
-      patient: { select: { firstName: true, lastName: true, patientCode: true, phoneNumber: true } },
+      patient: { select: { firstName: true, lastName: true, patientCode: true, phoneNumber: true, email: true } },
       department: { select: { name: true } },
       encounter: { select: { id: true, status: true, assignedDoctor: { select: { name: true } } } },
     },
   });
 
   res.json({
+    // Whether checkout can even offer email delivery at all — separate
+    // from whether any given patient has an email on file, checked
+    // per-row below. The dashboard only shows the email option when both
+    // are true.
+    emailDeliveryAvailable: emailConfigured,
     checkIns: checkIns.map((c) => ({
       checkInId: c.id,
       encounterId: c.encounter?.id ?? null,
@@ -39,6 +46,7 @@ checkinsRouter.get('/today', async (req, res) => {
       patientName: `${c.patient.firstName} ${c.patient.lastName}`,
       patientCode: c.patient.patientCode,
       phoneNumber: c.patient.phoneNumber,
+      patientEmail: c.patient.email,
       departmentName: c.department.name,
       amountKes: Number(c.amountKes),
       checkInStatus: c.status,
@@ -75,13 +83,23 @@ checkinsRouter.post('/:id/confirm-payment', async (req, res) => {
   }
 });
 
+const checkoutSchema = z.object({ deliveryMethod: z.enum(['sms', 'sms_and_email']).optional() });
+
 /**
- * Completes the visit and triggers the SMS visit summary — only once the
+ * Completes the visit and triggers the visit summary — only once the
  * doctor's consultation has moved the encounter to READY_FOR_CHECKOUT.
  * Keyed by checkInId (front desk's natural unit) even though the state
- * lives on Encounter, since CheckIn:Encounter is 1:1.
+ * lives on Encounter, since CheckIn:Encounter is 1:1. The SMS summary
+ * always fires; deliveryMethod only controls whether email is *also* sent
+ * — see encounterService.checkoutEncounter.
  */
 checkinsRouter.post('/:id/checkout', async (req, res) => {
+  const parsed = checkoutSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid request' });
+    return;
+  }
+
   const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
 
   const encounter = await prisma.encounter.findFirst({ where: { checkInId: req.params.id as string, clinicId } });
@@ -91,7 +109,8 @@ checkinsRouter.post('/:id/checkout', async (req, res) => {
   }
 
   try {
-    const updated = await checkoutEncounter(encounter.id, clinicId, staffId);
+    const deliveryMethod: CheckoutDeliveryMethod = parsed.data.deliveryMethod ?? 'sms';
+    const updated = await checkoutEncounter(encounter.id, clinicId, staffId, deliveryMethod);
     res.json({ encounterId: updated.id, status: updated.status });
   } catch (err) {
     if (err instanceof EncounterNotReadyForCheckoutError) {

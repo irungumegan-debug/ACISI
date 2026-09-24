@@ -167,6 +167,12 @@ model Patient {
   dateOfBirth DateTime?
   sex         Sex         @default(UNKNOWN)
   county      String?
+  /// Optional — collected only via the web portal signup form (not USSD,
+  /// which has no practical way to enter one). Never used for login or any
+  /// notification besides the staff-initiated visit-summary email at
+  /// checkout; no uniqueness constraint since a shared household email is
+  /// a reasonable, expected case.
+  email       String?
   /// bcrypt hash of the patient's chosen numeric PIN. Everyday login
   /// credential; OTP (see Otp model) is reset-only, not primary login.
   /// Null for a patient registered via USSD check-in who has never set one —
