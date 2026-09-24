@@ -38,6 +38,15 @@ enum Sex {
   UNKNOWN
 }
 
+/// An explicit presence correction, layered on top of login-based presence.
+/// Whichever of Staff.lastLoginAt / Staff.presenceOverrideAt is more recent
+/// today decides whether a doctor counts as in — see
+/// staffService.getDoctorPresenceStatus.
+enum StaffPresenceOverride {
+  IN
+  OUT
+}
+
 enum CheckInStatus {
   PENDING_PAYMENT
   PAID
@@ -139,6 +148,18 @@ model Staff {
   departmentId String?
   department   Department? @relation(fields: [departmentId], references: [id])
   isActive    Boolean    @default(true)
+  /// Set on every successful login (DOCTOR role only) — the automatic
+  /// "in today" signal. Compared against presenceOverrideAt (whichever is
+  /// more recent, restricted to today) to decide current presence; see
+  /// staffService.getDoctorPresenceStatus. Not a schedule or a history —
+  /// only today's value is ever meaningful.
+  lastLoginAt DateTime?
+  /// An explicit "mark in" / "mark out" correction, settable by the doctor
+  /// themselves or their clinic admin. Only meaningful when
+  /// presenceOverrideAt falls on today; a stale value from a previous day
+  /// is ignored, not carried forward.
+  presenceOverride   StaffPresenceOverride?
+  presenceOverrideAt DateTime?
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 

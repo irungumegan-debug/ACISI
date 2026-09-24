@@ -11,11 +11,15 @@ import { prisma } from '../../src/db/prisma';
 import { recordAuditEvent } from '../../src/services/auditService';
 import {
   InvalidPinFormatError,
+  StaffIsNotADoctorError,
   StaffNotFoundError,
   comparePin,
+  getDoctorPresenceStatus,
   listClinicStaff,
   resetStaffPinByAdmin,
   resetStaffPinViaConsole,
+  setDoctorPresenceByAdmin,
+  setDoctorPresenceBySelf,
   verifyStaffPin,
 } from '../../src/services/staffService';
 
@@ -60,6 +64,26 @@ describe('verifyStaffPin (login — unchanged behavior after extracting compareP
       expect.objectContaining({ action: 'STAFF_LOGIN_FAILED', actorId: 'staff-1', entityType: 'Staff' }),
     );
   });
+
+  it("marks a doctor's lastLoginAt (the 'in today' signal) on a correct PIN", async () => {
+    const pinHash = await bcrypt.hash('1234', 4);
+    const staff = { id: 'doc-1', pinHash, role: 'DOCTOR' } as Parameters<typeof verifyStaffPin>[0];
+
+    await verifyStaffPin(staff, '1234');
+
+    expect(mockUpdate).toHaveBeenCalledWith({ where: { id: 'doc-1' }, data: { lastLoginAt: expect.any(Date) } });
+  });
+
+  it("does not touch lastLoginAt for a non-doctor login, or for a doctor's wrong PIN", async () => {
+    const pinHash = await bcrypt.hash('1234', 4);
+    const receptionist = { id: 'staff-2', pinHash, role: 'RECEPTIONIST' } as Parameters<typeof verifyStaffPin>[0];
+    const doctor = { id: 'doc-1', pinHash, role: 'DOCTOR' } as Parameters<typeof verifyStaffPin>[0];
+
+    await verifyStaffPin(receptionist, '1234');
+    await verifyStaffPin(doctor, 'wrong');
+
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
 });
 
 describe('resetStaffPinViaConsole', () => {
@@ -96,19 +120,146 @@ describe('resetStaffPinViaConsole', () => {
 });
 
 describe('listClinicStaff', () => {
-  it("scopes to the given clinic and maps each staff member's department name", async () => {
+  it("scopes to the given clinic and maps each staff member's department name and presence", async () => {
+    const today = new Date();
     mockFindMany.mockResolvedValue([
-      { id: 's1', staffCode: 'ACI-STF-A', name: 'Dr. A', role: 'DOCTOR', isActive: true, department: { name: 'General' } },
-      { id: 's2', staffCode: 'ACI-STF-B', name: 'B', role: 'RECEPTIONIST', isActive: true, department: null },
+      {
+        id: 's1',
+        staffCode: 'ACI-STF-A',
+        name: 'Dr. A',
+        role: 'DOCTOR',
+        isActive: true,
+        department: { name: 'General' },
+        lastLoginAt: today,
+        presenceOverride: null,
+        presenceOverrideAt: null,
+      },
+      {
+        id: 's2',
+        staffCode: 'ACI-STF-B',
+        name: 'B',
+        role: 'RECEPTIONIST',
+        isActive: true,
+        department: null,
+        lastLoginAt: null,
+        presenceOverride: null,
+        presenceOverrideAt: null,
+      },
     ]);
 
     const result = await listClinicStaff('clinic-A');
 
     expect(mockFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: { clinicId: 'clinic-A' } }));
     expect(result).toEqual([
-      { id: 's1', staffCode: 'ACI-STF-A', name: 'Dr. A', role: 'DOCTOR', departmentName: 'General', isActive: true },
-      { id: 's2', staffCode: 'ACI-STF-B', name: 'B', role: 'RECEPTIONIST', departmentName: null, isActive: true },
+      { id: 's1', staffCode: 'ACI-STF-A', name: 'Dr. A', role: 'DOCTOR', departmentName: 'General', isActive: true, presence: 'IN' },
+      { id: 's2', staffCode: 'ACI-STF-B', name: 'B', role: 'RECEPTIONIST', departmentName: null, isActive: true, presence: null },
     ]);
+  });
+});
+
+describe('getDoctorPresenceStatus', () => {
+  const today = new Date();
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+  it('is NOT_IN_YET when neither field is set', () => {
+    expect(getDoctorPresenceStatus({ lastLoginAt: null, presenceOverride: null, presenceOverrideAt: null })).toBe('NOT_IN_YET');
+  });
+
+  it('is IN after a login today', () => {
+    expect(getDoctorPresenceStatus({ lastLoginAt: today, presenceOverride: null, presenceOverrideAt: null })).toBe('IN');
+  });
+
+  it("ignores a login from a previous day", () => {
+    expect(getDoctorPresenceStatus({ lastLoginAt: yesterday, presenceOverride: null, presenceOverrideAt: null })).toBe('NOT_IN_YET');
+  });
+
+  it('an OUT override today beats an earlier login today', () => {
+    const morning = new Date(today.getTime() - 60_000);
+    expect(getDoctorPresenceStatus({ lastLoginAt: morning, presenceOverride: 'OUT', presenceOverrideAt: today })).toBe('OUT');
+  });
+
+  it('a fresh login after an OUT override today beats the override (showed up despite being marked out)', () => {
+    const earlier = new Date(today.getTime() - 60_000);
+    expect(getDoctorPresenceStatus({ lastLoginAt: today, presenceOverride: 'OUT', presenceOverrideAt: earlier })).toBe('IN');
+  });
+
+  it('an IN override with no login today still counts as in (e.g. admin marking them in on their behalf)', () => {
+    expect(getDoctorPresenceStatus({ lastLoginAt: null, presenceOverride: 'IN', presenceOverrideAt: today })).toBe('IN');
+  });
+
+  it("ignores a stale override from a previous day", () => {
+    expect(getDoctorPresenceStatus({ lastLoginAt: null, presenceOverride: 'OUT', presenceOverrideAt: yesterday })).toBe('NOT_IN_YET');
+  });
+});
+
+describe('setDoctorPresenceBySelf', () => {
+  it("sets the override and records a self-service audit event", async () => {
+    const result = await setDoctorPresenceBySelf('doc-1', 'OUT');
+
+    expect(mockUpdate).toHaveBeenCalledWith({
+      where: { id: 'doc-1' },
+      data: { presenceOverride: 'OUT', presenceOverrideAt: expect.any(Date) },
+    });
+    expect(mockRecordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorType: 'STAFF',
+        actorId: 'doc-1',
+        staffId: 'doc-1',
+        action: 'DOCTOR_PRESENCE_SET',
+        entityType: 'Staff',
+        entityId: 'doc-1',
+        metadata: { status: 'OUT' },
+      }),
+    );
+    expect(result).toEqual({ presence: 'OUT' });
+  });
+});
+
+describe('setDoctorPresenceByAdmin', () => {
+  it('returns 404-worthy StaffNotFoundError for a staff id outside the admin\'s clinic', async () => {
+    mockFindFirst.mockResolvedValue(null);
+
+    await expect(
+      setDoctorPresenceByAdmin({ clinicId: 'clinic-A', staffId: 'doc-1', requestedByStaffId: 'admin-1', status: 'OUT' }),
+    ).rejects.toThrow(StaffNotFoundError);
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it('rejects setting presence on a non-doctor staff member', async () => {
+    mockFindFirst.mockResolvedValue({ id: 'staff-2', clinicId: 'clinic-A', role: 'RECEPTIONIST', staffCode: 'ACI-STF-B', name: 'B' });
+
+    await expect(
+      setDoctorPresenceByAdmin({ clinicId: 'clinic-A', staffId: 'staff-2', requestedByStaffId: 'admin-1', status: 'OUT' }),
+    ).rejects.toThrow(StaffIsNotADoctorError);
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it("sets the target doctor's override and records an admin-attributed audit event distinct from the self-service action", async () => {
+    mockFindFirst.mockResolvedValue({ id: 'doc-1', clinicId: 'clinic-A', role: 'DOCTOR', staffCode: 'ACI-STF-A', name: 'Dr. A' });
+
+    const result = await setDoctorPresenceByAdmin({
+      clinicId: 'clinic-A',
+      staffId: 'doc-1',
+      requestedByStaffId: 'admin-1',
+      status: 'IN',
+    });
+
+    expect(mockUpdate).toHaveBeenCalledWith({
+      where: { id: 'doc-1' },
+      data: { presenceOverride: 'IN', presenceOverrideAt: expect.any(Date) },
+    });
+    expect(mockRecordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorType: 'STAFF',
+        actorId: 'admin-1',
+        staffId: 'admin-1',
+        action: 'DOCTOR_PRESENCE_SET_BY_ADMIN',
+        entityType: 'Staff',
+        entityId: 'doc-1',
+        metadata: { targetStaffId: 'doc-1', targetStaffCode: 'ACI-STF-A', status: 'IN' },
+      }),
+    );
+    expect(result).toEqual({ staffCode: 'ACI-STF-A', name: 'Dr. A', presence: 'IN' });
   });
 });
 

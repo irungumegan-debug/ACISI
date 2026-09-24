@@ -7,6 +7,8 @@ export interface StaffSession {
   clinicName: string;
 }
 
+export type DoctorPresenceStatus = 'IN' | 'OUT' | 'NOT_IN_YET';
+
 export interface ClinicStaffListItem {
   id: string;
   staffCode: string;
@@ -14,6 +16,7 @@ export interface ClinicStaffListItem {
   role: string;
   departmentName: string | null;
   isActive: boolean;
+  presence: DoctorPresenceStatus | null;
 }
 
 export interface PatientListItem {
@@ -168,6 +171,13 @@ export const api = {
     });
   },
 
+  setStaffPresence(staffId: string, status: 'IN' | 'OUT') {
+    return request<{ staffCode: string; name: string; presence: DoctorPresenceStatus }>(`/clinic/staff/${staffId}/presence`, {
+      method: 'POST',
+      body: JSON.stringify({ status }),
+    });
+  },
+
   confirmCheckInPaid(checkInId: string) {
     return request<{ checkInId: string; status: CheckInStatus }>(`/checkins/${checkInId}/confirm-payment`, {
       method: 'POST',
@@ -182,7 +192,14 @@ export const api = {
   },
 
   getDoctorQueue() {
-    return request<{ queue: DoctorQueueItem[] }>('/doctor/queue');
+    return request<{ queue: DoctorQueueItem[]; presence: DoctorPresenceStatus }>('/doctor/queue');
+  },
+
+  setOwnPresence(status: 'IN' | 'OUT') {
+    return request<{ presence: DoctorPresenceStatus }>('/doctor/presence', {
+      method: 'POST',
+      body: JSON.stringify({ status }),
+    });
   },
 
   getDoctorEncounter(encounterId: string) {

@@ -1,6 +1,7 @@
 import bcrypt from 'bcrypt';
+import dayjs from 'dayjs';
 import { prisma } from '../db/prisma';
-import { Clinic, Prisma, Staff, StaffRole } from '@prisma/client';
+import { Clinic, Prisma, Staff, StaffRole, StaffPresenceOverride } from '@prisma/client';
 import { recordAuditEvent } from './auditService';
 import { generateStaffCode, generateTemporaryPin } from '../utils/idCodes';
 import { env } from '../config/env';
@@ -135,6 +136,15 @@ export async function comparePin(staff: Staff, pin: string): Promise<boolean> {
 
 export async function verifyStaffPin(staff: Staff, pin: string): Promise<boolean> {
   const isValid = await comparePin(staff, pin);
+
+  // A successful login is the automatic "in today" signal for a doctor —
+  // see getDoctorPresenceStatus. Not meaningful for other roles, so scoped
+  // to DOCTOR to avoid polluting front-desk/admin rows with a field that's
+  // never read for them.
+  if (isValid && staff.role === 'DOCTOR') {
+    await prisma.staff.update({ where: { id: staff.id }, data: { lastLoginAt: new Date() } });
+  }
+
   await recordAuditEvent({
     actorType: 'STAFF',
     actorId: staff.id,
@@ -201,6 +211,38 @@ export async function resetStaffPinViaConsole(staffCode: string, newPin: string)
   return updated;
 }
 
+export type DoctorPresenceStatus = 'IN' | 'OUT' | 'NOT_IN_YET';
+
+interface PresenceFields {
+  lastLoginAt: Date | null;
+  presenceOverride: StaffPresenceOverride | null;
+  presenceOverrideAt: Date | null;
+}
+
+/**
+ * Same-day-only presence: whichever of lastLoginAt / presenceOverrideAt is
+ * more recent AND falls on today decides the answer. A signal from a
+ * previous day (a stale override nobody cleared, yesterday's login) is
+ * ignored entirely — this is a live "are they here right now" read, never a
+ * schedule or a history. Neither signal today means NOT_IN_YET, the same
+ * bucket a doctor who's off sick or not yet arrived falls into.
+ */
+export function getDoctorPresenceStatus(staff: PresenceFields, now: Date = new Date()): DoctorPresenceStatus {
+  const startOfToday = dayjs(now).startOf('day').toDate();
+
+  const loginToday = staff.lastLoginAt && staff.lastLoginAt >= startOfToday ? staff.lastLoginAt : null;
+  const overrideToday =
+    staff.presenceOverride && staff.presenceOverrideAt && staff.presenceOverrideAt >= startOfToday
+      ? staff.presenceOverrideAt
+      : null;
+
+  if (overrideToday && (!loginToday || overrideToday > loginToday)) {
+    return staff.presenceOverride === 'IN' ? 'IN' : 'OUT';
+  }
+
+  return loginToday ? 'IN' : 'NOT_IN_YET';
+}
+
 export interface ClinicStaffListItem {
   id: string;
   staffCode: string;
@@ -208,6 +250,8 @@ export interface ClinicStaffListItem {
   role: StaffRole;
   departmentName: string | null;
   isActive: boolean;
+  /** null for non-doctor roles — presence is a doctor-only concept. */
+  presence: DoctorPresenceStatus | null;
 }
 
 /** For the clinic admin's staff-management view — scoped to their own clinic, same as every other admin-facing list in this codebase. */
@@ -225,7 +269,92 @@ export async function listClinicStaff(clinicId: string): Promise<ClinicStaffList
     role: s.role,
     departmentName: s.department?.name ?? null,
     isActive: s.isActive,
+    presence: s.role === 'DOCTOR' ? getDoctorPresenceStatus(s) : null,
   }));
+}
+
+export class StaffIsNotADoctorError extends Error {
+  constructor() {
+    super('Presence only applies to doctors');
+    this.name = 'StaffIsNotADoctorError';
+  }
+}
+
+const PRESENCE_STATUSES: StaffPresenceOverride[] = ['IN', 'OUT'];
+
+/** A doctor setting their own presence for today — self-service, no clinic-scoping check needed since it always targets the caller's own row. */
+export async function setDoctorPresenceBySelf(
+  doctorStaffId: string,
+  status: StaffPresenceOverride,
+): Promise<{ presence: DoctorPresenceStatus }> {
+  if (!PRESENCE_STATUSES.includes(status)) {
+    throw new Error(`status must be one of ${PRESENCE_STATUSES.join(', ')}`);
+  }
+
+  const now = new Date();
+  await prisma.staff.update({
+    where: { id: doctorStaffId },
+    data: { presenceOverride: status, presenceOverrideAt: now },
+  });
+
+  await recordAuditEvent({
+    actorType: 'STAFF',
+    actorId: doctorStaffId,
+    staffId: doctorStaffId,
+    action: 'DOCTOR_PRESENCE_SET',
+    entityType: 'Staff',
+    entityId: doctorStaffId,
+    metadata: { status },
+  });
+
+  return { presence: status };
+}
+
+interface SetDoctorPresenceByAdminInput {
+  clinicId: string;
+  staffId: string;
+  requestedByStaffId: string;
+  status: StaffPresenceOverride;
+}
+
+/**
+ * A clinic admin setting presence on behalf of one of their own doctors —
+ * same clinic-scoping and StaffNotFoundError-covers-both pattern as
+ * resetStaffPinByAdmin. Records a distinct audit action from the
+ * self-service path since the two are different trust contexts.
+ */
+export async function setDoctorPresenceByAdmin(
+  input: SetDoctorPresenceByAdminInput,
+): Promise<{ staffCode: string; name: string; presence: DoctorPresenceStatus }> {
+  if (!PRESENCE_STATUSES.includes(input.status)) {
+    throw new Error(`status must be one of ${PRESENCE_STATUSES.join(', ')}`);
+  }
+
+  const staff = await prisma.staff.findFirst({ where: { id: input.staffId, clinicId: input.clinicId } });
+  if (!staff) {
+    throw new StaffNotFoundError();
+  }
+  if (staff.role !== 'DOCTOR') {
+    throw new StaffIsNotADoctorError();
+  }
+
+  const now = new Date();
+  await prisma.staff.update({
+    where: { id: staff.id },
+    data: { presenceOverride: input.status, presenceOverrideAt: now },
+  });
+
+  await recordAuditEvent({
+    actorType: 'STAFF',
+    actorId: input.requestedByStaffId,
+    staffId: input.requestedByStaffId,
+    action: 'DOCTOR_PRESENCE_SET_BY_ADMIN',
+    entityType: 'Staff',
+    entityId: staff.id,
+    metadata: { targetStaffId: staff.id, targetStaffCode: staff.staffCode, status: input.status },
+  });
+
+  return { staffCode: staff.staffCode, name: staff.name, presence: input.status };
 }
 
 interface ResetStaffPinByAdminInput {

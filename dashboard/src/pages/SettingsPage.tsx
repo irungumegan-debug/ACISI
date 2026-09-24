@@ -1,7 +1,19 @@
 import { useEffect, useState } from 'react';
-import { api, ApiError, ClinicStaffListItem } from '../lib/api';
+import { api, ApiError, ClinicStaffListItem, DoctorPresenceStatus } from '../lib/api';
 
 const PIN_PATTERN = /^\d{4,6}$/;
+
+const PRESENCE_LABEL: Record<DoctorPresenceStatus, string> = {
+  IN: 'In today',
+  OUT: 'Out today',
+  NOT_IN_YET: 'Not in today',
+};
+
+const PRESENCE_BADGE_CLASS: Record<DoctorPresenceStatus, string> = {
+  IN: 'bg-emerald-100 text-emerald-800',
+  OUT: 'bg-amber-100 text-amber-800',
+  NOT_IN_YET: 'bg-slate-100 text-slate-600',
+};
 
 export function SettingsPage() {
   const [inviteCode, setInviteCode] = useState<string | null>(null);
@@ -12,6 +24,7 @@ export function SettingsPage() {
   const [staffError, setStaffError] = useState<string | null>(null);
   const [resettingId, setResettingId] = useState<string | null>(null);
   const [resetResult, setResetResult] = useState<{ staffCode: string; name: string; newPin: string } | null>(null);
+  const [togglingPresenceId, setTogglingPresenceId] = useState<string | null>(null);
 
   useEffect(() => {
     api
@@ -59,6 +72,20 @@ export function SettingsPage() {
       setStaffError(err instanceof ApiError ? err.message : 'Failed to reset PIN');
     } finally {
       setResettingId(null);
+    }
+  }
+
+  async function handleTogglePresence(member: ClinicStaffListItem): Promise<void> {
+    const nextStatus = member.presence === 'IN' ? 'OUT' : 'IN';
+    setTogglingPresenceId(member.id);
+    setStaffError(null);
+    try {
+      const result = await api.setStaffPresence(member.id, nextStatus);
+      setStaff((prev) => prev && prev.map((s) => (s.id === member.id ? { ...s, presence: result.presence } : s)));
+    } catch (err) {
+      setStaffError(err instanceof ApiError ? err.message : 'Failed to update presence');
+    } finally {
+      setTogglingPresenceId(null);
     }
   }
 
@@ -122,13 +149,29 @@ export function SettingsPage() {
                     {member.departmentName ? ` · ${member.departmentName}` : ''}
                   </p>
                 </div>
-                <button
-                  onClick={() => void handleResetPin(member)}
-                  disabled={resettingId === member.id}
-                  className="shrink-0 rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-slate-500 disabled:opacity-50"
-                >
-                  {resettingId === member.id ? 'Resetting…' : 'Reset PIN'}
-                </button>
+                <div className="flex shrink-0 items-center gap-2">
+                  {member.presence && (
+                    <span className={`whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ${PRESENCE_BADGE_CLASS[member.presence]}`}>
+                      {PRESENCE_LABEL[member.presence]}
+                    </span>
+                  )}
+                  {member.presence && (
+                    <button
+                      onClick={() => void handleTogglePresence(member)}
+                      disabled={togglingPresenceId === member.id}
+                      className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-slate-500 disabled:opacity-50"
+                    >
+                      {togglingPresenceId === member.id ? 'Updating…' : member.presence === 'IN' ? 'Mark out today' : 'Mark in today'}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => void handleResetPin(member)}
+                    disabled={resettingId === member.id}
+                    className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-slate-500 disabled:opacity-50"
+                  >
+                    {resettingId === member.id ? 'Resetting…' : 'Reset PIN'}
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
