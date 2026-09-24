@@ -3,7 +3,14 @@ import { z } from 'zod';
 import { prisma } from '../db/prisma';
 import { requireStaffSession, requireAdmin, AuthenticatedRequest } from './auth';
 import { regenerateInviteCode } from '../services/clinicService';
-import { InvalidPinFormatError, StaffNotFoundError, listClinicStaff, resetStaffPinByAdmin } from '../services/staffService';
+import {
+  InvalidPinFormatError,
+  StaffIsNotADoctorError,
+  StaffNotFoundError,
+  listClinicStaff,
+  resetStaffPinByAdmin,
+  setDoctorPresenceByAdmin,
+} from '../services/staffService';
 
 export const clinicSettingsRouter = Router();
 
@@ -61,6 +68,39 @@ clinicSettingsRouter.post('/staff/:id/reset-pin', async (req, res) => {
       return;
     }
     if (err instanceof InvalidPinFormatError) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
+});
+
+const presenceSchema = z.object({ status: z.enum(['IN', 'OUT']) });
+
+/** Lets a clinic admin mark one of their own doctors in/out for today, e.g. on a doctor's behalf for a planned absence. */
+clinicSettingsRouter.post('/staff/:id/presence', async (req, res) => {
+  const parsed = presenceSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'status must be IN or OUT' });
+    return;
+  }
+
+  const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
+
+  try {
+    const result = await setDoctorPresenceByAdmin({
+      clinicId,
+      staffId: req.params.id as string,
+      requestedByStaffId: staffId,
+      status: parsed.data.status,
+    });
+    res.json(result);
+  } catch (err) {
+    if (err instanceof StaffNotFoundError) {
+      res.status(404).json({ error: err.message });
+      return;
+    }
+    if (err instanceof StaffIsNotADoctorError) {
       res.status(400).json({ error: err.message });
       return;
     }

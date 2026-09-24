@@ -7,6 +7,12 @@ jest.mock('../../src/dashboard/session', () => ({
   loadDashboardSession: jest.fn(),
 }));
 
+jest.mock('../../src/services/staffService', () => ({
+  ...jest.requireActual('../../src/services/staffService'),
+  findActiveStaffById: jest.fn(),
+  setDoctorPresenceBySelf: jest.fn(),
+}));
+
 jest.mock('../../src/services/encounterService', () => ({
   getDoctorQueue: jest.fn(),
   getEncounterForDoctor: jest.fn(),
@@ -39,12 +45,17 @@ import {
   EncounterNotAccessibleError,
   InvalidPinError,
 } from '../../src/services/encounterService';
+import { findActiveStaffById, setDoctorPresenceBySelf } from '../../src/services/staffService';
 import { doctorRouter } from '../../src/dashboard/doctor';
 
 const mockLoadSession = loadDashboardSession as jest.Mock;
 const mockGetQueue = getDoctorQueue as jest.Mock;
 const mockGetEncounter = getEncounterForDoctor as jest.Mock;
 const mockSubmitConsult = submitConsultation as jest.Mock;
+const mockFindStaffById = findActiveStaffById as jest.Mock;
+const mockSetPresenceBySelf = setDoctorPresenceBySelf as jest.Mock;
+
+const TODAY = new Date();
 
 const DOCTOR_SESSION = {
   staffId: 'staff-1',
@@ -90,15 +101,54 @@ describe('requireDoctor gating', () => {
 });
 
 describe('GET /doctor/queue', () => {
-  it("returns the doctor's own clinic+department queue", async () => {
+  it("returns the doctor's own clinic+department queue, plus their current presence", async () => {
     mockLoadSession.mockResolvedValue(DOCTOR_SESSION);
     mockGetQueue.mockResolvedValue([{ encounterId: 'enc-1', patientName: 'Jane Wanjiru' }]);
+    mockFindStaffById.mockResolvedValue({ lastLoginAt: TODAY, presenceOverride: null, presenceOverrideAt: null });
 
     const res = await withCookie(request(buildApp()).get('/doctor/queue'));
 
     expect(res.status).toBe(200);
     expect(mockGetQueue).toHaveBeenCalledWith('clinic-1', 'dept-1', 'staff-1');
     expect(res.body.queue).toHaveLength(1);
+    expect(res.body.presence).toBe('IN');
+  });
+
+  it('reports NOT_IN_YET when the staff row is somehow missing', async () => {
+    mockLoadSession.mockResolvedValue(DOCTOR_SESSION);
+    mockGetQueue.mockResolvedValue([]);
+    mockFindStaffById.mockResolvedValue(null);
+
+    const res = await withCookie(request(buildApp()).get('/doctor/queue'));
+
+    expect(res.body.presence).toBe('NOT_IN_YET');
+  });
+});
+
+describe('POST /doctor/presence', () => {
+  it('rejects an invalid status', async () => {
+    mockLoadSession.mockResolvedValue(DOCTOR_SESSION);
+    const res = await withCookie(request(buildApp()).post('/doctor/presence').send({ status: 'MAYBE' }));
+    expect(res.status).toBe(400);
+    expect(mockSetPresenceBySelf).not.toHaveBeenCalled();
+  });
+
+  it('lets a doctor mark themselves out for today', async () => {
+    mockLoadSession.mockResolvedValue(DOCTOR_SESSION);
+    mockSetPresenceBySelf.mockResolvedValue({ presence: 'OUT' });
+
+    const res = await withCookie(request(buildApp()).post('/doctor/presence').send({ status: 'OUT' }));
+
+    expect(res.status).toBe(200);
+    expect(mockSetPresenceBySelf).toHaveBeenCalledWith('staff-1', 'OUT');
+    expect(res.body.presence).toBe('OUT');
+  });
+
+  it('is blocked for a non-doctor session, same as the rest of this router', async () => {
+    mockLoadSession.mockResolvedValue(RECEPTIONIST_SESSION);
+    const res = await withCookie(request(buildApp()).post('/doctor/presence').send({ status: 'OUT' }));
+    expect(res.status).toBe(403);
+    expect(mockSetPresenceBySelf).not.toHaveBeenCalled();
   });
 });
 

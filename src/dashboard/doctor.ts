@@ -9,6 +9,7 @@ import {
   getEncounterForDoctor,
   submitConsultation,
 } from '../services/encounterService';
+import { findActiveStaffById, getDoctorPresenceStatus, setDoctorPresenceBySelf } from '../services/staffService';
 
 export const doctorRouter = Router();
 
@@ -28,8 +29,26 @@ doctorRouter.use(requireDoctor);
 
 doctorRouter.get('/queue', async (req, res) => {
   const { clinicId, departmentId, staffId } = (req as AuthenticatedRequest).dashboardSession;
-  const queue = await getDoctorQueue(clinicId, departmentId as string, staffId);
-  res.json({ queue });
+  const [queue, staff] = await Promise.all([
+    getDoctorQueue(clinicId, departmentId as string, staffId),
+    findActiveStaffById(staffId),
+  ]);
+  res.json({ queue, presence: staff ? getDoctorPresenceStatus(staff) : 'NOT_IN_YET' });
+});
+
+const presenceSchema = z.object({ status: z.enum(['IN', 'OUT']) });
+
+/** A doctor marking themselves in/out for today, e.g. after logging in this morning but then having to leave sick. */
+doctorRouter.post('/presence', async (req, res) => {
+  const parsed = presenceSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'status must be IN or OUT' });
+    return;
+  }
+
+  const { staffId } = (req as AuthenticatedRequest).dashboardSession;
+  const result = await setDoctorPresenceBySelf(staffId, parsed.data.status);
+  res.json(result);
 });
 
 doctorRouter.get('/encounters/:id', async (req, res) => {
