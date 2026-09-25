@@ -40,15 +40,28 @@ jest.mock('../../src/config/redis', () => ({
 
 jest.mock('../../src/services/staffService', () => ({
   findActiveStaffWithClinicByCode: jest.fn(),
+  findStaffWithClinicByCode: jest.fn(),
+  findActiveStaffById: jest.fn(),
   verifyStaffPin: jest.fn(),
 }));
 
-import { findActiveStaffWithClinicByCode, verifyStaffPin } from '../../src/services/staffService';
+jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
+
+import {
+  findActiveStaffWithClinicByCode,
+  findStaffWithClinicByCode,
+  findActiveStaffById,
+  verifyStaffPin,
+} from '../../src/services/staffService';
+import { recordAuditEvent } from '../../src/services/auditService';
 import { authRouter } from '../../src/dashboard/auth';
 import { LOGIN_RATE_LIMIT_MAX_ATTEMPTS } from '../../src/config/constants';
 
 const mockFindStaff = findActiveStaffWithClinicByCode as jest.Mock;
+const mockFindStaffWithClinicRaw = findStaffWithClinicByCode as jest.Mock;
+const mockFindStaffById = findActiveStaffById as jest.Mock;
 const mockVerifyPin = verifyStaffPin as jest.Mock;
+const mockRecordAudit = recordAuditEvent as jest.Mock;
 
 const STAFF = {
   id: 'staff-1',
@@ -73,6 +86,12 @@ beforeEach(() => {
   // since those were defined once at mock-creation time, not per-test.
   jest.clearAllMocks();
   mockRedisStore.clear();
+  mockFindStaffById.mockResolvedValue({ id: 'staff-1', isActive: true });
+  // clearAllMocks only clears call history, not implementations set via
+  // mockResolvedValue — reset this back to a neutral "not deactivated"
+  // default every test, so a later test never inherits an earlier one's
+  // deactivated-account override.
+  mockFindStaffWithClinicRaw.mockResolvedValue(undefined);
 });
 
 describe('POST /auth/login', () => {
@@ -140,6 +159,29 @@ describe('POST /auth/login', () => {
       expect(res.status).toBe(401);
     }
   });
+
+  it('blocks a deactivated account with a clear, distinct message — never reaching the PIN check', async () => {
+    mockFindStaffWithClinicRaw.mockResolvedValue({ ...STAFF, isActive: false });
+
+    const res = await request(buildApp()).post('/auth/login').send({ staffCode: 'ACI-STF-7F2K', pin: '1234' });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('This account has been deactivated. Please contact your clinic admin.');
+    expect(mockVerifyPin).not.toHaveBeenCalled();
+    expect(mockRecordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'STAFF_LOGIN_BLOCKED_DEACTIVATED', actorId: 'staff-1', entityType: 'Staff', entityId: 'staff-1' }),
+    );
+  });
+
+  it('shows the deactivated message even when the PIN entered is correct — deactivation always wins', async () => {
+    mockFindStaffWithClinicRaw.mockResolvedValue({ ...STAFF, isActive: false });
+    mockVerifyPin.mockResolvedValue(true);
+
+    const res = await request(buildApp()).post('/auth/login').send({ staffCode: 'ACI-STF-7F2K', pin: '1234' });
+
+    expect(res.status).toBe(403);
+    expect(mockVerifyPin).not.toHaveBeenCalled();
+  });
 });
 
 describe('GET /auth/me', () => {
@@ -172,6 +214,23 @@ describe('POST /auth/logout', () => {
     expect((await agent.get('/auth/me')).status).toBe(200);
 
     await agent.post('/auth/logout');
+
+    expect((await agent.get('/auth/me')).status).toBe(401);
+  });
+});
+
+describe('requireStaffSession (live deactivation check)', () => {
+  it('rejects a request from an already-logged-in session the moment the account is deactivated', async () => {
+    mockFindStaff.mockResolvedValue(STAFF);
+    mockVerifyPin.mockResolvedValue(true);
+
+    const agent = request.agent(buildApp());
+    await agent.post('/auth/login').send({ staffCode: 'ACI-STF-7F2K', pin: '1234' });
+    expect((await agent.get('/auth/me')).status).toBe(200);
+
+    // Simulate deactivation happening mid-session: the live row is now
+    // deactivated, even though the cached Redis session was fine at login.
+    mockFindStaffById.mockResolvedValue(null);
 
     expect((await agent.get('/auth/me')).status).toBe(401);
   });

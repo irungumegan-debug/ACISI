@@ -12,8 +12,11 @@ jest.mock('../../src/services/clinicService', () => ({
 }));
 
 jest.mock('../../src/services/staffService', () => ({
+  findActiveStaffById: jest.fn(),
   listClinicStaff: jest.fn(),
   resetStaffPinByAdmin: jest.fn(),
+  deactivateStaffAccount: jest.fn(),
+  reactivateStaffAccount: jest.fn(),
   StaffNotFoundError: class StaffNotFoundError extends Error {
     constructor() {
       super('Staff member not found');
@@ -26,6 +29,18 @@ jest.mock('../../src/services/staffService', () => ({
       this.name = 'InvalidPinFormatError';
     }
   },
+  LastActiveAdminError: class LastActiveAdminError extends Error {
+    constructor() {
+      super('This clinic must always have at least one active admin');
+      this.name = 'LastActiveAdminError';
+    }
+  },
+  AccountAlreadyInStateError: class AccountAlreadyInStateError extends Error {
+    constructor(status: 'ACTIVE' | 'DEACTIVATED') {
+      super(status === 'ACTIVE' ? 'This account is already active' : 'This account is already deactivated');
+      this.name = 'AccountAlreadyInStateError';
+    }
+  },
 }));
 
 jest.mock('../../src/db/prisma', () => ({
@@ -34,15 +49,28 @@ jest.mock('../../src/db/prisma', () => ({
 
 import { loadDashboardSession, SESSION_COOKIE_NAME } from '../../src/dashboard/session';
 import { regenerateInviteCode } from '../../src/services/clinicService';
-import { listClinicStaff, resetStaffPinByAdmin, StaffNotFoundError, InvalidPinFormatError } from '../../src/services/staffService';
+import {
+  findActiveStaffById,
+  listClinicStaff,
+  resetStaffPinByAdmin,
+  deactivateStaffAccount,
+  reactivateStaffAccount,
+  StaffNotFoundError,
+  InvalidPinFormatError,
+  LastActiveAdminError,
+  AccountAlreadyInStateError,
+} from '../../src/services/staffService';
 import { prisma } from '../../src/db/prisma';
 import { clinicSettingsRouter } from '../../src/dashboard/clinicSettings';
 
 const mockLoadSession = loadDashboardSession as jest.Mock;
+const mockFindStaffById = findActiveStaffById as jest.Mock;
 const mockRegenerate = regenerateInviteCode as jest.Mock;
 const mockFindClinic = prisma.clinic.findUnique as jest.Mock;
 const mockListStaff = listClinicStaff as jest.Mock;
 const mockResetPin = resetStaffPinByAdmin as jest.Mock;
+const mockDeactivate = deactivateStaffAccount as jest.Mock;
+const mockReactivate = reactivateStaffAccount as jest.Mock;
 
 const ADMIN_SESSION = {
   staffId: 'staff-1',
@@ -65,6 +93,7 @@ function buildApp() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockFindStaffById.mockResolvedValue({ id: 'staff-1', isActive: true });
 });
 
 describe('GET /clinic/invite-code', () => {
@@ -174,5 +203,91 @@ describe('POST /clinic/staff/:id/reset-pin', () => {
     expect(mockResetPin).toHaveBeenCalledWith(
       expect.objectContaining({ newPin: '135790' }),
     );
+  });
+});
+
+describe('POST /clinic/staff/:id/deactivate', () => {
+  it('rejects a non-admin staff member', async () => {
+    mockLoadSession.mockResolvedValue(RECEPTIONIST_SESSION);
+    const res = await request(buildApp()).post('/clinic/staff/s1/deactivate').set('Cookie', `${SESSION_COOKIE_NAME}=tok`);
+    expect(res.status).toBe(403);
+    expect(mockDeactivate).not.toHaveBeenCalled();
+  });
+
+  it('deactivates a staff member, scoped to the admin\'s own clinic', async () => {
+    mockLoadSession.mockResolvedValue(ADMIN_SESSION);
+    mockDeactivate.mockResolvedValue({ id: 's1', isActive: false });
+
+    const res = await request(buildApp()).post('/clinic/staff/s1/deactivate').set('Cookie', `${SESSION_COOKIE_NAME}=tok`);
+
+    expect(res.status).toBe(200);
+    expect(mockDeactivate).toHaveBeenCalledWith({ clinicId: 'clinic-1', targetStaffId: 's1', requestedByStaffId: 'staff-1' });
+    expect(res.body).toEqual({ id: 's1', status: 'DEACTIVATED' });
+  });
+
+  it('returns 404 for a staff id outside the admin\'s own clinic, same as a bad id', async () => {
+    mockLoadSession.mockResolvedValue(ADMIN_SESSION);
+    mockDeactivate.mockRejectedValue(new StaffNotFoundError());
+
+    const res = await request(buildApp()).post('/clinic/staff/s-other-clinic/deactivate').set('Cookie', `${SESSION_COOKIE_NAME}=tok`);
+
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 409 when deactivating would leave the clinic with no active admin', async () => {
+    mockLoadSession.mockResolvedValue(ADMIN_SESSION);
+    mockDeactivate.mockRejectedValue(new LastActiveAdminError());
+
+    const res = await request(buildApp()).post('/clinic/staff/staff-1/deactivate').set('Cookie', `${SESSION_COOKIE_NAME}=tok`);
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/at least one active admin/);
+  });
+
+  it('returns 409 for an account that is already deactivated', async () => {
+    mockLoadSession.mockResolvedValue(ADMIN_SESSION);
+    mockDeactivate.mockRejectedValue(new AccountAlreadyInStateError('DEACTIVATED'));
+
+    const res = await request(buildApp()).post('/clinic/staff/s1/deactivate').set('Cookie', `${SESSION_COOKIE_NAME}=tok`);
+
+    expect(res.status).toBe(409);
+  });
+});
+
+describe('POST /clinic/staff/:id/reactivate', () => {
+  it('rejects a non-admin staff member', async () => {
+    mockLoadSession.mockResolvedValue(RECEPTIONIST_SESSION);
+    const res = await request(buildApp()).post('/clinic/staff/s1/reactivate').set('Cookie', `${SESSION_COOKIE_NAME}=tok`);
+    expect(res.status).toBe(403);
+    expect(mockReactivate).not.toHaveBeenCalled();
+  });
+
+  it('reactivates a deactivated staff member', async () => {
+    mockLoadSession.mockResolvedValue(ADMIN_SESSION);
+    mockReactivate.mockResolvedValue({ id: 's1', isActive: true });
+
+    const res = await request(buildApp()).post('/clinic/staff/s1/reactivate').set('Cookie', `${SESSION_COOKIE_NAME}=tok`);
+
+    expect(res.status).toBe(200);
+    expect(mockReactivate).toHaveBeenCalledWith({ clinicId: 'clinic-1', targetStaffId: 's1', requestedByStaffId: 'staff-1' });
+    expect(res.body).toEqual({ id: 's1', status: 'ACTIVE' });
+  });
+
+  it('returns 404 for a staff id outside the admin\'s own clinic', async () => {
+    mockLoadSession.mockResolvedValue(ADMIN_SESSION);
+    mockReactivate.mockRejectedValue(new StaffNotFoundError());
+
+    const res = await request(buildApp()).post('/clinic/staff/s-other-clinic/reactivate').set('Cookie', `${SESSION_COOKIE_NAME}=tok`);
+
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 409 for an account that is already active', async () => {
+    mockLoadSession.mockResolvedValue(ADMIN_SESSION);
+    mockReactivate.mockRejectedValue(new AccountAlreadyInStateError('ACTIVE'));
+
+    const res = await request(buildApp()).post('/clinic/staff/s1/reactivate').set('Cookie', `${SESSION_COOKIE_NAME}=tok`);
+
+    expect(res.status).toBe(409);
   });
 });

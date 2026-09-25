@@ -2,7 +2,8 @@ import { NextFunction, Request, Response, Router } from 'express';
 import { z } from 'zod';
 import { redis } from '../config/redis';
 import { LOGIN_RATE_LIMIT_MAX_ATTEMPTS, LOGIN_RATE_LIMIT_WINDOW_SECONDS, DASHBOARD_SESSION_TTL_SECONDS } from '../config/constants';
-import { findActiveStaffWithClinicByCode, verifyStaffPin } from '../services/staffService';
+import { findActiveStaffById, findActiveStaffWithClinicByCode, findStaffWithClinicByCode, verifyStaffPin } from '../services/staffService';
+import { recordAuditEvent } from '../services/auditService';
 import {
   createDashboardSession,
   destroyDashboardSession,
@@ -55,6 +56,20 @@ authRouter.post('/login', async (req, res) => {
 
   if (await isRateLimited(staffCode)) {
     res.status(429).json({ error: 'Too many failed attempts. Try again in a few minutes.' });
+    return;
+  }
+
+  const rawStaff = await findStaffWithClinicByCode(staffCode);
+  if (rawStaff && !rawStaff.isActive) {
+    await recordAuditEvent({
+      actorType: 'STAFF',
+      actorId: rawStaff.id,
+      staffId: rawStaff.id,
+      action: 'STAFF_LOGIN_BLOCKED_DEACTIVATED',
+      entityType: 'Staff',
+      entityId: rawStaff.id,
+    });
+    res.status(403).json({ error: 'This account has been deactivated. Please contact your clinic admin.' });
     return;
   }
 
@@ -119,6 +134,20 @@ export async function requireStaffSession(req: Request, res: Response, next: Nex
       res.status(401).json({ error: 'Session expired' });
       return;
     }
+
+    // The Redis session is just a cached snapshot from login time — it has
+    // no way to know a since-deactivated account. Re-checking the live row
+    // on every request (rather than trying to track and revoke individual
+    // session tokens) is the simplest way to make a deactivation take effect
+    // immediately: this request 401s, and the frontend's global 401 handler
+    // bounces them to /login, where the deactivated-account message applies.
+    const staff = await findActiveStaffById(session.staffId);
+    if (!staff) {
+      await destroyDashboardSession(token);
+      res.status(401).json({ error: 'Session expired' });
+      return;
+    }
+
     (req as AuthenticatedRequest).dashboardSession = session;
     next();
   } catch (err) {

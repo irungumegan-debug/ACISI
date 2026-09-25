@@ -1,5 +1,6 @@
 import { UssdStateHandler } from '../types';
-import { findActiveStaffByCode, verifyStaffPin } from '../../services/staffService';
+import { findActiveStaffByCode, findStaffByCode, verifyStaffPin } from '../../services/staffService';
+import { recordAuditEvent } from '../../services/auditService';
 import { MAX_STAFF_PIN_ATTEMPTS } from '../../config/constants';
 
 const STAFF_MENU_TEXT = 'CON ACISI Staff Menu\n1. Look up patient history';
@@ -12,7 +13,21 @@ const STAFF_MENU_TEXT = 'CON ACISI Staff Menu\n1. Look up patient history';
  */
 export const staffEnterCode: UssdStateHandler = async (session, input) => {
   const staffCode = input.trim().toUpperCase();
-  const staff = await findActiveStaffByCode(staffCode);
+  const rawStaff = await findStaffByCode(staffCode);
+
+  if (rawStaff && !rawStaff.isActive) {
+    await recordAuditEvent({
+      actorType: 'STAFF',
+      actorId: rawStaff.id,
+      staffId: rawStaff.id,
+      action: 'STAFF_LOGIN_BLOCKED_DEACTIVATED',
+      entityType: 'Staff',
+      entityId: rawStaff.id,
+    });
+    return { response: 'END This account has been deactivated. Please contact your clinic admin.', continueSession: false };
+  }
+
+  const staff = rawStaff;
 
   if (!staff) {
     return { response: 'END That staff ID was not recognized.', continueSession: false };

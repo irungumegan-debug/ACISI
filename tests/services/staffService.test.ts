@@ -3,19 +3,23 @@ import bcrypt from 'bcrypt';
 jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
 jest.mock('../../src/db/prisma', () => ({
   prisma: {
-    staff: { findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn() },
+    staff: { findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn(), count: jest.fn() },
   },
 }));
 
 import { prisma } from '../../src/db/prisma';
 import { recordAuditEvent } from '../../src/services/auditService';
 import {
+  AccountAlreadyInStateError,
   InvalidPinFormatError,
+  LastActiveAdminError,
   StaffIsNotADoctorError,
   StaffNotFoundError,
   comparePin,
+  deactivateStaffAccount,
   getDoctorPresenceStatus,
   listClinicStaff,
+  reactivateStaffAccount,
   resetStaffPinByAdmin,
   resetStaffPinViaConsole,
   setDoctorPresenceByAdmin,
@@ -28,6 +32,7 @@ const mockFindUnique = prisma.staff.findUnique as jest.Mock;
 const mockFindFirst = prisma.staff.findFirst as jest.Mock;
 const mockFindMany = prisma.staff.findMany as jest.Mock;
 const mockUpdate = prisma.staff.update as jest.Mock;
+const mockCount = prisma.staff.count as jest.Mock;
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -151,8 +156,8 @@ describe('listClinicStaff', () => {
 
     expect(mockFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: { clinicId: 'clinic-A' } }));
     expect(result).toEqual([
-      { id: 's1', staffCode: 'ACI-STF-A', name: 'Dr. A', role: 'DOCTOR', departmentName: 'General', isActive: true, presence: 'IN' },
-      { id: 's2', staffCode: 'ACI-STF-B', name: 'B', role: 'RECEPTIONIST', departmentName: null, isActive: true, presence: null },
+      { id: 's1', staffCode: 'ACI-STF-A', name: 'Dr. A', role: 'DOCTOR', departmentName: 'General', isActive: true, status: 'ACTIVE', presence: 'IN' },
+      { id: 's2', staffCode: 'ACI-STF-B', name: 'B', role: 'RECEPTIONIST', departmentName: null, isActive: true, status: 'ACTIVE', presence: null },
     ]);
   });
 });
@@ -317,5 +322,116 @@ describe('resetStaffPinByAdmin', () => {
     ).rejects.toThrow(InvalidPinFormatError);
     expect(mockUpdate).not.toHaveBeenCalled();
     expect(mockRecordAudit).not.toHaveBeenCalled();
+  });
+});
+
+describe('deactivateStaffAccount', () => {
+  it('throws StaffNotFoundError for a bad id or an attempt outside the admin\'s own clinic', async () => {
+    mockFindFirst.mockResolvedValue(null);
+
+    await expect(
+      deactivateStaffAccount({ clinicId: 'clinic-A', targetStaffId: 'staff-2', requestedByStaffId: 'admin-1' }),
+    ).rejects.toThrow(StaffNotFoundError);
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it('rejects deactivating an account that is already deactivated', async () => {
+    mockFindFirst.mockResolvedValue({ id: 'staff-2', clinicId: 'clinic-A', role: 'RECEPTIONIST', isActive: false });
+
+    await expect(
+      deactivateStaffAccount({ clinicId: 'clinic-A', targetStaffId: 'staff-2', requestedByStaffId: 'admin-1' }),
+    ).rejects.toThrow(AccountAlreadyInStateError);
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it('deactivates a non-admin staff member with no last-admin check at all', async () => {
+    mockFindFirst.mockResolvedValue({ id: 'staff-2', clinicId: 'clinic-A', role: 'RECEPTIONIST', isActive: true, staffCode: 'ACI-STF-B' });
+    mockUpdate.mockResolvedValue({ id: 'staff-2', isActive: false });
+
+    await deactivateStaffAccount({ clinicId: 'clinic-A', targetStaffId: 'staff-2', requestedByStaffId: 'admin-1' });
+
+    expect(mockCount).not.toHaveBeenCalled();
+    expect(mockUpdate).toHaveBeenCalledWith({
+      where: { id: 'staff-2' },
+      data: { isActive: false, deactivatedAt: expect.any(Date), deactivatedByStaffId: 'admin-1' },
+    });
+    expect(mockRecordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorType: 'STAFF',
+        actorId: 'admin-1',
+        staffId: 'admin-1',
+        action: 'DEACTIVATE_ACCOUNT',
+        entityType: 'Staff',
+        entityId: 'staff-2',
+        metadata: { clinicId: 'clinic-A', targetStaffId: 'staff-2', targetStaffCode: 'ACI-STF-B', targetRole: 'RECEPTIONIST' },
+      }),
+    );
+  });
+
+  it('deactivates an admin when at least one other active admin remains in the clinic', async () => {
+    mockFindFirst.mockResolvedValue({ id: 'admin-2', clinicId: 'clinic-A', role: 'ADMIN', isActive: true, staffCode: 'ACI-STF-B' });
+    mockCount.mockResolvedValue(1);
+    mockUpdate.mockResolvedValue({ id: 'admin-2', isActive: false });
+
+    await deactivateStaffAccount({ clinicId: 'clinic-A', targetStaffId: 'admin-2', requestedByStaffId: 'admin-1' });
+
+    expect(mockCount).toHaveBeenCalledWith({
+      where: { clinicId: 'clinic-A', role: 'ADMIN', isActive: true, id: { not: 'admin-2' } },
+    });
+    expect(mockUpdate).toHaveBeenCalled();
+  });
+
+  it('blocks an admin deactivating themselves when they are the last active admin', async () => {
+    mockFindFirst.mockResolvedValue({ id: 'admin-1', clinicId: 'clinic-A', role: 'ADMIN', isActive: true, staffCode: 'ACI-STF-ADMN' });
+    mockCount.mockResolvedValue(0);
+
+    await expect(
+      deactivateStaffAccount({ clinicId: 'clinic-A', targetStaffId: 'admin-1', requestedByStaffId: 'admin-1' }),
+    ).rejects.toThrow(LastActiveAdminError);
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it('blocks one admin deactivating a different admin who is the last active one — not just self-deactivation', async () => {
+    mockFindFirst.mockResolvedValue({ id: 'admin-2', clinicId: 'clinic-A', role: 'ADMIN', isActive: true, staffCode: 'ACI-STF-B' });
+    mockCount.mockResolvedValue(0);
+
+    await expect(
+      deactivateStaffAccount({ clinicId: 'clinic-A', targetStaffId: 'admin-2', requestedByStaffId: 'admin-1' }),
+    ).rejects.toThrow(LastActiveAdminError);
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe('reactivateStaffAccount', () => {
+  it('throws StaffNotFoundError for a bad id or cross-clinic attempt', async () => {
+    mockFindFirst.mockResolvedValue(null);
+
+    await expect(
+      reactivateStaffAccount({ clinicId: 'clinic-A', targetStaffId: 'staff-2', requestedByStaffId: 'admin-1' }),
+    ).rejects.toThrow(StaffNotFoundError);
+  });
+
+  it('rejects reactivating an account that is already active', async () => {
+    mockFindFirst.mockResolvedValue({ id: 'staff-2', clinicId: 'clinic-A', isActive: true });
+
+    await expect(
+      reactivateStaffAccount({ clinicId: 'clinic-A', targetStaffId: 'staff-2', requestedByStaffId: 'admin-1' }),
+    ).rejects.toThrow(AccountAlreadyInStateError);
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it('reactivates the account, clearing deactivatedAt/deactivatedByStaffId, and records a distinct audit action', async () => {
+    mockFindFirst.mockResolvedValue({ id: 'staff-2', clinicId: 'clinic-A', role: 'DOCTOR', isActive: false, staffCode: 'ACI-STF-B' });
+    mockUpdate.mockResolvedValue({ id: 'staff-2', isActive: true });
+
+    await reactivateStaffAccount({ clinicId: 'clinic-A', targetStaffId: 'staff-2', requestedByStaffId: 'admin-1' });
+
+    expect(mockUpdate).toHaveBeenCalledWith({
+      where: { id: 'staff-2' },
+      data: { isActive: true, deactivatedAt: null, deactivatedByStaffId: null },
+    });
+    expect(mockRecordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'REACTIVATE_ACCOUNT', actorId: 'admin-1', entityId: 'staff-2' }),
+    );
   });
 });

@@ -87,6 +87,10 @@ function withCookie(req: request.Test) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // requireStaffSession now re-checks the live staff row on every request;
+  // default to an active account so existing tests keep exercising their own
+  // concern rather than tripping this guard incidentally.
+  mockFindStaffById.mockResolvedValue({ id: 'staff-1', isActive: true, lastLoginAt: null, presenceOverride: null, presenceOverrideAt: null });
 });
 
 describe('requireDoctor gating', () => {
@@ -108,7 +112,7 @@ describe('GET /doctor/queue', () => {
   it("returns the doctor's own clinic+department queue, plus their current presence", async () => {
     mockLoadSession.mockResolvedValue(DOCTOR_SESSION);
     mockGetQueue.mockResolvedValue([{ encounterId: 'enc-1', patientName: 'Jane Wanjiru' }]);
-    mockFindStaffById.mockResolvedValue({ lastLoginAt: TODAY, presenceOverride: null, presenceOverrideAt: null });
+    mockFindStaffById.mockResolvedValue({ id: 'staff-1', isActive: true, lastLoginAt: TODAY, presenceOverride: null, presenceOverrideAt: null });
 
     const res = await withCookie(request(buildApp()).get('/doctor/queue'));
 
@@ -118,14 +122,14 @@ describe('GET /doctor/queue', () => {
     expect(res.body.presence).toBe('IN');
   });
 
-  it('reports NOT_IN_YET when the staff row is somehow missing', async () => {
+  it('rejects the request when the account has since been deactivated — the live session-revocation check in requireStaffSession', async () => {
     mockLoadSession.mockResolvedValue(DOCTOR_SESSION);
-    mockGetQueue.mockResolvedValue([]);
     mockFindStaffById.mockResolvedValue(null);
 
     const res = await withCookie(request(buildApp()).get('/doctor/queue'));
 
-    expect(res.body.presence).toBe('NOT_IN_YET');
+    expect(res.status).toBe(401);
+    expect(mockGetQueue).not.toHaveBeenCalled();
   });
 });
 

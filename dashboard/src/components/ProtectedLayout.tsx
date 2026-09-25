@@ -43,9 +43,14 @@ export function ProtectedLayout() {
                   Appointments
                 </Link>
                 {session.role === 'ADMIN' && (
-                  <Link to="/settings" className="text-slate-600 hover:text-slate-900">
-                    Settings
-                  </Link>
+                  <>
+                    <Link to="/team" className="text-slate-600 hover:text-slate-900">
+                      Team
+                    </Link>
+                    <Link to="/settings" className="text-slate-600 hover:text-slate-900">
+                      Settings
+                    </Link>
+                  </>
                 )}
               </>
             )}

@@ -26,6 +26,7 @@ jest.mock('../../src/services/appointmentService', () => ({
 }));
 
 jest.mock('../../src/services/checkInService', () => ({ checkInPatientForAppointment: jest.fn() }));
+jest.mock('../../src/services/staffService', () => ({ findActiveStaffById: jest.fn() }));
 
 import { loadDashboardSession, SESSION_COOKIE_NAME } from '../../src/dashboard/session';
 import {
@@ -36,9 +37,11 @@ import {
   listClinicAppointments,
 } from '../../src/services/appointmentService';
 import { checkInPatientForAppointment } from '../../src/services/checkInService';
+import { findActiveStaffById } from '../../src/services/staffService';
 import { appointmentsRouter } from '../../src/dashboard/appointments';
 
 const mockLoadSession = loadDashboardSession as jest.Mock;
+const mockFindStaffById = findActiveStaffById as jest.Mock;
 const mockListClinic = listClinicAppointments as jest.Mock;
 const mockConfirm = confirmAppointment as jest.Mock;
 const mockCancel = cancelAppointmentByStaff as jest.Mock;
@@ -69,6 +72,7 @@ function withCookie(req: request.Test) {
 beforeEach(() => {
   jest.clearAllMocks();
   mockLoadSession.mockResolvedValue(SESSION);
+  mockFindStaffById.mockResolvedValue({ id: 'staff-1', isActive: true });
 });
 
 describe('GET /appointments', () => {

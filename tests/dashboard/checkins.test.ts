@@ -7,6 +7,8 @@ jest.mock('../../src/dashboard/session', () => ({
   loadDashboardSession: jest.fn(),
 }));
 
+jest.mock('../../src/services/staffService', () => ({ findActiveStaffById: jest.fn() }));
+
 jest.mock('../../src/services/checkInService', () => ({
   confirmCheckInPaidManually: jest.fn(),
   CheckInNotPendingError: class CheckInNotPendingError extends Error {
@@ -35,12 +37,14 @@ jest.mock('../../src/db/prisma', () => ({
 }));
 
 import { loadDashboardSession, SESSION_COOKIE_NAME } from '../../src/dashboard/session';
+import { findActiveStaffById } from '../../src/services/staffService';
 import { confirmCheckInPaidManually, CheckInNotPendingError } from '../../src/services/checkInService';
 import { checkoutEncounter, EncounterNotReadyForCheckoutError } from '../../src/services/encounterService';
 import { prisma } from '../../src/db/prisma';
 import { checkinsRouter } from '../../src/dashboard/checkins';
 
 const mockLoadSession = loadDashboardSession as jest.Mock;
+const mockFindStaffById = findActiveStaffById as jest.Mock;
 const mockConfirmPaid = confirmCheckInPaidManually as jest.Mock;
 const mockCheckout = checkoutEncounter as jest.Mock;
 const mockFindManyCheckIns = prisma.checkIn.findMany as jest.Mock;
@@ -71,6 +75,7 @@ function withCookie(req: request.Test) {
 beforeEach(() => {
   jest.clearAllMocks();
   mockLoadSession.mockResolvedValue(SESSION);
+  mockFindStaffById.mockResolvedValue({ id: 'staff-1', isActive: true });
 });
 
 describe('GET /checkins/today', () => {

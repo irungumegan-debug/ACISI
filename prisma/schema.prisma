@@ -177,6 +177,16 @@ model Staff {
   /// is ignored, not carried forward.
   presenceOverride   StaffPresenceOverride?
   presenceOverrideAt DateTime?
+  /// Set only while isActive is false — cleared back to null on
+  /// reactivation, since these describe the *current* deactivation, not a
+  /// history of it (that permanent record lives in AuditLog via
+  /// DEACTIVATE_ACCOUNT/REACTIVATE_ACCOUNT). isActive itself remains the
+  /// single source of truth for whether this account can log in or receive
+  /// new work — see staffService.deactivateStaffAccount.
+  deactivatedAt        DateTime?
+  deactivatedByStaffId String?
+  deactivatedByStaff   Staff?     @relation("StaffDeactivatedBy", fields: [deactivatedByStaffId], references: [id])
+  deactivationsPerformed Staff[]  @relation("StaffDeactivatedBy")
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 

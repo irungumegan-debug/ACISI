@@ -4,10 +4,14 @@ import { prisma } from '../db/prisma';
 import { requireStaffSession, requireAdmin, AuthenticatedRequest } from './auth';
 import { regenerateInviteCode } from '../services/clinicService';
 import {
+  AccountAlreadyInStateError,
   InvalidPinFormatError,
+  LastActiveAdminError,
   StaffIsNotADoctorError,
   StaffNotFoundError,
+  deactivateStaffAccount,
   listClinicStaff,
+  reactivateStaffAccount,
   resetStaffPinByAdmin,
   setDoctorPresenceByAdmin,
 } from '../services/staffService';
@@ -102,6 +106,51 @@ clinicSettingsRouter.post('/staff/:id/presence', async (req, res) => {
     }
     if (err instanceof StaffIsNotADoctorError) {
       res.status(400).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
+});
+
+/**
+ * Deactivates a staff/doctor account — never deletes the row, so every
+ * Encounter/CheckIn/Appointment they touched keeps pointing at them. Blocked
+ * when the target is the clinic's last active admin (see
+ * staffService.LastActiveAdminError), whether the admin is deactivating
+ * themselves or another admin.
+ */
+clinicSettingsRouter.post('/staff/:id/deactivate', async (req, res) => {
+  const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
+
+  try {
+    const result = await deactivateStaffAccount({ clinicId, targetStaffId: req.params.id as string, requestedByStaffId: staffId });
+    res.json({ id: result.id, status: result.isActive ? 'ACTIVE' : 'DEACTIVATED' });
+  } catch (err) {
+    if (err instanceof StaffNotFoundError) {
+      res.status(404).json({ error: err.message });
+      return;
+    }
+    if (err instanceof LastActiveAdminError || err instanceof AccountAlreadyInStateError) {
+      res.status(409).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
+});
+
+clinicSettingsRouter.post('/staff/:id/reactivate', async (req, res) => {
+  const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
+
+  try {
+    const result = await reactivateStaffAccount({ clinicId, targetStaffId: req.params.id as string, requestedByStaffId: staffId });
+    res.json({ id: result.id, status: result.isActive ? 'ACTIVE' : 'DEACTIVATED' });
+  } catch (err) {
+    if (err instanceof StaffNotFoundError) {
+      res.status(404).json({ error: err.message });
+      return;
+    }
+    if (err instanceof AccountAlreadyInStateError) {
+      res.status(409).json({ error: err.message });
       return;
     }
     throw err;

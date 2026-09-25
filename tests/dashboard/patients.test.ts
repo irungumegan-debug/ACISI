@@ -9,17 +9,20 @@ jest.mock('../../src/dashboard/session', () => ({
 
 jest.mock('../../src/services/patientService', () => ({ getScopedHistory: jest.fn() }));
 jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
+jest.mock('../../src/services/staffService', () => ({ findActiveStaffById: jest.fn() }));
 
 jest.mock('../../src/db/prisma', () => ({
   prisma: { patient: { findMany: jest.fn(), findFirst: jest.fn() } },
 }));
 
 import { loadDashboardSession, SESSION_COOKIE_NAME } from '../../src/dashboard/session';
+import { findActiveStaffById } from '../../src/services/staffService';
 import { getScopedHistory } from '../../src/services/patientService';
 import { prisma } from '../../src/db/prisma';
 import { patientsRouter } from '../../src/dashboard/patients';
 
 const mockLoadSession = loadDashboardSession as jest.Mock;
+const mockFindStaffById = findActiveStaffById as jest.Mock;
 const mockGetScopedHistory = getScopedHistory as jest.Mock;
 const mockFindFirstPatient = prisma.patient.findFirst as jest.Mock;
 
@@ -48,6 +51,7 @@ function withCookie(req: request.Test) {
 beforeEach(() => {
   jest.clearAllMocks();
   mockLoadSession.mockResolvedValue(SESSION);
+  mockFindStaffById.mockResolvedValue({ id: 'staff-1', isActive: true });
 });
 
 describe('GET /patients/:id', () => {

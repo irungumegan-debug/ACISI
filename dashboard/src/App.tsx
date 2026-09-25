@@ -6,6 +6,7 @@ import { QueuePage } from './pages/QueuePage';
 import { PatientsPage } from './pages/PatientsPage';
 import { PatientDetailPage } from './pages/PatientDetailPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { TeamPage } from './pages/TeamPage';
 import { DoctorQueuePage } from './pages/DoctorQueuePage';
 import { DoctorEncounterPage } from './pages/DoctorEncounterPage';
 import { AppointmentsPage } from './pages/AppointmentsPage';
@@ -45,6 +46,7 @@ export function App() {
             <Route path="/patients" element={<PatientsPage />} />
             <Route path="/patients/:id" element={<PatientDetailPage />} />
             <Route path="/appointments" element={<AppointmentsPage />} />
+            <Route path="/team" element={<TeamPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/doctor/queue" element={<DoctorQueuePage />} />
             <Route path="/doctor/appointments" element={<DoctorAppointmentsPage />} />

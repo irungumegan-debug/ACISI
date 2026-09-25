@@ -104,6 +104,11 @@ export async function hashPin(pin: string): Promise<string> {
   return bcrypt.hash(pin, env.STAFF_PIN_SALT_ROUNDS);
 }
 
+/** Unfiltered lookup by staffCode — for the login paths, which need to tell "no such code" apart from "exists but deactivated" so they can show the deactivated case its own clear message. */
+export async function findStaffByCode(staffCode: string): Promise<Staff | null> {
+  return prisma.staff.findUnique({ where: { staffCode } });
+}
+
 export async function findActiveStaffByCode(staffCode: string): Promise<Staff | null> {
   const staff = await prisma.staff.findUnique({ where: { staffCode } });
   if (!staff || !staff.isActive) return null;
@@ -115,6 +120,11 @@ export async function findActiveStaffById(staffId: string): Promise<Staff | null
   const staff = await prisma.staff.findUnique({ where: { id: staffId } });
   if (!staff || !staff.isActive) return null;
   return staff;
+}
+
+/** Unfiltered lookup by staffCode with clinic included — for the login paths to tell "no such code" apart from "exists but deactivated" before deciding which message to show. */
+export async function findStaffWithClinicByCode(staffCode: string): Promise<(Staff & { clinic: Clinic }) | null> {
+  return prisma.staff.findUnique({ where: { staffCode }, include: { clinic: true } });
 }
 
 /** Same as findActiveStaffByCode, but also loads the clinic — for the dashboard/USSD login, which needs the clinic name for the session/UI. */
@@ -243,6 +253,8 @@ export function getDoctorPresenceStatus(staff: PresenceFields, now: Date = new D
   return loginToday ? 'IN' : 'NOT_IN_YET';
 }
 
+export type AccountStatus = 'ACTIVE' | 'DEACTIVATED';
+
 export interface ClinicStaffListItem {
   id: string;
   staffCode: string;
@@ -250,6 +262,8 @@ export interface ClinicStaffListItem {
   role: StaffRole;
   departmentName: string | null;
   isActive: boolean;
+  /** Same fact as isActive, in the vocabulary the Team page shows. */
+  status: AccountStatus;
   /** null for non-doctor roles — presence is a doctor-only concept. */
   presence: DoctorPresenceStatus | null;
 }
@@ -269,8 +283,113 @@ export async function listClinicStaff(clinicId: string): Promise<ClinicStaffList
     role: s.role,
     departmentName: s.department?.name ?? null,
     isActive: s.isActive,
+    status: s.isActive ? 'ACTIVE' : 'DEACTIVATED',
     presence: s.role === 'DOCTOR' ? getDoctorPresenceStatus(s) : null,
   }));
+}
+
+export class AccountAlreadyInStateError extends Error {
+  constructor(status: AccountStatus) {
+    super(status === 'ACTIVE' ? 'This account is already active' : 'This account is already deactivated');
+    this.name = 'AccountAlreadyInStateError';
+  }
+}
+
+/**
+ * Thrown when deactivating the given target would leave the clinic with zero
+ * active admins — whether that's an admin deactivating themselves (the case
+ * you'd hit first) or deactivating another admin who happens to be the last
+ * one left. Both leave the clinic unable to manage its own staff, so both are
+ * blocked the same way.
+ */
+export class LastActiveAdminError extends Error {
+  constructor() {
+    super('This clinic must always have at least one active admin');
+    this.name = 'LastActiveAdminError';
+  }
+}
+
+interface DeactivateStaffAccountInput {
+  clinicId: string;
+  targetStaffId: string;
+  requestedByStaffId: string;
+}
+
+/**
+ * Never deletes the row — Encounter/CheckIn/Appointment rows this staff
+ * member created keep pointing at them so historic records still show who
+ * saw a patient. isActive is the single source of truth for whether the
+ * account can log in or receive new doctor assignments (both already gated
+ * on it); deactivatedAt/deactivatedByStaffId exist only to describe *this*
+ * deactivation for as long as it's in effect.
+ */
+export async function deactivateStaffAccount(input: DeactivateStaffAccountInput): Promise<Staff> {
+  const target = await prisma.staff.findFirst({ where: { id: input.targetStaffId, clinicId: input.clinicId } });
+  if (!target) {
+    throw new StaffNotFoundError();
+  }
+  if (!target.isActive) {
+    throw new AccountAlreadyInStateError('DEACTIVATED');
+  }
+
+  if (target.role === 'ADMIN') {
+    const otherActiveAdmins = await prisma.staff.count({
+      where: { clinicId: input.clinicId, role: 'ADMIN', isActive: true, id: { not: target.id } },
+    });
+    if (otherActiveAdmins === 0) {
+      throw new LastActiveAdminError();
+    }
+  }
+
+  const updated = await prisma.staff.update({
+    where: { id: target.id },
+    data: { isActive: false, deactivatedAt: new Date(), deactivatedByStaffId: input.requestedByStaffId },
+  });
+
+  await recordAuditEvent({
+    actorType: 'STAFF',
+    actorId: input.requestedByStaffId,
+    staffId: input.requestedByStaffId,
+    action: 'DEACTIVATE_ACCOUNT',
+    entityType: 'Staff',
+    entityId: target.id,
+    metadata: { clinicId: input.clinicId, targetStaffId: target.id, targetStaffCode: target.staffCode, targetRole: target.role },
+  });
+
+  return updated;
+}
+
+interface ReactivateStaffAccountInput {
+  clinicId: string;
+  targetStaffId: string;
+  requestedByStaffId: string;
+}
+
+export async function reactivateStaffAccount(input: ReactivateStaffAccountInput): Promise<Staff> {
+  const target = await prisma.staff.findFirst({ where: { id: input.targetStaffId, clinicId: input.clinicId } });
+  if (!target) {
+    throw new StaffNotFoundError();
+  }
+  if (target.isActive) {
+    throw new AccountAlreadyInStateError('ACTIVE');
+  }
+
+  const updated = await prisma.staff.update({
+    where: { id: target.id },
+    data: { isActive: true, deactivatedAt: null, deactivatedByStaffId: null },
+  });
+
+  await recordAuditEvent({
+    actorType: 'STAFF',
+    actorId: input.requestedByStaffId,
+    staffId: input.requestedByStaffId,
+    action: 'REACTIVATE_ACCOUNT',
+    entityType: 'Staff',
+    entityId: target.id,
+    metadata: { clinicId: input.clinicId, targetStaffId: target.id, targetStaffCode: target.staffCode, targetRole: target.role },
+  });
+
+  return updated;
 }
 
 export class StaffIsNotADoctorError extends Error {

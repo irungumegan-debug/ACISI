@@ -1,4 +1,4 @@
-import { renderVisitRecordPdf } from '../../src/services/visitRecordDocument';
+import { buildVisitRecordDataFromEncounter, renderVisitRecordPdf } from '../../src/services/visitRecordDocument';
 
 /**
  * pdfkit renders text as hex-encoded glyph strings inside `<...>` TJ/Tj
@@ -31,6 +31,30 @@ const BASE_DATA = {
   prescription: 'Paracetamol 500mg, twice daily for 5 days',
   signature: null,
 };
+
+describe('buildVisitRecordDataFromEncounter', () => {
+  it("still shows the consulting doctor's name and role when their account has since been deactivated — Staff rows are never deleted, so the relation still resolves", () => {
+    const data = buildVisitRecordDataFromEncounter({
+      createdAt: new Date('2026-01-15'),
+      diagnosis: 'Seasonal flu',
+      prescription: 'Paracetamol 500mg, twice daily for 5 days',
+      consultedAt: new Date('2026-01-15T09:00:00Z'),
+      patient: { firstName: 'Jane', lastName: 'Wanjiru', patientCode: 'ACI-1042' },
+      clinic: { name: 'Sunrise Family Clinic', county: 'Nairobi' },
+      checkIn: { department: { name: 'General' } },
+      // isActive: false doesn't even appear in the selected shape this
+      // function receives — the join was never gated on it in the first
+      // place, so a deactivated doctor's historic visits are unaffected.
+      consultedByStaff: { name: 'Dr. Amani Wambui', role: 'DOCTOR' },
+    });
+
+    expect(data.signature).toEqual({
+      doctorName: 'Dr. Amani Wambui',
+      doctorTitle: 'Doctor',
+      signedAt: new Date('2026-01-15T09:00:00Z'),
+    });
+  });
+});
 
 describe('renderVisitRecordPdf', () => {
   it('produces a valid, well-formed PDF buffer', async () => {

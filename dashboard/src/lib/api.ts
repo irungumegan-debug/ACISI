@@ -9,6 +9,8 @@ export interface StaffSession {
 
 export type DoctorPresenceStatus = 'IN' | 'OUT' | 'NOT_IN_YET';
 
+export type AccountStatus = 'ACTIVE' | 'DEACTIVATED';
+
 export interface ClinicStaffListItem {
   id: string;
   staffCode: string;
@@ -16,6 +18,7 @@ export interface ClinicStaffListItem {
   role: string;
   departmentName: string | null;
   isActive: boolean;
+  status: AccountStatus;
   presence: DoctorPresenceStatus | null;
 }
 
@@ -128,12 +131,30 @@ class ApiError extends Error {
   }
 }
 
+/**
+ * Fires on any 401 from any request — including one that lands mid-session
+ * because the account was deactivated after login (the Redis session was
+ * fine at login time, but requireStaffSession re-checks the live row on
+ * every request now). AuthContext registers this to clear its session
+ * state, so ProtectedLayout's existing `session === null` redirect takes
+ * the user back to /login without every page needing its own 401 handling.
+ */
+let onUnauthorized: (() => void) | null = null;
+
+export function setUnauthorizedHandler(handler: (() => void) | null): void {
+  onUnauthorized = handler;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api/staff${path}`, {
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     ...init,
   });
+
+  if (res.status === 401) {
+    onUnauthorized?.();
+  }
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
@@ -196,6 +217,14 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ status }),
     });
+  },
+
+  deactivateStaff(staffId: string) {
+    return request<{ id: string; status: AccountStatus }>(`/clinic/staff/${staffId}/deactivate`, { method: 'POST' });
+  },
+
+  reactivateStaff(staffId: string) {
+    return request<{ id: string; status: AccountStatus }>(`/clinic/staff/${staffId}/reactivate`, { method: 'POST' });
   },
 
   confirmCheckInPaid(checkInId: string) {

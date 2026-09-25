@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { api, StaffSession } from '../lib/api';
+import { api, setUnauthorizedHandler, StaffSession } from '../lib/api';
 
 interface AuthContextValue {
   session: StaffSession | null;
@@ -20,6 +20,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .then(setSession)
       .catch(() => setSession(null))
       .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    setUnauthorizedHandler(() => setSession(null));
+    return () => setUnauthorizedHandler(null);
   }, []);
 
   async function login(staffCode: string, pin: string): Promise<void> {
