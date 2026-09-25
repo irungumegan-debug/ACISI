@@ -83,6 +83,21 @@ enum EncounterStatus {
   DONE
 }
 
+/// Lifecycle of a future-dated booking, independent of CheckInStatus/
+/// EncounterStatus (which only exist once a visit actually starts). REQUESTED
+/// is the patient's initial booking; a staff member moves it to CONFIRMED or
+/// CANCELLED. COMPLETED is set the moment a CheckIn gets linked to this
+/// appointment (see checkInService.initiateCheckIn) — i.e. the patient (or
+/// staff on their behalf) actually showed up and started the normal walk-in
+/// flow, regardless of whether that CheckIn's own payment later succeeds or
+/// fails. Never reopened once CANCELLED or COMPLETED.
+enum AppointmentStatus {
+  REQUESTED
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
 model Clinic {
   id         String   @id @default(cuid())
   name       String
@@ -99,10 +114,11 @@ model Clinic {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  staff       Staff[]
-  checkIns    CheckIn[]
-  encounters  Encounter[]
-  departments Department[]
+  staff        Staff[]
+  checkIns     CheckIn[]
+  encounters   Encounter[]
+  departments  Department[]
+  appointments Appointment[]
 
   @@map("clinics")
 }
@@ -120,8 +136,9 @@ model Department {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 
-  staff    Staff[]
-  checkIns CheckIn[]
+  staff        Staff[]
+  checkIns     CheckIn[]
+  appointments Appointment[]
 
   @@unique([clinicId, name])
   @@index([clinicId])
@@ -163,11 +180,13 @@ model Staff {
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
-  checkIns             CheckIn[]
-  auditLogs            AuditLog[]
-  assignedEncounters   Encounter[] @relation("EncounterAssignedDoctor")
-  consultedEncounters  Encounter[] @relation("EncounterConsultedBy")
-  checkedOutEncounters Encounter[] @relation("EncounterCheckedOutBy")
+  checkIns              CheckIn[]
+  auditLogs             AuditLog[]
+  assignedEncounters    Encounter[]   @relation("EncounterAssignedDoctor")
+  consultedEncounters   Encounter[]   @relation("EncounterConsultedBy")
+  checkedOutEncounters  Encounter[]   @relation("EncounterCheckedOutBy")
+  confirmedAppointments Appointment[] @relation("AppointmentConfirmedBy")
+  cancelledAppointments Appointment[] @relation("AppointmentCancelledBy")
 
   @@index([clinicId])
   @@index([departmentId])
@@ -202,10 +221,11 @@ model Patient {
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
-  consents    Consent[]
-  encounters  Encounter[]
-  checkIns    CheckIn[]
-  otps        Otp[]
+  consents     Consent[]
+  encounters   Encounter[]
+  checkIns     CheckIn[]
+  otps         Otp[]
+  appointments Appointment[]
 
   @@map("patients")
 }
@@ -311,6 +331,13 @@ model CheckIn {
   status                 CheckInStatus @default(PENDING_PAYMENT)
   mpesaCheckoutRequestId String?       @unique
   mpesaMerchantRequestId String?
+  /// Set when this arrival fulfills an existing Appointment — either
+  /// auto-matched (see checkInService.initiateCheckIn/appointmentService.
+  /// findArrivalMatch) or explicitly linked by staff checking the patient in
+  /// against a specific booking. Null for an ordinary walk-in with no prior
+  /// booking. Setting this also moves the Appointment to COMPLETED.
+  appointmentId          String?       @unique
+  appointment            Appointment?  @relation(fields: [appointmentId], references: [id])
   createdAt              DateTime      @default(now())
   paidAt                 DateTime?
 
@@ -321,6 +348,47 @@ model CheckIn {
   @@index([clinicId])
   @@index([departmentId])
   @@map("check_ins")
+}
+
+/// A future-dated request to see a doctor, made through the web portal —
+/// entirely separate from CheckIn/Encounter, which model an actual same-day
+/// walk-in visit. An Appointment only ever produces a CheckIn (see
+/// CheckIn.appointmentId) once the patient actually shows up; until then it
+/// carries no payment and no clinical data of its own. Deliberately no
+/// concept of a doctor's schedule/capacity here — this just records what was
+/// requested, and staff use their own judgment confirming it.
+model Appointment {
+  id           String            @id @default(cuid())
+  patientId    String
+  patient      Patient           @relation(fields: [patientId], references: [id])
+  clinicId     String
+  clinic       Clinic            @relation(fields: [clinicId], references: [id])
+  departmentId String
+  department   Department        @relation(fields: [departmentId], references: [id])
+  /// The date/time the patient asked to come in — a plain request, not a
+  /// reserved slot; nothing prevents two patients requesting the same time.
+  scheduledFor DateTime
+  status       AppointmentStatus @default(REQUESTED)
+
+  confirmedByStaffId String?
+  confirmedByStaff   Staff?    @relation("AppointmentConfirmedBy", fields: [confirmedByStaffId], references: [id])
+  confirmedAt        DateTime?
+
+  /// Who cancelled it — the patient themselves or a staff member. Null
+  /// unless status is CANCELLED.
+  cancelledByType    ActorType?
+  cancelledByStaffId String?
+  cancelledByStaff   Staff?     @relation("AppointmentCancelledBy", fields: [cancelledByStaffId], references: [id])
+  cancelledAt        DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  checkIn CheckIn?
+
+  @@index([clinicId, departmentId, scheduledFor])
+  @@index([patientId])
+  @@map("appointments")
 }
 
 /// One row per Daraja STK push attempt/callback for a CheckIn. A CheckIn can

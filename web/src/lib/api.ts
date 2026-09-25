@@ -39,6 +39,16 @@ export interface PatientSession {
   firstName: string;
 }
 
+export type AppointmentStatus = 'REQUESTED' | 'CONFIRMED' | 'CANCELLED' | 'COMPLETED';
+
+export interface OwnAppointment {
+  id: string;
+  clinicName: string;
+  departmentName: string;
+  scheduledFor: string;
+  status: AppointmentStatus;
+}
+
 export interface StaffSessionSummary {
   staffName: string;
   clinicName: string;
@@ -144,6 +154,24 @@ export const api = {
 
   getPatientRecords() {
     return request<{ history: VisitHistoryEntry[] }>('/patients/records');
+  },
+
+  bookAppointment(clinicId: string, departmentId: string, scheduledFor: string) {
+    return request<{ appointmentId: string; status: AppointmentStatus }>('/patients/appointments', {
+      method: 'POST',
+      body: JSON.stringify({ clinicId, departmentId, scheduledFor }),
+    });
+  },
+
+  getMyAppointments() {
+    return request<{ appointments: OwnAppointment[] }>('/patients/appointments');
+  },
+
+  cancelAppointment(appointmentId: string) {
+    return request<{ appointmentId: string; status: AppointmentStatus }>(
+      `/patients/appointments/${encodeURIComponent(appointmentId)}/cancel`,
+      { method: 'POST' },
+    );
   },
 
   /** Not a fetch — same-origin browser navigation already carries the session cookie, so this just builds the href for a plain download link. */

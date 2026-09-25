@@ -78,6 +78,26 @@ export interface DoctorQueueItem {
   waitingSince: string;
 }
 
+export type AppointmentStatus = 'REQUESTED' | 'CONFIRMED' | 'CANCELLED' | 'COMPLETED';
+
+export interface ClinicAppointmentItem {
+  id: string;
+  patientId: string;
+  patientName: string;
+  patientCode: string;
+  phoneNumber: string;
+  departmentName: string;
+  scheduledFor: string;
+  status: AppointmentStatus;
+}
+
+export interface DoctorAppointmentItem {
+  id: string;
+  patientName: string;
+  patientCode: string;
+  scheduledFor: string;
+}
+
 export interface HistoryEntry {
   encounterId: string;
   clinicName: string;
@@ -193,6 +213,32 @@ export const api = {
 
   getDoctorQueue() {
     return request<{ queue: DoctorQueueItem[]; presence: DoctorPresenceStatus }>('/doctor/queue');
+  },
+
+  getDoctorAppointmentsToday() {
+    return request<{ appointments: DoctorAppointmentItem[] }>('/doctor/appointments/today');
+  },
+
+  getClinicAppointments() {
+    return request<{ appointments: ClinicAppointmentItem[] }>('/appointments');
+  },
+
+  confirmAppointment(appointmentId: string) {
+    return request<{ appointmentId: string; status: AppointmentStatus }>(`/appointments/${appointmentId}/confirm`, {
+      method: 'POST',
+    });
+  },
+
+  cancelAppointment(appointmentId: string) {
+    return request<{ appointmentId: string; status: AppointmentStatus }>(`/appointments/${appointmentId}/cancel`, {
+      method: 'POST',
+    });
+  },
+
+  arriveAppointment(appointmentId: string) {
+    return request<{ checkInId: string; status: CheckInStatus }>(`/appointments/${appointmentId}/arrive`, {
+      method: 'POST',
+    });
   },
 
   setOwnPresence(status: 'IN' | 'OUT') {

@@ -13,6 +13,8 @@ jest.mock('../../src/services/staffService', () => ({
   setDoctorPresenceBySelf: jest.fn(),
 }));
 
+jest.mock('../../src/services/appointmentService', () => ({ listDepartmentAppointmentsToday: jest.fn() }));
+
 jest.mock('../../src/services/encounterService', () => ({
   getDoctorQueue: jest.fn(),
   getEncounterForDoctor: jest.fn(),
@@ -46,6 +48,7 @@ import {
   InvalidPinError,
 } from '../../src/services/encounterService';
 import { findActiveStaffById, setDoctorPresenceBySelf } from '../../src/services/staffService';
+import { listDepartmentAppointmentsToday } from '../../src/services/appointmentService';
 import { doctorRouter } from '../../src/dashboard/doctor';
 
 const mockLoadSession = loadDashboardSession as jest.Mock;
@@ -54,6 +57,7 @@ const mockGetEncounter = getEncounterForDoctor as jest.Mock;
 const mockSubmitConsult = submitConsultation as jest.Mock;
 const mockFindStaffById = findActiveStaffById as jest.Mock;
 const mockSetPresenceBySelf = setDoctorPresenceBySelf as jest.Mock;
+const mockListAppointmentsToday = listDepartmentAppointmentsToday as jest.Mock;
 
 const TODAY = new Date();
 
@@ -149,6 +153,26 @@ describe('POST /doctor/presence', () => {
     const res = await withCookie(request(buildApp()).post('/doctor/presence').send({ status: 'OUT' }));
     expect(res.status).toBe(403);
     expect(mockSetPresenceBySelf).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /doctor/appointments/today', () => {
+  it("returns today's confirmed appointments for the doctor's own clinic+department", async () => {
+    mockLoadSession.mockResolvedValue(DOCTOR_SESSION);
+    mockListAppointmentsToday.mockResolvedValue([{ id: 'appt-1', patientName: 'Jane Wanjiru', patientCode: 'ACI-1042' }]);
+
+    const res = await withCookie(request(buildApp()).get('/doctor/appointments/today'));
+
+    expect(res.status).toBe(200);
+    expect(mockListAppointmentsToday).toHaveBeenCalledWith('clinic-1', 'dept-1');
+    expect(res.body.appointments).toHaveLength(1);
+  });
+
+  it('is blocked for a non-doctor session, same as the rest of this router', async () => {
+    mockLoadSession.mockResolvedValue(RECEPTIONIST_SESSION);
+    const res = await withCookie(request(buildApp()).get('/doctor/appointments/today'));
+    expect(res.status).toBe(403);
+    expect(mockListAppointmentsToday).not.toHaveBeenCalled();
   });
 });
 

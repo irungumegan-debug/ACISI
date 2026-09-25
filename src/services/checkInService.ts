@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { CheckIn } from '@prisma/client';
 import { prisma } from '../db/prisma';
 import { env } from '../config/env';
@@ -8,6 +9,7 @@ import { ParsedStkCallback } from '../mpesa/types';
 import { enqueueSmsReceipt, scheduleStkStatusCheck } from '../jobs/queue';
 import { publishCheckInFailed, publishCheckInPaid } from './realtimeEvents';
 import { assignDoctorForCheckIn } from './doctorAssignmentService';
+import { findArrivalMatch, getAppointmentForArrival, markAppointmentCompleted } from './appointmentService';
 
 interface InitiateCheckInInput {
   ussdSessionId: string;
@@ -16,6 +18,14 @@ interface InitiateCheckInInput {
   clinicName: string;
   departmentId: string;
   phoneNumberE164: string;
+  /**
+   * Set only when the caller already knows exactly which appointment this
+   * arrival fulfills (the staff-arrival path below) — skips the automatic
+   * same-day lookup. Left undefined for every other caller (USSD, web
+   * portal), which instead get auto-matched against findArrivalMatch so a
+   * booked patient links up however they actually show up.
+   */
+  appointmentId?: string;
 }
 
 interface InitiateCheckInResult {
@@ -36,6 +46,11 @@ export async function initiateCheckIn(input: InitiateCheckInInput): Promise<Init
     return { checkIn: existing, wasAlreadyInitiated: true };
   }
 
+  const appointmentId =
+    input.appointmentId !== undefined
+      ? input.appointmentId
+      : ((await findArrivalMatch(input.patientId, input.clinicId, input.departmentId))?.id ?? null);
+
   const checkIn = await prisma.checkIn.create({
     data: {
       patientId: input.patientId,
@@ -44,8 +59,16 @@ export async function initiateCheckIn(input: InitiateCheckInInput): Promise<Init
       ussdSessionId: input.ussdSessionId,
       amountKes: env.CHECKIN_FEE_AMOUNT_KES,
       status: 'PENDING_PAYMENT',
+      appointmentId,
     },
   });
+
+  // The appointment is "done" the moment it produces a real arrival — this
+  // CheckIn's own status (PENDING_PAYMENT/PAID/FAILED) tracks payment
+  // completely separately, same as every other CheckIn.
+  if (appointmentId) {
+    await markAppointmentCompleted(appointmentId);
+  }
 
   await recordAuditEvent({
     actorType: 'PATIENT',
@@ -53,7 +76,7 @@ export async function initiateCheckIn(input: InitiateCheckInInput): Promise<Init
     action: 'CHECK_IN_CREATED',
     entityType: 'CheckIn',
     entityId: checkIn.id,
-    metadata: { clinicId: input.clinicId, departmentId: input.departmentId },
+    metadata: { clinicId: input.clinicId, departmentId: input.departmentId, appointmentId },
   });
 
   try {
@@ -252,4 +275,44 @@ export async function devMarkCheckInPaid(checkInId: string): Promise<CheckIn> {
   });
 
   return updated;
+}
+
+/**
+ * Staff explicitly checking a booked patient in, rather than the patient
+ * arriving and checking in themselves — e.g. a patient who called ahead, or
+ * whose booking staff want to convert directly. Reuses the exact same
+ * initiateCheckIn (same fee, same STK push to the patient's own phone) as
+ * every other check-in, just pre-linked to a specific appointment instead of
+ * relying on the automatic same-day match. Records its own audit event,
+ * distinct from initiateCheckIn's patient-attributed CHECK_IN_CREATED, so
+ * the staff action itself is accountable.
+ */
+export async function checkInPatientForAppointment(
+  appointmentId: string,
+  clinicId: string,
+  staffId: string,
+): Promise<InitiateCheckInResult> {
+  const appointment = await getAppointmentForArrival(appointmentId, clinicId);
+
+  const result = await initiateCheckIn({
+    ussdSessionId: `STAFF-${crypto.randomUUID()}`,
+    patientId: appointment.patientId,
+    clinicId: appointment.clinicId,
+    clinicName: appointment.clinicName,
+    departmentId: appointment.departmentId,
+    phoneNumberE164: appointment.phoneNumberE164,
+    appointmentId: appointment.id,
+  });
+
+  await recordAuditEvent({
+    actorType: 'STAFF',
+    actorId: staffId,
+    staffId,
+    action: 'APPOINTMENT_STAFF_CHECKED_IN',
+    entityType: 'Appointment',
+    entityId: appointment.id,
+    metadata: { checkInId: result.checkIn.id },
+  });
+
+  return result;
 }
