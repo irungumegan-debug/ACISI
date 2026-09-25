@@ -10,6 +10,7 @@ import {
   submitConsultation,
 } from '../services/encounterService';
 import { findActiveStaffById, getDoctorPresenceStatus, setDoctorPresenceBySelf } from '../services/staffService';
+import { listDepartmentAppointmentsToday } from '../services/appointmentService';
 
 export const doctorRouter = Router();
 
@@ -49,6 +50,13 @@ doctorRouter.post('/presence', async (req, res) => {
   const { staffId } = (req as AuthenticatedRequest).dashboardSession;
   const result = await setDoctorPresenceBySelf(staffId, parsed.data.status);
   res.json(result);
+});
+
+/** Read-only: today's CONFIRMED appointments in the doctor's own department — separate from their live WAITING/IN_CONSULTATION queue. */
+doctorRouter.get('/appointments/today', async (req, res) => {
+  const { clinicId, departmentId } = (req as AuthenticatedRequest).dashboardSession;
+  const appointments = await listDepartmentAppointmentsToday(clinicId, departmentId as string);
+  res.json({ appointments });
 });
 
 doctorRouter.get('/encounters/:id', async (req, res) => {

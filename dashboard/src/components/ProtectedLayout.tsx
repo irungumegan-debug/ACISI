@@ -23,9 +23,14 @@ export function ProtectedLayout() {
           </div>
           <nav className="flex items-center gap-4 text-sm">
             {session.role === 'DOCTOR' ? (
-              <Link to="/doctor/queue" className="text-slate-600 hover:text-slate-900">
-                My queue
-              </Link>
+              <>
+                <Link to="/doctor/queue" className="text-slate-600 hover:text-slate-900">
+                  My queue
+                </Link>
+                <Link to="/doctor/appointments" className="text-slate-600 hover:text-slate-900">
+                  Appointments
+                </Link>
+              </>
             ) : (
               <>
                 <Link to="/queue" className="text-slate-600 hover:text-slate-900">
@@ -33,6 +38,9 @@ export function ProtectedLayout() {
                 </Link>
                 <Link to="/patients" className="text-slate-600 hover:text-slate-900">
                   Patients
+                </Link>
+                <Link to="/appointments" className="text-slate-600 hover:text-slate-900">
+                  Appointments
                 </Link>
                 {session.role === 'ADMIN' && (
                   <Link to="/settings" className="text-slate-600 hover:text-slate-900">

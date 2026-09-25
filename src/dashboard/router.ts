@@ -6,6 +6,7 @@ import { eventsRouter } from './events';
 import { staffRegistrationRouter } from './registration';
 import { clinicSettingsRouter } from './clinicSettings';
 import { doctorRouter } from './doctor';
+import { appointmentsRouter } from './appointments';
 
 export const dashboardRouter = Router();
 
@@ -15,4 +16,5 @@ dashboardRouter.use('/clinic', clinicSettingsRouter);
 dashboardRouter.use('/patients', patientsRouter);
 dashboardRouter.use('/checkins', checkinsRouter);
 dashboardRouter.use('/doctor', doctorRouter);
+dashboardRouter.use('/appointments', appointmentsRouter);
 dashboardRouter.use('/events', eventsRouter);
