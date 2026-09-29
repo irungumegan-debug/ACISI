@@ -6,6 +6,7 @@ import { requireStaffSession, AuthenticatedRequest } from './auth';
 import { CheckInNotPendingError, confirmCheckInPaidManually } from '../services/checkInService';
 import { CheckoutDeliveryMethod, EncounterNotReadyForCheckoutError, checkoutEncounter } from '../services/encounterService';
 import { emailConfigured } from '../config/email';
+import { listDoctorsPresence } from '../services/staffService';
 
 export const checkinsRouter = Router();
 
@@ -56,6 +57,18 @@ checkinsRouter.get('/today', async (req, res) => {
       createdAt: c.createdAt,
     })),
   });
+});
+
+/**
+ * Read-only "who's in today" panel for front desk (QueuePage) — separate
+ * from the admin-only Team page's full roster (PIN reset, deactivation),
+ * which a receptionist can't reach. Live updates arrive via the same /events
+ * SSE stream the check-in queue already uses.
+ */
+checkinsRouter.get('/doctors-presence', async (req, res) => {
+  const { clinicId } = (req as AuthenticatedRequest).dashboardSession;
+  const doctors = await listDoctorsPresence(clinicId);
+  res.json({ doctors });
 });
 
 /**

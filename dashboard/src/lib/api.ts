@@ -69,6 +69,13 @@ export interface QueueItem {
   createdAt: string;
 }
 
+export interface DoctorPresenceListItem {
+  id: string;
+  name: string;
+  departmentName: string | null;
+  presence: DoctorPresenceStatus;
+}
+
 export type CheckoutDeliveryMethod = 'sms' | 'sms_and_email';
 
 export interface DoctorQueueItem {
@@ -193,6 +200,10 @@ export const api = {
     return request<{ checkIns: QueueItem[]; emailDeliveryAvailable: boolean }>('/checkins/today');
   },
 
+  getDoctorsPresence() {
+    return request<{ doctors: DoctorPresenceListItem[] }>('/checkins/doctors-presence');
+  },
+
   getInviteCode() {
     return request<{ inviteCode: string }>('/clinic/invite-code');
   },
@@ -292,18 +303,18 @@ export const api = {
 export { ApiError };
 
 /**
- * Subscribes to the live check-in queue. Returns an unsubscribe function.
+ * Subscribes to this clinic's live dashboard events — check-in arrivals and
+ * doctor presence changes alike. Returns an unsubscribe function.
  * EventSource carries cookies for same-origin requests automatically, so no
  * extra auth wiring is needed here — the browser just needs to already have
  * the session cookie from a successful login. The event payload only
- * carries the bare minimum (a new arrival happened); callers refetch the
- * full queue for the current department/status/prescription data rather
- * than trying to merge a partial payload into it.
+ * carries the bare minimum (something changed); callers refetch whatever
+ * they show rather than trying to merge a partial payload into it.
  */
-export function subscribeToQueue(onCheckInPaid: () => void): () => void {
+export function subscribeToDashboardEvents(onChange: () => void): () => void {
   const source = new EventSource('/api/staff/events');
   source.onmessage = () => {
-    onCheckInPaid();
+    onChange();
   };
   return () => source.close();
 }

@@ -1,12 +1,13 @@
 import bcrypt from 'bcrypt';
-import dayjs from 'dayjs';
 import { prisma } from '../db/prisma';
 import { Clinic, Prisma, Staff, StaffRole, StaffPresenceOverride } from '@prisma/client';
 import { recordAuditEvent } from './auditService';
+import { publishPresenceChanged } from './realtimeEvents';
 import { generateStaffCode, generateTemporaryPin } from '../utils/idCodes';
 import { env } from '../config/env';
 import { findClinicByInviteCode } from './clinicService';
 import { findActiveDepartment } from './departmentService';
+import { endOfPreviousNairobiDay, startOfNairobiDay } from '../utils/time';
 
 const PIN_PATTERN = /^\d{4,6}$/;
 
@@ -150,9 +151,13 @@ export async function verifyStaffPin(staff: Staff, pin: string): Promise<boolean
   // A successful login is the automatic "in today" signal for a doctor —
   // see getDoctorPresenceStatus. Not meaningful for other roles, so scoped
   // to DOCTOR to avoid polluting front-desk/admin rows with a field that's
-  // never read for them.
+  // never read for them. Shared by both the dashboard and USSD login paths,
+  // so both get presence tracking (and this audit/live-update side effect)
+  // without either needing its own copy of this logic.
   if (isValid && staff.role === 'DOCTOR') {
+    const oldStatus = getDoctorPresenceStatus(staff);
     await prisma.staff.update({ where: { id: staff.id }, data: { lastLoginAt: new Date() } });
+    await recordDoctorPresenceChange({ staffId: staff.id, clinicId: staff.clinicId, oldStatus, newStatus: 'IN', source: 'LOGIN' });
   }
 
   await recordAuditEvent({
@@ -236,9 +241,14 @@ interface PresenceFields {
  * ignored entirely — this is a live "are they here right now" read, never a
  * schedule or a history. Neither signal today means NOT_IN_YET, the same
  * bucket a doctor who's off sick or not yet arrived falls into.
+ *
+ * "Today" is Africa/Nairobi's calendar day, not the server's own OS
+ * timezone (which on a typical host is UTC) — otherwise the daily reset job
+ * below, which genuinely does fire at Nairobi midnight, would disagree with
+ * this function's own day-rollover by up to 3 hours.
  */
 export function getDoctorPresenceStatus(staff: PresenceFields, now: Date = new Date()): DoctorPresenceStatus {
-  const startOfToday = dayjs(now).startOf('day').toDate();
+  const startOfToday = startOfNairobiDay(now);
 
   const loginToday = staff.lastLoginAt && staff.lastLoginAt >= startOfToday ? staff.lastLoginAt : null;
   const overrideToday =
@@ -251,6 +261,108 @@ export function getDoctorPresenceStatus(staff: PresenceFields, now: Date = new D
   }
 
   return loginToday ? 'IN' : 'NOT_IN_YET';
+}
+
+export type PresenceChangeSource = 'LOGIN' | 'LOGOUT' | 'DAILY_RESET';
+
+interface RecordDoctorPresenceChangeInput {
+  staffId: string;
+  clinicId: string;
+  oldStatus: DoctorPresenceStatus;
+  newStatus: DoctorPresenceStatus;
+  source: PresenceChangeSource;
+}
+
+/**
+ * Shared by every automatic presence transition (login, logout, the daily
+ * reset) — never by the manual self/admin toggle, which already has its own
+ * distinct audit actions (DOCTOR_PRESENCE_SET / DOCTOR_PRESENCE_SET_BY_ADMIN)
+ * from a different trust context. A no-op when nothing actually changed
+ * (e.g. logging in twice without logging out), so the audit log only ever
+ * records real transitions, not every touch. DAILY_RESET is attributed to
+ * SYSTEM with no actor, same convention as this codebase's other
+ * console/cron-initiated audit rows (e.g. STAFF_PIN_RESET_VIA_CONSOLE).
+ */
+async function recordDoctorPresenceChange(input: RecordDoctorPresenceChangeInput): Promise<void> {
+  if (input.oldStatus === input.newStatus) return;
+
+  const isSystem = input.source === 'DAILY_RESET';
+  await recordAuditEvent({
+    actorType: isSystem ? 'SYSTEM' : 'STAFF',
+    actorId: isSystem ? undefined : input.staffId,
+    staffId: isSystem ? undefined : input.staffId,
+    action: 'DOCTOR_PRESENCE_AUTO_SET',
+    entityType: 'Staff',
+    entityId: input.staffId,
+    metadata: { source: input.source, oldStatus: input.oldStatus, newStatus: input.newStatus },
+  });
+
+  publishPresenceChanged({ clinicId: input.clinicId, staffId: input.staffId, presence: input.newStatus });
+}
+
+/**
+ * A doctor explicitly logging out — the counterpart to the automatic
+ * login-sets-IN signal in verifyStaffPin. Uses the exact same
+ * presenceOverride mechanism as the manual "mark out" toggle (not a new
+ * field), so a login later that same day still correctly wins via
+ * getDoctorPresenceStatus's existing "most recent signal wins" rule. A
+ * no-op for a non-doctor session — there's nothing to reset.
+ */
+export async function setDoctorPresenceOnLogout(staffId: string): Promise<void> {
+  const staff = await prisma.staff.findUnique({ where: { id: staffId } });
+  if (!staff || staff.role !== 'DOCTOR') return;
+
+  const oldStatus = getDoctorPresenceStatus(staff);
+  const now = new Date();
+  await prisma.staff.update({
+    where: { id: staff.id },
+    data: { presenceOverride: 'OUT', presenceOverrideAt: now },
+  });
+
+  await recordDoctorPresenceChange({ staffId: staff.id, clinicId: staff.clinicId, oldStatus, newStatus: 'OUT', source: 'LOGOUT' });
+}
+
+/**
+ * The midnight-Nairobi safety net: flips every doctor still showing IN back
+ * to OUT, so one forgotten logout never bleeds into the next day (though in
+ * practice getDoctorPresenceStatus's own day-rollover already makes that
+ * true by the time anyone next looks — this exists to produce a real,
+ * timestamped audit row and an immediate live update for any dashboard left
+ * open across midnight, rather than a status that only quietly looks
+ * different the next time someone happens to check).
+ *
+ * Evaluated against the *previous* Nairobi day (endOfPreviousNairobiDay),
+ * not "now" — by the time this runs, "now" is already the first instant of
+ * the new day, so evaluating against "now" directly would find nobody IN at
+ * all (every login from the day that just ended would already read as
+ * stale). Evaluating against a moment still within that day recovers
+ * whatever the real, last-live status was right before the rollover.
+ */
+export async function resetAllDoctorPresence(now: Date = new Date()): Promise<void> {
+  const referenceTime = endOfPreviousNairobiDay(now);
+  const doctors = await prisma.staff.findMany({
+    where: { role: 'DOCTOR' },
+    select: { id: true, clinicId: true, lastLoginAt: true, presenceOverride: true, presenceOverrideAt: true },
+  });
+
+  const resetAt = new Date();
+  for (const doctor of doctors) {
+    const oldStatus = getDoctorPresenceStatus(doctor, referenceTime);
+    if (oldStatus !== 'IN') continue;
+
+    await prisma.staff.update({
+      where: { id: doctor.id },
+      data: { presenceOverride: 'OUT', presenceOverrideAt: resetAt },
+    });
+
+    await recordDoctorPresenceChange({
+      staffId: doctor.id,
+      clinicId: doctor.clinicId,
+      oldStatus,
+      newStatus: 'OUT',
+      source: 'DAILY_RESET',
+    });
+  }
 }
 
 export type AccountStatus = 'ACTIVE' | 'DEACTIVATED';
@@ -285,6 +397,37 @@ export async function listClinicStaff(clinicId: string): Promise<ClinicStaffList
     isActive: s.isActive,
     status: s.isActive ? 'ACTIVE' : 'DEACTIVATED',
     presence: s.role === 'DOCTOR' ? getDoctorPresenceStatus(s) : null,
+  }));
+}
+
+export interface DoctorPresenceListItem {
+  id: string;
+  name: string;
+  departmentName: string | null;
+  presence: DoctorPresenceStatus;
+}
+
+/**
+ * Read-only "who's in today" view for front desk — deliberately a separate,
+ * narrower function from listClinicStaff (the admin roster with PIN
+ * reset/deactivation, which also exposes staffCode and account status): a
+ * receptionist directing patients only needs a name, department, and
+ * presence, not the rest of that admin surface. Excludes deactivated
+ * doctors entirely rather than showing them as some presence state — an
+ * account that can't work at all isn't "out," it's just not staff anymore.
+ */
+export async function listDoctorsPresence(clinicId: string): Promise<DoctorPresenceListItem[]> {
+  const doctors = await prisma.staff.findMany({
+    where: { clinicId, role: 'DOCTOR', isActive: true },
+    orderBy: { name: 'asc' },
+    include: { department: { select: { name: true } } },
+  });
+
+  return doctors.map((d) => ({
+    id: d.id,
+    name: d.name,
+    departmentName: d.department?.name ?? null,
+    presence: getDoctorPresenceStatus(d),
   }));
 }
 

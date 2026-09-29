@@ -1,6 +1,7 @@
 import bcrypt from 'bcrypt';
 
 jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
+jest.mock('../../src/services/realtimeEvents', () => ({ publishPresenceChanged: jest.fn() }));
 jest.mock('../../src/db/prisma', () => ({
   prisma: {
     staff: { findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn(), count: jest.fn() },
@@ -9,6 +10,7 @@ jest.mock('../../src/db/prisma', () => ({
 
 import { prisma } from '../../src/db/prisma';
 import { recordAuditEvent } from '../../src/services/auditService';
+import { publishPresenceChanged } from '../../src/services/realtimeEvents';
 import {
   AccountAlreadyInStateError,
   InvalidPinFormatError,
@@ -19,15 +21,19 @@ import {
   deactivateStaffAccount,
   getDoctorPresenceStatus,
   listClinicStaff,
+  listDoctorsPresence,
   reactivateStaffAccount,
+  resetAllDoctorPresence,
   resetStaffPinByAdmin,
   resetStaffPinViaConsole,
   setDoctorPresenceByAdmin,
   setDoctorPresenceBySelf,
+  setDoctorPresenceOnLogout,
   verifyStaffPin,
 } from '../../src/services/staffService';
 
 const mockRecordAudit = recordAuditEvent as jest.Mock;
+const mockPublishPresence = publishPresenceChanged as jest.Mock;
 const mockFindUnique = prisma.staff.findUnique as jest.Mock;
 const mockFindFirst = prisma.staff.findFirst as jest.Mock;
 const mockFindMany = prisma.staff.findMany as jest.Mock;
@@ -72,7 +78,7 @@ describe('verifyStaffPin (login — unchanged behavior after extracting compareP
 
   it("marks a doctor's lastLoginAt (the 'in today' signal) on a correct PIN", async () => {
     const pinHash = await bcrypt.hash('1234', 4);
-    const staff = { id: 'doc-1', pinHash, role: 'DOCTOR' } as Parameters<typeof verifyStaffPin>[0];
+    const staff = { id: 'doc-1', clinicId: 'clinic-1', pinHash, role: 'DOCTOR' } as Parameters<typeof verifyStaffPin>[0];
 
     await verifyStaffPin(staff, '1234');
 
@@ -81,13 +87,60 @@ describe('verifyStaffPin (login — unchanged behavior after extracting compareP
 
   it("does not touch lastLoginAt for a non-doctor login, or for a doctor's wrong PIN", async () => {
     const pinHash = await bcrypt.hash('1234', 4);
-    const receptionist = { id: 'staff-2', pinHash, role: 'RECEPTIONIST' } as Parameters<typeof verifyStaffPin>[0];
-    const doctor = { id: 'doc-1', pinHash, role: 'DOCTOR' } as Parameters<typeof verifyStaffPin>[0];
+    const receptionist = { id: 'staff-2', clinicId: 'clinic-1', pinHash, role: 'RECEPTIONIST' } as Parameters<typeof verifyStaffPin>[0];
+    const doctor = { id: 'doc-1', clinicId: 'clinic-1', pinHash, role: 'DOCTOR' } as Parameters<typeof verifyStaffPin>[0];
 
     await verifyStaffPin(receptionist, '1234');
     await verifyStaffPin(doctor, 'wrong');
 
     expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it("logging in sets a doctor's presence to IN — audited and published live", async () => {
+    const pinHash = await bcrypt.hash('1234', 4);
+    // NOT_IN_YET going in (no lastLoginAt/override at all) — a fresh doctor who hasn't shown up yet today.
+    const staff = {
+      id: 'doc-1',
+      clinicId: 'clinic-1',
+      pinHash,
+      role: 'DOCTOR',
+      lastLoginAt: null,
+      presenceOverride: null,
+      presenceOverrideAt: null,
+    } as Parameters<typeof verifyStaffPin>[0];
+
+    await verifyStaffPin(staff, '1234');
+
+    expect(mockRecordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorType: 'STAFF',
+        actorId: 'doc-1',
+        staffId: 'doc-1',
+        action: 'DOCTOR_PRESENCE_AUTO_SET',
+        entityType: 'Staff',
+        entityId: 'doc-1',
+        metadata: { source: 'LOGIN', oldStatus: 'NOT_IN_YET', newStatus: 'IN' },
+      }),
+    );
+    expect(mockPublishPresence).toHaveBeenCalledWith({ clinicId: 'clinic-1', staffId: 'doc-1', presence: 'IN' });
+  });
+
+  it('does not audit or publish a login-triggered presence change when the doctor was already showing IN', async () => {
+    const pinHash = await bcrypt.hash('1234', 4);
+    const staff = {
+      id: 'doc-1',
+      clinicId: 'clinic-1',
+      pinHash,
+      role: 'DOCTOR',
+      lastLoginAt: new Date(),
+      presenceOverride: null,
+      presenceOverrideAt: null,
+    } as Parameters<typeof verifyStaffPin>[0];
+
+    await verifyStaffPin(staff, '1234');
+
+    expect(mockRecordAudit).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'DOCTOR_PRESENCE_AUTO_SET' }));
+    expect(mockPublishPresence).not.toHaveBeenCalled();
   });
 });
 
@@ -217,6 +270,167 @@ describe('setDoctorPresenceBySelf', () => {
       }),
     );
     expect(result).toEqual({ presence: 'OUT' });
+  });
+});
+
+describe('setDoctorPresenceOnLogout', () => {
+  it('sets a logged-out doctor to OUT, audited (source LOGOUT) and published live', async () => {
+    mockFindUnique.mockResolvedValue({
+      id: 'doc-1',
+      clinicId: 'clinic-1',
+      role: 'DOCTOR',
+      lastLoginAt: new Date(),
+      presenceOverride: null,
+      presenceOverrideAt: null,
+    });
+
+    await setDoctorPresenceOnLogout('doc-1');
+
+    expect(mockUpdate).toHaveBeenCalledWith({
+      where: { id: 'doc-1' },
+      data: { presenceOverride: 'OUT', presenceOverrideAt: expect.any(Date) },
+    });
+    expect(mockRecordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorType: 'STAFF',
+        actorId: 'doc-1',
+        staffId: 'doc-1',
+        action: 'DOCTOR_PRESENCE_AUTO_SET',
+        entityType: 'Staff',
+        entityId: 'doc-1',
+        metadata: { source: 'LOGOUT', oldStatus: 'IN', newStatus: 'OUT' },
+      }),
+    );
+    expect(mockPublishPresence).toHaveBeenCalledWith({ clinicId: 'clinic-1', staffId: 'doc-1', presence: 'OUT' });
+  });
+
+  it('is a no-op for a non-doctor staff member', async () => {
+    mockFindUnique.mockResolvedValue({ id: 'staff-2', clinicId: 'clinic-1', role: 'RECEPTIONIST' });
+
+    await setDoctorPresenceOnLogout('staff-2');
+
+    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mockRecordAudit).not.toHaveBeenCalled();
+    expect(mockPublishPresence).not.toHaveBeenCalled();
+  });
+
+  it('is a no-op when the staff row no longer exists', async () => {
+    mockFindUnique.mockResolvedValue(null);
+
+    await setDoctorPresenceOnLogout('gone');
+
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it('does not audit or publish when the doctor was already OUT (e.g. logged out twice)', async () => {
+    mockFindUnique.mockResolvedValue({
+      id: 'doc-1',
+      clinicId: 'clinic-1',
+      role: 'DOCTOR',
+      lastLoginAt: null,
+      presenceOverride: 'OUT',
+      presenceOverrideAt: new Date(),
+    });
+
+    await setDoctorPresenceOnLogout('doc-1');
+
+    expect(mockRecordAudit).not.toHaveBeenCalled();
+    expect(mockPublishPresence).not.toHaveBeenCalled();
+  });
+});
+
+describe('resetAllDoctorPresence', () => {
+  it('flips a doctor showing IN back to OUT, audited with SYSTEM as the actor (source DAILY_RESET)', async () => {
+    mockFindMany.mockResolvedValue([
+      { id: 'doc-1', clinicId: 'clinic-1', lastLoginAt: new Date(), presenceOverride: null, presenceOverrideAt: null },
+    ]);
+
+    await resetAllDoctorPresence();
+
+    expect(mockFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: { role: 'DOCTOR' } }));
+    expect(mockUpdate).toHaveBeenCalledWith({
+      where: { id: 'doc-1' },
+      data: { presenceOverride: 'OUT', presenceOverrideAt: expect.any(Date) },
+    });
+    expect(mockRecordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorType: 'SYSTEM',
+        actorId: undefined,
+        staffId: undefined,
+        action: 'DOCTOR_PRESENCE_AUTO_SET',
+        entityType: 'Staff',
+        entityId: 'doc-1',
+        metadata: { source: 'DAILY_RESET', oldStatus: 'IN', newStatus: 'OUT' },
+      }),
+    );
+    expect(mockPublishPresence).toHaveBeenCalledWith({ clinicId: 'clinic-1', staffId: 'doc-1', presence: 'OUT' });
+  });
+
+  it('leaves doctors who are already OUT or NOT_IN_YET untouched — no update, no audit, no publish', async () => {
+    mockFindMany.mockResolvedValue([
+      { id: 'doc-out', clinicId: 'clinic-1', lastLoginAt: null, presenceOverride: 'OUT', presenceOverrideAt: new Date() },
+      { id: 'doc-never', clinicId: 'clinic-1', lastLoginAt: null, presenceOverride: null, presenceOverrideAt: null },
+    ]);
+
+    await resetAllDoctorPresence();
+
+    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mockRecordAudit).not.toHaveBeenCalled();
+    expect(mockPublishPresence).not.toHaveBeenCalled();
+  });
+
+  it('evaluates against the day that just ended, not "now" — a doctor whose only login was yesterday still gets reset', async () => {
+    // Simulate the job firing at exactly Nairobi midnight: "now" is already
+    // the first instant of the new day, but the doctor's one login was
+    // during the day that just ended.
+    const nairobiMidnightUtc = new Date('2026-01-15T21:00:00.000Z'); // 2026-01-16T00:00:00 Africa/Nairobi
+    const lastEveningNairobi = new Date('2026-01-15T18:00:00.000Z'); // 2026-01-15T21:00:00 Africa/Nairobi — still "yesterday"
+
+    mockFindMany.mockResolvedValue([
+      { id: 'doc-1', clinicId: 'clinic-1', lastLoginAt: lastEveningNairobi, presenceOverride: null, presenceOverrideAt: null },
+    ]);
+
+    await resetAllDoctorPresence(nairobiMidnightUtc);
+
+    expect(mockUpdate).toHaveBeenCalledWith({
+      where: { id: 'doc-1' },
+      data: { presenceOverride: 'OUT', presenceOverrideAt: expect.any(Date) },
+    });
+  });
+
+  it('resets multiple doctors across different clinics independently', async () => {
+    mockFindMany.mockResolvedValue([
+      { id: 'doc-1', clinicId: 'clinic-A', lastLoginAt: new Date(), presenceOverride: null, presenceOverrideAt: null },
+      { id: 'doc-2', clinicId: 'clinic-B', lastLoginAt: new Date(), presenceOverride: null, presenceOverrideAt: null },
+    ]);
+
+    await resetAllDoctorPresence();
+
+    expect(mockUpdate).toHaveBeenCalledTimes(2);
+    expect(mockPublishPresence).toHaveBeenCalledWith({ clinicId: 'clinic-A', staffId: 'doc-1', presence: 'OUT' });
+    expect(mockPublishPresence).toHaveBeenCalledWith({ clinicId: 'clinic-B', staffId: 'doc-2', presence: 'OUT' });
+  });
+});
+
+describe('listDoctorsPresence', () => {
+  it('returns only active doctors in the given clinic, with name/department/presence', async () => {
+    mockFindMany.mockResolvedValue([
+      {
+        id: 'doc-1',
+        name: 'Dr. Amani Wambui',
+        department: { name: 'General' },
+        lastLoginAt: new Date(),
+        presenceOverride: null,
+        presenceOverrideAt: null,
+      },
+    ]);
+
+    const result = await listDoctorsPresence('clinic-1');
+
+    expect(mockFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { clinicId: 'clinic-1', role: 'DOCTOR', isActive: true } }),
+    );
+    expect(result).toEqual([{ id: 'doc-1', name: 'Dr. Amani Wambui', departmentName: 'General', presence: 'IN' }]);
   });
 });
 

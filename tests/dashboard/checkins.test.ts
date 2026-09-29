@@ -7,7 +7,7 @@ jest.mock('../../src/dashboard/session', () => ({
   loadDashboardSession: jest.fn(),
 }));
 
-jest.mock('../../src/services/staffService', () => ({ findActiveStaffById: jest.fn() }));
+jest.mock('../../src/services/staffService', () => ({ findActiveStaffById: jest.fn(), listDoctorsPresence: jest.fn() }));
 
 jest.mock('../../src/services/checkInService', () => ({
   confirmCheckInPaidManually: jest.fn(),
@@ -37,7 +37,7 @@ jest.mock('../../src/db/prisma', () => ({
 }));
 
 import { loadDashboardSession, SESSION_COOKIE_NAME } from '../../src/dashboard/session';
-import { findActiveStaffById } from '../../src/services/staffService';
+import { findActiveStaffById, listDoctorsPresence } from '../../src/services/staffService';
 import { confirmCheckInPaidManually, CheckInNotPendingError } from '../../src/services/checkInService';
 import { checkoutEncounter, EncounterNotReadyForCheckoutError } from '../../src/services/encounterService';
 import { prisma } from '../../src/db/prisma';
@@ -45,6 +45,7 @@ import { checkinsRouter } from '../../src/dashboard/checkins';
 
 const mockLoadSession = loadDashboardSession as jest.Mock;
 const mockFindStaffById = findActiveStaffById as jest.Mock;
+const mockListDoctorsPresence = listDoctorsPresence as jest.Mock;
 const mockConfirmPaid = confirmCheckInPaidManually as jest.Mock;
 const mockCheckout = checkoutEncounter as jest.Mock;
 const mockFindManyCheckIns = prisma.checkIn.findMany as jest.Mock;
@@ -236,5 +237,17 @@ describe('POST /checkins/:id/checkout', () => {
     const res = await withCookie(request(buildApp()).post('/checkins/ci-1/checkout'));
 
     expect(res.status).toBe(409);
+  });
+});
+
+describe('GET /checkins/doctors-presence', () => {
+  it("is reachable by a plain (non-admin) receptionist session — front desk needs this, not just admins", async () => {
+    mockListDoctorsPresence.mockResolvedValue([{ id: 'doc-1', name: 'Dr. Amani Wambui', departmentName: 'General', presence: 'IN' }]);
+
+    const res = await withCookie(request(buildApp()).get('/checkins/doctors-presence'));
+
+    expect(res.status).toBe(200);
+    expect(mockListDoctorsPresence).toHaveBeenCalledWith('clinic-1');
+    expect(res.body.doctors).toEqual([{ id: 'doc-1', name: 'Dr. Amani Wambui', departmentName: 'General', presence: 'IN' }]);
   });
 });

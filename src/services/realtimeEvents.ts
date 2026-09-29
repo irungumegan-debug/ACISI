@@ -50,3 +50,23 @@ export function subscribeCheckInPaid(clinicId: string, listener: (event: CheckIn
   emitter.on(channel(clinicId), listener);
   return () => emitter.off(channel(clinicId), listener);
 }
+
+export interface PresenceChangedEvent {
+  clinicId: string;
+  staffId: string;
+  presence: 'IN' | 'OUT' | 'NOT_IN_YET';
+}
+
+/** Separate channel from checkin-paid, but delivered down the same SSE stream (src/dashboard/events.ts) — the dashboard's existing "any message means refetch" pattern doesn't care which channel fired. */
+function presenceChannel(clinicId: string): string {
+  return `presence-changed:${clinicId}`;
+}
+
+export function publishPresenceChanged(event: PresenceChangedEvent): void {
+  emitter.emit(presenceChannel(event.clinicId), event);
+}
+
+export function subscribePresenceChanged(clinicId: string, listener: (event: PresenceChangedEvent) => void): () => void {
+  emitter.on(presenceChannel(clinicId), listener);
+  return () => emitter.off(presenceChannel(clinicId), listener);
+}

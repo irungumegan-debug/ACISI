@@ -43,6 +43,7 @@ jest.mock('../../src/services/staffService', () => ({
   findStaffWithClinicByCode: jest.fn(),
   findActiveStaffById: jest.fn(),
   verifyStaffPin: jest.fn(),
+  setDoctorPresenceOnLogout: jest.fn(),
 }));
 
 jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
@@ -52,6 +53,7 @@ import {
   findStaffWithClinicByCode,
   findActiveStaffById,
   verifyStaffPin,
+  setDoctorPresenceOnLogout,
 } from '../../src/services/staffService';
 import { recordAuditEvent } from '../../src/services/auditService';
 import { authRouter } from '../../src/dashboard/auth';
@@ -62,6 +64,7 @@ const mockFindStaffWithClinicRaw = findStaffWithClinicByCode as jest.Mock;
 const mockFindStaffById = findActiveStaffById as jest.Mock;
 const mockVerifyPin = verifyStaffPin as jest.Mock;
 const mockRecordAudit = recordAuditEvent as jest.Mock;
+const mockSetPresenceOnLogout = setDoctorPresenceOnLogout as jest.Mock;
 
 const STAFF = {
   id: 'staff-1',
@@ -92,6 +95,7 @@ beforeEach(() => {
   // default every test, so a later test never inherits an earlier one's
   // deactivated-account override.
   mockFindStaffWithClinicRaw.mockResolvedValue(undefined);
+  mockSetPresenceOnLogout.mockResolvedValue(undefined);
 });
 
 describe('POST /auth/login', () => {
@@ -216,6 +220,23 @@ describe('POST /auth/logout', () => {
     await agent.post('/auth/logout');
 
     expect((await agent.get('/auth/me')).status).toBe(401);
+  });
+
+  it("sets the logged-out staff member's presence — setDoctorPresenceOnLogout itself decides whether that means anything for a non-doctor", async () => {
+    mockFindStaff.mockResolvedValue(STAFF);
+    mockVerifyPin.mockResolvedValue(true);
+
+    const agent = request.agent(buildApp());
+    await agent.post('/auth/login').send({ staffCode: 'ACI-STF-7F2K', pin: '1234' });
+
+    await agent.post('/auth/logout');
+
+    expect(mockSetPresenceOnLogout).toHaveBeenCalledWith('staff-1');
+  });
+
+  it('skips presence entirely when there was no valid session to begin with', async () => {
+    await request(buildApp()).post('/auth/logout');
+    expect(mockSetPresenceOnLogout).not.toHaveBeenCalled();
   });
 });
 

@@ -2,7 +2,13 @@ import { NextFunction, Request, Response, Router } from 'express';
 import { z } from 'zod';
 import { redis } from '../config/redis';
 import { LOGIN_RATE_LIMIT_MAX_ATTEMPTS, LOGIN_RATE_LIMIT_WINDOW_SECONDS, DASHBOARD_SESSION_TTL_SECONDS } from '../config/constants';
-import { findActiveStaffById, findActiveStaffWithClinicByCode, findStaffWithClinicByCode, verifyStaffPin } from '../services/staffService';
+import {
+  findActiveStaffById,
+  findActiveStaffWithClinicByCode,
+  findStaffWithClinicByCode,
+  setDoctorPresenceOnLogout,
+  verifyStaffPin,
+} from '../services/staffService';
 import { recordAuditEvent } from '../services/auditService';
 import {
   createDashboardSession,
@@ -111,7 +117,15 @@ authRouter.post('/login', async (req, res) => {
 authRouter.post('/logout', async (req, res) => {
   const token = req.cookies?.[SESSION_COOKIE_NAME] as string | undefined;
   if (token) {
+    // Loaded before destroying the session, purely to know who's logging
+    // out — setDoctorPresenceOnLogout itself checks the live role and is a
+    // no-op for anyone but a doctor, so a missing/expired session (nothing
+    // to look up) or a non-doctor session both just skip harmlessly.
+    const session = await loadDashboardSession(token);
     await destroyDashboardSession(token);
+    if (session) {
+      await setDoctorPresenceOnLogout(session.staffId);
+    }
   }
   res.clearCookie(SESSION_COOKIE_NAME);
   res.status(204).send();

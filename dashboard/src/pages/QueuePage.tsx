@@ -1,6 +1,18 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, ApiError, CheckoutDeliveryMethod, QueueItem, subscribeToQueue } from '../lib/api';
+import { api, ApiError, CheckoutDeliveryMethod, DoctorPresenceListItem, DoctorPresenceStatus, QueueItem, subscribeToDashboardEvents } from '../lib/api';
+
+const PRESENCE_LABEL: Record<DoctorPresenceStatus, string> = {
+  IN: 'In today',
+  OUT: 'Out today',
+  NOT_IN_YET: 'Not in today',
+};
+
+const PRESENCE_BADGE_CLASS: Record<DoctorPresenceStatus, string> = {
+  IN: 'bg-emerald-100 text-emerald-800',
+  OUT: 'bg-amber-100 text-amber-800',
+  NOT_IN_YET: 'bg-slate-100 text-slate-600',
+};
 
 const STATUS_LABEL: Record<string, string> = {
   PENDING_PAYMENT: 'Awaiting payment',
@@ -36,12 +48,16 @@ export function QueuePage() {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [doctors, setDoctors] = useState<DoctorPresenceListItem[]>([]);
 
   const refresh = useCallback(() => {
-    return api.getTodayCheckIns().then((res) => {
-      setItems(res.checkIns);
-      setEmailDeliveryAvailable(res.emailDeliveryAvailable);
-    });
+    return Promise.all([
+      api.getTodayCheckIns().then((res) => {
+        setItems(res.checkIns);
+        setEmailDeliveryAvailable(res.emailDeliveryAvailable);
+      }),
+      api.getDoctorsPresence().then((res) => setDoctors(res.doctors)),
+    ]);
   }, []);
 
   useEffect(() => {
@@ -51,7 +67,7 @@ export function QueuePage() {
       if (!cancelled) setLoading(false);
     });
 
-    const unsubscribe = subscribeToQueue(() => {
+    const unsubscribe = subscribeToDashboardEvents(() => {
       void refresh();
     });
 
@@ -90,6 +106,25 @@ export function QueuePage() {
   return (
     <div>
       <h1 className="mb-4 text-lg font-semibold text-slate-900">Today&apos;s queue</h1>
+
+      {doctors.length > 0 && (
+        <div className="mb-4 rounded-lg border border-slate-200 bg-white p-4">
+          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">Doctors in today</p>
+          <ul className="flex flex-wrap gap-2">
+            {doctors.map((d) => (
+              <li
+                key={d.id}
+                className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${PRESENCE_BADGE_CLASS[d.presence]}`}
+              >
+                <span>{d.name}</span>
+                {d.departmentName && <span className="opacity-70">· {d.departmentName}</span>}
+                <span className="opacity-70">· {PRESENCE_LABEL[d.presence]}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
       {loading ? (
         <p className="text-sm text-slate-500">Loading…</p>

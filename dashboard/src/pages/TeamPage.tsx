@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, AccountStatus, ApiError, ClinicStaffListItem, DoctorPresenceStatus } from '../lib/api';
+import { api, AccountStatus, ApiError, ClinicStaffListItem, DoctorPresenceStatus, subscribeToDashboardEvents } from '../lib/api';
 
 const PIN_PATTERN = /^\d{4,6}$/;
 
@@ -40,7 +40,10 @@ export function TeamPage() {
       .catch((err) => setStaffError(err instanceof ApiError ? err.message : 'Failed to load staff'));
   }
 
-  useEffect(refresh, []);
+  useEffect(() => {
+    refresh();
+    return subscribeToDashboardEvents(refresh);
+  }, []);
 
   async function handleResetPin(member: ClinicStaffListItem): Promise<void> {
     if (!confirm(`Reset the PIN for ${member.name} (${member.staffCode})? They'll need the new PIN to log in.`)) return;

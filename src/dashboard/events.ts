@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { requireStaffSession, AuthenticatedRequest } from './auth';
-import { subscribeCheckInPaid } from '../services/realtimeEvents';
+import { subscribeCheckInPaid, subscribePresenceChanged } from '../services/realtimeEvents';
 
 export const eventsRouter = Router();
 
@@ -21,7 +21,14 @@ eventsRouter.get('/', (req, res) => {
   });
   res.flushHeaders();
 
-  const unsubscribe = subscribeCheckInPaid(clinicId, (event) => {
+  const unsubscribeCheckIn = subscribeCheckInPaid(clinicId, (event) => {
+    res.write(`data: ${JSON.stringify(event)}\n\n`);
+  });
+
+  // Same stream, different source — doctor presence changes (login, logout,
+  // manual toggle, daily reset). The dashboard doesn't distinguish payload
+  // shape; any message on this stream just means "something changed, refetch."
+  const unsubscribePresence = subscribePresenceChanged(clinicId, (event) => {
     res.write(`data: ${JSON.stringify(event)}\n\n`);
   });
 
@@ -33,6 +40,7 @@ eventsRouter.get('/', (req, res) => {
 
   req.on('close', () => {
     clearInterval(heartbeat);
-    unsubscribe();
+    unsubscribeCheckIn();
+    unsubscribePresence();
   });
 });

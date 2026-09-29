@@ -1,5 +1,6 @@
 import { Queue } from 'bullmq';
 import { redisQueueConnection } from '../config/redis';
+import { NAIROBI_TZ } from '../utils/time';
 
 export interface SmsReceiptJobData {
   checkInId: string;
@@ -35,6 +36,24 @@ export const visitSummarySmsQueue = new Queue<VisitSummarySmsJobData>('visit-sum
 export const visitSummaryEmailQueue = new Queue<VisitSummaryEmailJobData>('visit-summary-email', {
   connection: redisQueueConnection,
 });
+
+export const doctorPresenceResetQueue = new Queue('doctor-presence-reset', {
+  connection: redisQueueConnection,
+});
+
+/**
+ * Registers the midnight-Nairobi repeatable job — safe to call on every
+ * server boot: BullMQ deduplicates a repeatable job by its name + repeat
+ * options (and jobId here), so restarting the server never creates a second
+ * schedule alongside the first.
+ */
+export async function scheduleDoctorPresenceDailyReset(): Promise<void> {
+  await doctorPresenceResetQueue.add(
+    'daily-reset',
+    {},
+    { repeat: { pattern: '0 0 * * *', tz: NAIROBI_TZ }, jobId: 'daily-reset' },
+  );
+}
 
 export async function enqueueSmsReceipt(data: SmsReceiptJobData): Promise<void> {
   await smsReceiptQueue.add('send-receipt', data, {
