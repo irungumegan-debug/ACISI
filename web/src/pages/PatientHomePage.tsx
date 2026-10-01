@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { api, ApiError, ClinicListItem, DepartmentListItem, OwnAppointment, VisitHistoryEntry } from '../lib/api';
 import { usePatientAuth } from '../context/PatientAuthContext';
 
-type Tab = 'checkin' | 'book' | 'appointments' | 'records';
+type Tab = 'checkin' | 'book' | 'appointments' | 'records' | 'account';
 
 export function PatientHomePage() {
   const { session } = usePatientAuth();
@@ -23,12 +23,16 @@ export function PatientHomePage() {
         <button className={`tab ${tab === 'records' ? 'active' : ''}`} onClick={() => setTab('records')}>
           My records
         </button>
+        <button className={`tab ${tab === 'account' ? 'active' : ''}`} onClick={() => setTab('account')}>
+          Account
+        </button>
       </div>
 
       {tab === 'checkin' && <CheckInPanel patientCode={session?.patientCode ?? ''} />}
       {tab === 'book' && <BookAppointmentPanel patientCode={session?.patientCode ?? ''} />}
       {tab === 'appointments' && <AppointmentsPanel />}
       {tab === 'records' && <RecordsPanel patientCode={session?.patientCode ?? ''} />}
+      {tab === 'account' && <AccountPanel patientCode={session?.patientCode ?? ''} />}
     </div>
   );
 }
@@ -374,6 +378,104 @@ function RecordsPanel({ patientCode }: { patientCode: string }) {
               </div>
             ))}
           </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+function AccountPanel({ patientCode }: { patientCode: string }) {
+  const { logout } = usePatientAuth();
+  const [confirming, setConfirming] = useState(false);
+  const [pin, setPin] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [deleted, setDeleted] = useState(false);
+
+  async function handleDelete(e: FormEvent): Promise<void> {
+    e.preventDefault();
+    setSubmitting(true);
+    setError(null);
+    try {
+      await api.deletePatientAccount(pin);
+      setDeleted(true);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Something went wrong. Try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (deleted) {
+    return (
+      <div className="panel">
+        <div className="confirm">
+          <div className="badge">✓</div>
+          <h2>Your account has been deleted</h2>
+          <p>Your personal details have been removed and you&apos;ve been logged out.</p>
+          <p>We&apos;ve sent a confirmation SMS. You can register again any time.</p>
+          <button className="btn btn-secondary" style={{ marginTop: 18 }} onClick={() => void logout()}>
+            Done
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <h1>Account</h1>
+      <p className="lede">
+        Patient ID <strong>{patientCode}</strong>
+      </p>
+      <div className="panel danger-panel">
+        <h2>Delete my account</h2>
+        <p>
+          This permanently erases your name, phone number, email, date of birth and PIN, cancels any upcoming appointments, and
+          logs you out on every device. It can&apos;t be undone.
+        </p>
+        <p>
+          Clinics you&apos;ve visited keep a record of the visit (what was diagnosed and prescribed, and the payment), but with
+          no name or phone number attached, so it can no longer be linked to you. If you want to use ACISI again later, just
+          register as a new patient.
+        </p>
+        {!confirming ? (
+          <button className="btn btn-danger" onClick={() => setConfirming(true)}>
+            Delete my account
+          </button>
+        ) : (
+          <form onSubmit={(e) => void handleDelete(e)}>
+            <div className="field">
+              <label htmlFor="delete-pin">Enter your PIN to confirm</label>
+              <input
+                id="delete-pin"
+                type="password"
+                inputMode="numeric"
+                autoComplete="current-password"
+                autoFocus
+                value={pin}
+                onChange={(e) => setPin(e.target.value)}
+              />
+            </div>
+            {error && <p className="error-text">{error}</p>}
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <button type="submit" className="btn btn-danger" disabled={!pin || submitting}>
+                {submitting ? 'Deleting…' : 'Permanently delete my account'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={submitting}
+                onClick={() => {
+                  setConfirming(false);
+                  setPin('');
+                  setError(null);
+                }}
+              >
+                Keep my account
+              </button>
+            </div>
+          </form>
         )}
       </div>
     </>

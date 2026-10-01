@@ -16,6 +16,8 @@ import {
   verifyPatientPin,
 } from '../services/patientService';
 import { requestPinResetOtp, verifyPinResetOtp } from '../services/otpService';
+import { deletePatientAccount, PatientNotFoundError } from '../services/patientDeletionService';
+import { prisma } from '../db/prisma';
 import {
   createPatientSession,
   destroyPatientSession,
@@ -247,6 +249,51 @@ portalAuthRouter.post('/reset-pin', async (req, res) => {
 
   await setPatientPin(patient.id, parsed.data.newPin);
   res.json({ message: 'PIN updated. You can now log in with your new PIN.' });
+});
+
+const deleteAccountSchema = z.object({ pin: z.string().min(1) });
+
+/**
+ * Patient-initiated account deletion. Re-asks for the PIN even though the
+ * patient is already logged in, so an unattended logged-in phone isn't
+ * enough to wipe someone's account. Shares the login rate limit, keyed by
+ * patient, so it can't be used to brute-force a PIN either.
+ */
+portalAuthRouter.post('/account/delete', requirePatientSession, async (req, res) => {
+  const parsed = deleteAccountSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Enter your PIN to confirm' });
+    return;
+  }
+
+  const { patientId } = (req as AuthenticatedPatientRequest).patientSession;
+
+  if (await isRateLimited('delete_attempts', patientId, LOGIN_RATE_LIMIT_MAX_ATTEMPTS)) {
+    res.status(429).json({ error: 'Too many failed attempts. Try again in a few minutes.' });
+    return;
+  }
+
+  const patient = await prisma.patient.findFirst({ where: { id: patientId, deletedAt: null } });
+  const isValid = patient ? await verifyPatientPin(patient, parsed.data.pin) : false;
+  if (!patient || !isValid) {
+    await recordAttempt('delete_attempts', patientId, LOGIN_RATE_LIMIT_WINDOW_SECONDS);
+    res.status(401).json({ error: 'Incorrect PIN' });
+    return;
+  }
+
+  try {
+    await deletePatientAccount(patientId, { type: 'PATIENT' });
+  } catch (err) {
+    if (err instanceof PatientNotFoundError) {
+      res.status(404).json({ error: 'Account not found' });
+      return;
+    }
+    throw err;
+  }
+
+  await clearAttempts('delete_attempts', patientId);
+  res.clearCookie(PATIENT_SESSION_COOKIE_NAME);
+  res.status(204).send();
 });
 
 export async function requirePatientSession(req: Request, res: Response, next: NextFunction): Promise<void> {

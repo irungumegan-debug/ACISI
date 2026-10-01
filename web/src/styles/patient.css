@@ -168,6 +168,36 @@
   color: #eaf0f6;
 }
 
+.patient-portal .btn-danger {
+  background: #b42318;
+  color: #fff;
+}
+.patient-portal .btn-danger:hover {
+  background: #912018;
+}
+.patient-portal .btn-danger:disabled {
+  background: #e6c3bf;
+  color: #fff;
+  cursor: not-allowed;
+}
+.patient-portal .danger-panel {
+  border-color: #f1c4bf;
+}
+.patient-portal .danger-panel h2 {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 19px;
+  margin: 0 0 8px 0;
+  color: #912018;
+}
+.patient-portal .danger-panel p {
+  color: var(--ink-soft);
+  font-size: 14px;
+  line-height: 1.55;
+  margin: 0 0 12px 0;
+  max-width: 60ch;
+}
+
 .patient-portal .confirm {
   text-align: center;
   padding: 34px 18px;
@@ -266,8 +296,17 @@
   gap: 24px;
   margin-bottom: 22px;
   border-bottom: 1px solid var(--line);
+  /* Five tabs don't fit a phone screen: scroll the row sideways rather
+     than letting it widen the whole page. */
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.patient-portal .tabs::-webkit-scrollbar {
+  display: none;
 }
 .patient-portal .tab {
+  flex-shrink: 0;
+  white-space: nowrap;
   padding: 9px 2px;
   font-size: 13.5px;
   color: var(--ink-soft);

@@ -19,6 +19,11 @@ export function startSmsReceiptWorker(): Worker<SmsReceiptJobData> {
         return;
       }
 
+      if (checkIn.patient.deletedAt) {
+        logger.info({ checkInId: job.data.checkInId }, 'SMS receipt job for a deleted patient account, skipping');
+        return;
+      }
+
       const message = job.data.succeeded
         ? `ACISI: Check-in confirmed at ${checkIn.clinic.name}. Payment of KES ${checkIn.amountKes} received. Thank you.`
         : `ACISI: Your check-in payment at ${checkIn.clinic.name} was not completed. Please try again at reception.`;

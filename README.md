@@ -16,6 +16,7 @@ data model, and the reasoning behind the USSD session-recovery strategy.
 - **USSD gateway:** Africa's Talking
 - **Payments:** M-Pesa Daraja (STK Push / Lipa Na M-Pesa Online)
 - **Staff/doctor console:** Vite + React + TypeScript + Tailwind (`dashboard/`), served under `/console` by the same Express app
+- **Owner site:** Vite + React + TypeScript + Tailwind (`owner/`), served under `/owner` by the same Express app
 - **Marketing site + patient portal:** Vite + React + TypeScript (`web/`), served at `/` by the same Express app
 
 ## Getting started
@@ -110,12 +111,48 @@ the backend (see `web/vite.config.ts`). This is where `/`, `/about`,
 `/contact`, `/signup`, `/login`, and the patient portal (`/patient`) live.
 
 In production there are no separate frontend servers — the backend serves
-`dashboard/dist` under `/console` and `web/dist` at `/` directly from the
+`dashboard/dist` under `/console`, `owner/dist` under `/owner`, and `web/dist` at `/` directly from the
 same origin (see `npm run build` below), so there's no CORS config anywhere
 in this app. Doctor/staff signup and login redirect to `/console/...` with a
 full page navigation after authenticating (the session cookie set by that
 request carries over, since it's the same origin) — everything else is
-client-side routing within whichever of the two SPAs is active.
+client-side routing within whichever of the SPAs is active.
+
+### 10. The owner site (`/owner`)
+
+A separate site for the company owner, with platform-wide access: every
+clinic, staff member and patient record, across all clinics. From it the
+owner can:
+
+- see every patient's full record (visits, diagnoses, prescriptions,
+  payments, appointments, consent history) — **every view is written to the
+  audit log**, and each record shows who has accessed it;
+- delete a patient account (see below);
+- deactivate/reactivate a clinic or staff member, which logs them out
+  immediately (staff are never erased — their names stay on the visits they
+  handled);
+- browse the full audit log.
+
+There is no signup form for it. The owner account is created from the
+server console (on Railway: the service's shell):
+
+```bash
+npm run create-owner -- you@example.com "Your Name"
+```
+
+It asks for a password (12+ characters, not echoed). Running it again for
+the same email resets the password and logs out every open owner session.
+Locally, run the owner site's dev server with `npm run dev:owner`.
+
+**Deleting a patient account** — by the owner, or by patients themselves
+from the portal's *Account* tab (they re-enter their PIN) — erases
+everything that identifies them: name, phone number, email, date of birth,
+county, PIN, and the phone number on their M-Pesa records. Their visits and
+payments are kept with no name attached, so clinics keep their medical and
+financial records. Open appointments are cancelled, cross-clinic sharing
+consent is withdrawn, and they're logged out everywhere. Their phone number
+is freed, so they can register again later as a new patient. This can't be
+undone.
 
 ## Tests
 
@@ -130,14 +167,16 @@ npm test
 | `npm run dev`             | Start backend dev server with hot reload                    |
 | `npm run dev:dashboard`   | Start the staff/doctor console's Vite dev server             |
 | `npm run dev:web`         | Start the marketing site + patient portal's Vite dev server  |
-| `npm run build`           | Compile backend to `dist/`, then build both frontend SPAs   |
-| `npm start`               | Run the compiled server (serves both SPA builds in production) |
+| `npm run dev:owner`       | Start the owner site's Vite dev server                       |
+| `npm run build`           | Compile backend to `dist/`, then build all three frontend SPAs |
+| `npm start`               | Run the compiled server (serves the SPA builds in production) |
+| `npm run create-owner`    | Create the owner account, or reset its password              |
 | `npm test`                | Run the backend test suite                                  |
 | `npm run prisma:seed`     | Seed demo clinics + a staff login                            |
 | `npm run prisma:migrate`  | Create/apply a dev migration                                 |
 | `npm run prisma:studio`   | Browse the database                                          |
 
 `npm run build` is also the Render (or similar) build command — it installs
-and builds both frontend SPAs as part of the same step, so a bare
+and builds all three frontend SPAs as part of the same step, so a bare
 `npm install && npx prisma generate && npm run build` on the backend service
 is enough; there's no separate frontend service to deploy.

@@ -23,6 +23,11 @@ export function startVisitSummarySmsWorker(): Worker<VisitSummarySmsJobData> {
         return;
       }
 
+      if (encounter.patient.deletedAt) {
+        logger.info({ encounterId: job.data.encounterId }, 'Visit summary SMS job for a deleted patient account, skipping');
+        return;
+      }
+
       const message =
         `ACISI — ${encounter.clinic.name}\n` +
         `Visit: ${encounter.checkIn.department.name}\n` +

@@ -127,6 +127,11 @@ export const api = {
     return request<void>('/patients/logout', { method: 'POST' });
   },
 
+  /** Permanently deletes the logged-in patient's account. Requires their PIN again. */
+  deletePatientAccount(pin: string) {
+    return request<void>('/patients/account/delete', { method: 'POST', body: JSON.stringify({ pin }) });
+  },
+
   patientMe() {
     return request<PatientSession>('/patients/me');
   },
