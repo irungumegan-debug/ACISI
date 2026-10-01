@@ -292,7 +292,7 @@ h1 {
 /* ---------- contact page ---------- */
 .contact-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 20px;
   margin-top: 30px;
 }
@@ -313,7 +313,10 @@ h1 {
   color: var(--ink);
   margin: 0;
 }
-@media (max-width: 700px) {
+.contact-card .value + .value {
+  margin-top: 4px;
+}
+@media (max-width: 900px) {
   .contact-grid {
     grid-template-columns: 1fr;
   }
