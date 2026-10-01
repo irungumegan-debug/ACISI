@@ -17,18 +17,11 @@ export function ContactPage() {
           <p className="value">+254 746 404 155</p>
         </div>
         <div className="contact-card">
-          <p className="label">Office</p>
-          <p className="value">Nairobi, Kenya</p>
-        </div>
-        <div className="contact-card">
           <p className="label">Support hours</p>
           <p className="value">Mon–Fri, 8am–6pm EAT</p>
+          <p className="value">Sat–Sun, 10am–5pm EAT</p>
         </div>
       </div>
-
-      <p style={{ fontSize: 12.5, color: 'var(--ink-dim)', marginTop: 24 }}>
-        Office location and support hours to be confirmed.
-      </p>
     </section>
   );
 }
