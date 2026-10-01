@@ -10,11 +10,11 @@ export function ContactPage() {
       <div className="contact-grid">
         <div className="contact-card">
           <p className="label">Email</p>
-          <p className="value">hello@example.com</p>
+          <p className="value">acisi.help@gmail.com</p>
         </div>
         <div className="contact-card">
           <p className="label">Phone</p>
-          <p className="value">+254 700 000 000</p>
+          <p className="value">+254 746 404 155</p>
         </div>
         <div className="contact-card">
           <p className="label">Office</p>
@@ -27,7 +27,7 @@ export function ContactPage() {
       </div>
 
       <p style={{ fontSize: 12.5, color: 'var(--ink-dim)', marginTop: 24 }}>
-        Placeholder details — real contact information to come.
+        Office location and support hours to be confirmed.
       </p>
     </section>
   );
