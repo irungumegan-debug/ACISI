@@ -64,6 +64,23 @@ export function LoginPage() {
   );
 }
 
+/**
+ * Shown in place of the plain error when login returns 429 (too many wrong
+ * PINs): says how long the lock lasts and offers the SMS reset right there,
+ * since a successful reset lifts the lock immediately.
+ */
+function LockedOutMessage({ onForgotPin }: { onForgotPin: () => void }) {
+  return (
+    <p className="auth-error">
+      Too many wrong PINs, so login is paused for up to 15 minutes. Forgot your PIN?{' '}
+      <button type="button" className="auth-inline-link" onClick={onForgotPin}>
+        Reset it by SMS now
+      </button>{' '}
+      to get back in straight away.
+    </p>
+  );
+}
+
 function RolePicker({ onPick }: { onPick: (kind: Role) => void }) {
   return (
     <>
@@ -93,11 +110,13 @@ function PatientLoginForm({ notice, onBack, onForgotPin }: { notice?: string; on
   const [identifier, setIdentifier] = useState('');
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [lockedOut, setLockedOut] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: FormEvent): Promise<void> {
     e.preventDefault();
     setError(null);
+    setLockedOut(false);
     setSubmitting(true);
     try {
       // login() updates PatientAuthContext's session itself — required
@@ -106,7 +125,11 @@ function PatientLoginForm({ notice, onBack, onForgotPin }: { notice?: string; on
       await login(identifier, pin);
       navigate('/patient', { replace: true });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.');
+      if (err instanceof ApiError && err.status === 429) {
+        setLockedOut(true);
+      } else {
+        setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -130,6 +153,7 @@ function PatientLoginForm({ notice, onBack, onForgotPin }: { notice?: string; on
         <input type="password" inputMode="numeric" required maxLength={6} placeholder="4-digit PIN" value={pin} onChange={(e) => setPin(e.target.value)} />
       </div>
 
+      {lockedOut && <LockedOutMessage onForgotPin={onForgotPin} />}
       {error && <p className="auth-error">{error}</p>}
       <button className="auth-submit" type="submit" disabled={submitting}>
         {submitting ? 'Logging in…' : 'Log in'}
@@ -256,11 +280,13 @@ function StaffLoginForm({
   const [staffCode, setStaffCode] = useState('');
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [lockedOut, setLockedOut] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: FormEvent): Promise<void> {
     e.preventDefault();
     setError(null);
+    setLockedOut(false);
     setSubmitting(true);
     try {
       const session = await api.staffLogin(staffCode, pin);
@@ -269,7 +295,11 @@ function StaffLoginForm({
       // session cookie set by the fetch above is all it needs to pick up.
       window.location.href = session.role === 'DOCTOR' ? '/console/doctor/queue' : '/console/queue';
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.');
+      if (err instanceof ApiError && err.status === 429) {
+        setLockedOut(true);
+      } else {
+        setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.');
+      }
       setSubmitting(false);
     }
   }
@@ -292,6 +322,7 @@ function StaffLoginForm({
         <input type="password" inputMode="numeric" required maxLength={6} placeholder="4-digit PIN" value={pin} onChange={(e) => setPin(e.target.value)} />
       </div>
 
+      {lockedOut && <LockedOutMessage onForgotPin={onForgotPin} />}
       {error && <p className="auth-error">{error}</p>}
       <button className="auth-submit" type="submit" disabled={submitting}>
         {submitting ? 'Logging in…' : 'Log in'}

@@ -10,6 +10,7 @@ export function LoginPage() {
   const [staffCode, setStaffCode] = useState('');
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [lockedOut, setLockedOut] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   if (session) {
@@ -20,12 +21,17 @@ export function LoginPage() {
   async function handleSubmit(e: FormEvent): Promise<void> {
     e.preventDefault();
     setError(null);
+    setLockedOut(false);
     setSubmitting(true);
     try {
       await login(staffCode, pin);
       navigate('/queue', { replace: true });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Something went wrong. Try again.');
+      if (err instanceof ApiError && err.status === 429) {
+        setLockedOut(true);
+      } else {
+        setError(err instanceof ApiError ? err.message : 'Something went wrong. Try again.');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -66,6 +72,15 @@ export function LoginPage() {
               className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
             />
           </div>
+          {lockedOut && (
+            <p className="text-sm text-red-600">
+              Too many wrong PINs, so login is paused for up to 15 minutes. Forgot your PIN?{' '}
+              <a href="/login?reset=staff" className="font-medium underline">
+                Reset it by SMS now
+              </a>{' '}
+              to get back in straight away.
+            </p>
+          )}
           {error && <p className="text-sm text-red-600">{error}</p>}
           <button
             type="submit"
