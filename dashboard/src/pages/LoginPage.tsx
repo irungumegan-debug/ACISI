@@ -75,6 +75,14 @@ export function LoginPage() {
             {submitting ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
+        {/* The reset form lives on the main site's login page (web/), shared
+            with patients — a full navigation, since it's a different app. */}
+        <p className="mt-4 text-center text-sm text-slate-500">
+          Forgot your PIN?{' '}
+          <a href="/login?reset=staff" className="font-medium text-slate-900 hover:underline">
+            Reset it by SMS
+          </a>
+        </p>
       </div>
     </div>
   );

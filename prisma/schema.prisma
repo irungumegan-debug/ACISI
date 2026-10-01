@@ -185,6 +185,7 @@ model Staff {
 
   checkIns              CheckIn[]
   auditLogs             AuditLog[]
+  otps                  StaffOtp[]
   assignedEncounters    Encounter[]   @relation("EncounterAssignedDoctor")
   consultedEncounters   Encounter[]   @relation("EncounterConsultedBy")
   checkedOutEncounters  Encounter[]   @relation("EncounterCheckedOutBy")
@@ -257,6 +258,26 @@ model Otp {
 
   @@index([patientId])
   @@map("otps")
+}
+
+/// Staff/doctor counterpart of Otp: a one-time code sent by SMS to the
+/// staff member's registered phone so they can reset a forgotten PIN
+/// themselves. Same rules as Otp — reset-only, never a login credential,
+/// hashed, short-lived, limited guesses.
+model StaffOtp {
+  id         String     @id @default(cuid())
+  staffId    String
+  staff      Staff      @relation(fields: [staffId], references: [id])
+  purpose    OtpPurpose
+  /// bcrypt hash of the OTP. Never store or log the raw code.
+  codeHash   String
+  attempts   Int        @default(0)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime   @default(now())
+
+  @@index([staffId])
+  @@map("staff_otps")
 }
 
 /// One row per consent grant or revocation. Never mutated after creation —

@@ -3,10 +3,25 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 import { usePatientAuth } from '../context/PatientAuthContext';
 
-type Step = { kind: 'picker' } | { kind: 'patient' } | { kind: 'doctor' } | { kind: 'staff' } | { kind: 'forgot-pin' };
+type Role = 'patient' | 'doctor' | 'staff';
+
+/** `notice` is shown above a login form — e.g. after a successful PIN reset. */
+type Step = { kind: 'picker' } | { kind: Role; notice?: string } | { kind: 'forgot-pin'; role: Role };
+
+const PIN_RESET_NOTICE = 'Your PIN has been updated. Log in with your new PIN.';
+
+/**
+ * The staff console's own login page links here as /login?reset=staff, so
+ * "forgot PIN" lives in one place for staff, doctors and patients alike.
+ */
+function initialStep(): Step {
+  return new URLSearchParams(window.location.search).get('reset') === 'staff'
+    ? { kind: 'forgot-pin', role: 'staff' }
+    : { kind: 'picker' };
+}
 
 export function LoginPage() {
-  const [step, setStep] = useState<Step>({ kind: 'picker' });
+  const [step, setStep] = useState<Step>(initialStep);
 
   return (
     <div className="auth-page">
@@ -16,10 +31,28 @@ export function LoginPage() {
         </Link>
 
         {step.kind === 'picker' && <RolePicker onPick={(kind) => setStep({ kind } as Step)} />}
-        {step.kind === 'patient' && <PatientLoginForm onBack={() => setStep({ kind: 'picker' })} onForgotPin={() => setStep({ kind: 'forgot-pin' })} />}
-        {step.kind === 'doctor' && <StaffLoginForm role="doctor" onBack={() => setStep({ kind: 'picker' })} />}
-        {step.kind === 'staff' && <StaffLoginForm role="staff" onBack={() => setStep({ kind: 'picker' })} />}
-        {step.kind === 'forgot-pin' && <ForgotPinForm onBack={() => setStep({ kind: 'patient' })} onDone={() => setStep({ kind: 'patient' })} />}
+        {step.kind === 'patient' && (
+          <PatientLoginForm
+            notice={step.notice}
+            onBack={() => setStep({ kind: 'picker' })}
+            onForgotPin={() => setStep({ kind: 'forgot-pin', role: 'patient' })}
+          />
+        )}
+        {(step.kind === 'doctor' || step.kind === 'staff') && (
+          <StaffLoginForm
+            role={step.kind}
+            notice={step.notice}
+            onBack={() => setStep({ kind: 'picker' })}
+            onForgotPin={() => setStep({ kind: 'forgot-pin', role: step.kind as 'doctor' | 'staff' })}
+          />
+        )}
+        {step.kind === 'forgot-pin' && (
+          <ForgotPinForm
+            role={step.role}
+            onBack={() => setStep({ kind: step.role })}
+            onDone={() => setStep({ kind: step.role, notice: PIN_RESET_NOTICE })}
+          />
+        )}
 
         {step.kind === 'picker' && (
           <p className="auth-switch">
@@ -31,7 +64,7 @@ export function LoginPage() {
   );
 }
 
-function RolePicker({ onPick }: { onPick: (kind: 'patient' | 'doctor' | 'staff') => void }) {
+function RolePicker({ onPick }: { onPick: (kind: Role) => void }) {
   return (
     <>
       <h1 className="auth-h1">Log in</h1>
@@ -54,7 +87,7 @@ function RolePicker({ onPick }: { onPick: (kind: 'patient' | 'doctor' | 'staff')
   );
 }
 
-function PatientLoginForm({ onBack, onForgotPin }: { onBack: () => void; onForgotPin: () => void }) {
+function PatientLoginForm({ notice, onBack, onForgotPin }: { notice?: string; onBack: () => void; onForgotPin: () => void }) {
   const navigate = useNavigate();
   const { login } = usePatientAuth();
   const [identifier, setIdentifier] = useState('');
@@ -86,6 +119,7 @@ function PatientLoginForm({ onBack, onForgotPin }: { onBack: () => void; onForgo
       </button>
       <h1 className="auth-h1">Patient login</h1>
       <p className="auth-sub">Your phone number or patient ID, plus the PIN you set when you signed up.</p>
+      {notice && <p className="auth-notice">{notice}</p>}
 
       <div className="field">
         <label>Phone number or patient ID</label>
@@ -110,7 +144,14 @@ function PatientLoginForm({ onBack, onForgotPin }: { onBack: () => void; onForgo
   );
 }
 
-function ForgotPinForm({ onBack, onDone }: { onBack: () => void; onDone: () => void }) {
+/**
+ * Self-service PIN reset for anyone: patients identify themselves by phone
+ * or patient ID, staff and doctors by staff ID. Either way the code goes by
+ * SMS to the phone number on the account, and a successful reset also
+ * lifts any "too many attempts" lockout.
+ */
+function ForgotPinForm({ role, onBack, onDone }: { role: Role; onBack: () => void; onDone: () => void }) {
+  const isStaff = role !== 'patient';
   const [phase, setPhase] = useState<'request' | 'reset'>('request');
   const [identifier, setIdentifier] = useState('');
   const [code, setCode] = useState('');
@@ -124,7 +165,7 @@ function ForgotPinForm({ onBack, onDone }: { onBack: () => void; onDone: () => v
     setError(null);
     setSubmitting(true);
     try {
-      const res = await api.forgotPatientPin(identifier);
+      const res = isStaff ? await api.forgotStaffPin(identifier) : await api.forgotPatientPin(identifier);
       setMessage(res.message);
       setPhase('reset');
     } catch (err) {
@@ -139,7 +180,7 @@ function ForgotPinForm({ onBack, onDone }: { onBack: () => void; onDone: () => v
     setError(null);
     setSubmitting(true);
     try {
-      await api.resetPatientPin(identifier, code, newPin);
+      await (isStaff ? api.resetStaffPin(identifier, code, newPin) : api.resetPatientPin(identifier, code, newPin));
       onDone();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Invalid or expired code.');
@@ -155,10 +196,20 @@ function ForgotPinForm({ onBack, onDone }: { onBack: () => void; onDone: () => v
           &larr; Back
         </button>
         <h1 className="auth-h1">Reset your PIN</h1>
-        <p className="auth-sub">Enter your phone number or patient ID — we&apos;ll text you a one-time code.</p>
+        <p className="auth-sub">
+          {isStaff
+            ? 'Enter your staff ID — we\u2019ll text a one-time code to the phone number on your account.'
+            : 'Enter your phone number or patient ID — we\u2019ll text you a one-time code.'}
+        </p>
         <div className="field">
-          <label>Phone number or patient ID</label>
-          <input type="text" required placeholder="07XX XXX XXX or ACI-1042" value={identifier} onChange={(e) => setIdentifier(e.target.value)} />
+          <label>{isStaff ? 'Staff ID' : 'Phone number or patient ID'}</label>
+          <input
+            type="text"
+            required
+            placeholder={isStaff ? 'ACI-STF-2091' : '07XX XXX XXX or ACI-1042'}
+            value={identifier}
+            onChange={(e) => setIdentifier(e.target.value)}
+          />
         </div>
         {error && <p className="auth-error">{error}</p>}
         <button className="auth-submit" type="submit" disabled={submitting}>
@@ -191,7 +242,17 @@ function ForgotPinForm({ onBack, onDone }: { onBack: () => void; onDone: () => v
   );
 }
 
-function StaffLoginForm({ role, onBack }: { role: 'doctor' | 'staff'; onBack: () => void }) {
+function StaffLoginForm({
+  role,
+  notice,
+  onBack,
+  onForgotPin,
+}: {
+  role: 'doctor' | 'staff';
+  notice?: string;
+  onBack: () => void;
+  onForgotPin: () => void;
+}) {
   const [staffCode, setStaffCode] = useState('');
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -220,6 +281,7 @@ function StaffLoginForm({ role, onBack }: { role: 'doctor' | 'staff'; onBack: ()
       </button>
       <h1 className="auth-h1">{role === 'doctor' ? 'Doctor login' : 'Staff login'}</h1>
       <p className="auth-sub">Your ACISI staff ID, issued when your clinic set up your account, plus your PIN.</p>
+      {notice && <p className="auth-notice">{notice}</p>}
 
       <div className="field">
         <label>Staff ID</label>
@@ -234,6 +296,12 @@ function StaffLoginForm({ role, onBack }: { role: 'doctor' | 'staff'; onBack: ()
       <button className="auth-submit" type="submit" disabled={submitting}>
         {submitting ? 'Logging in…' : 'Log in'}
       </button>
+      <p className="auth-note">
+        Forgot your PIN?{' '}
+        <button type="button" onClick={onForgotPin}>
+          We&apos;ll text you a code
+        </button>
+      </p>
     </form>
   );
 }

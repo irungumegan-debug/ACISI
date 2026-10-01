@@ -211,6 +211,26 @@ export async function resetStaffPinViaConsole(staffCode: string, newPin: string)
   return updated;
 }
 
+/**
+ * Self-service reset: the staff member proved they hold their registered
+ * phone by entering the SMS code (see otpService.verifyStaffPinResetOtp),
+ * so they set their own new PIN — no admin involved.
+ */
+export async function resetStaffPinBySelf(staffId: string, newPin: string): Promise<Staff> {
+  const updated = await setPin(staffId, newPin);
+
+  await recordAuditEvent({
+    actorType: 'STAFF',
+    actorId: staffId,
+    staffId,
+    action: 'STAFF_PIN_RESET_SELF',
+    entityType: 'Staff',
+    entityId: staffId,
+  });
+
+  return updated;
+}
+
 export type DoctorPresenceStatus = 'IN' | 'OUT' | 'NOT_IN_YET';
 
 interface PresenceFields {

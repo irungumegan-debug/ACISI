@@ -233,4 +233,23 @@ describe('POST /patients/reset-pin', () => {
     expect(res.status).toBe(200);
     expect(mockSetPin).toHaveBeenCalledWith('patient-1', '4321');
   });
+
+  it('automatically unlocks a patient who was locked out, under every identifier they log in with', async () => {
+    const app = buildApp();
+    mockFindPatient.mockResolvedValue(PATIENT);
+    mockVerifyPin.mockResolvedValue(false);
+    for (const identifier of ['ACI-7F2K', '+254712345678']) {
+      for (let i = 0; i < LOGIN_RATE_LIMIT_MAX_ATTEMPTS; i++) {
+        await request(app).post('/patients/login').send({ identifier, pin: '0000' });
+      }
+    }
+    mockVerifyPin.mockResolvedValue(true);
+    expect((await request(app).post('/patients/login').send({ identifier: 'ACI-7F2K', pin: '4321' })).status).toBe(429);
+
+    mockVerifyOtp.mockResolvedValue(true);
+    await request(app).post('/patients/reset-pin').send({ identifier: 'ACI-7F2K', code: '123456', newPin: '4321' });
+
+    expect((await request(app).post('/patients/login').send({ identifier: 'ACI-7F2K', pin: '4321' })).status).toBe(200);
+    expect((await request(app).post('/patients/login').send({ identifier: '+254712345678', pin: '4321' })).status).toBe(200);
+  });
 });

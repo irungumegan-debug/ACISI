@@ -143,6 +143,20 @@ export const api = {
     });
   },
 
+  forgotStaffPin(staffCode: string) {
+    return request<{ message: string }>('/staff/auth/forgot-pin', {
+      method: 'POST',
+      body: JSON.stringify({ staffCode }),
+    });
+  },
+
+  resetStaffPin(staffCode: string, code: string, newPin: string) {
+    return request<{ message: string }>('/staff/auth/reset-pin', {
+      method: 'POST',
+      body: JSON.stringify({ staffCode, code, newPin }),
+    });
+  },
+
   resetPatientPin(identifier: string, code: string, newPin: string) {
     return request<{ message: string }>('/patients/reset-pin', {
       method: 'POST',

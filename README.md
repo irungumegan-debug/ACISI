@@ -144,6 +144,13 @@ It asks for a password (12+ characters, not echoed). Running it again for
 the same email resets the password and logs out every open owner session.
 Locally, run the owner site's dev server with `npm run dev:owner`.
 
+**Forgotten PINs are self-service.** Patients, staff and doctors all reset
+their own PIN from the login page ("Forgot your PIN?"): a one-time code goes
+by SMS to the phone number on their account. A successful reset also lifts
+any "too many attempts" lockout and logs out their other sessions. (Without
+a reset, the lockout still lifts by itself after 15 minutes.) This relies on
+SMS delivery being live.
+
 **Deleting a patient account** — by the owner, or by patients themselves
 from the portal's *Account* tab (they re-enter their PIN) — erases
 everything that identifies them: name, phone number, email, date of birth,

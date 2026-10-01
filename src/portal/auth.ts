@@ -18,6 +18,7 @@ import {
 import { requestPinResetOtp, verifyPinResetOtp } from '../services/otpService';
 import { deletePatientAccount, PatientNotFoundError } from '../services/patientDeletionService';
 import { prisma } from '../db/prisma';
+import { revokeSessionsFor } from '../services/sessionRevocation';
 import {
   createPatientSession,
   destroyPatientSession,
@@ -248,6 +249,16 @@ portalAuthRouter.post('/reset-pin', async (req, res) => {
   }
 
   await setPatientPin(patient.id, parsed.data.newPin);
+
+  // Unlock automatically: clear the failed-login counter for every form of
+  // identifier they might log in with (it's keyed by what was typed), and
+  // log out any existing sessions, since the old PIN may be what someone
+  // else was using.
+  for (const id of new Set([parsed.data.identifier.trim(), patient.patientCode, patient.phoneNumber])) {
+    await clearAttempts('login_attempts', id);
+  }
+  await revokeSessionsFor(`patient:${patient.id}`);
+
   res.json({ message: 'PIN updated. You can now log in with your new PIN.' });
 });
 
