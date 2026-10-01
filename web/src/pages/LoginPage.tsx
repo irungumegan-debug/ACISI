@@ -150,7 +150,7 @@ function PatientLoginForm({ notice, onBack, onForgotPin }: { notice?: string; on
       </div>
       <div className="field">
         <label>PIN</label>
-        <input type="password" inputMode="numeric" required maxLength={6} placeholder="4-digit PIN" value={pin} onChange={(e) => setPin(e.target.value)} />
+        <input type="password" inputMode="numeric" required maxLength={6} placeholder="6-digit PIN" value={pin} onChange={(e) => setPin(e.target.value)} />
       </div>
 
       {lockedOut && <LockedOutMessage onForgotPin={onForgotPin} />}
@@ -256,7 +256,8 @@ function ForgotPinForm({ role, onBack, onDone }: { role: Role; onBack: () => voi
       </div>
       <div className="field">
         <label>New PIN</label>
-        <input type="password" inputMode="numeric" required maxLength={6} placeholder="4-digit PIN" value={newPin} onChange={(e) => setNewPin(e.target.value)} />
+        <input type="password" inputMode="numeric" required minLength={6} maxLength={6} pattern="\d{6}" placeholder="6-digit PIN" value={newPin} onChange={(e) => setNewPin(e.target.value)} />
+        <p className="field-hint">6 digits. Avoid birthdays, your phone number, and easy patterns like 123456 or 111111.</p>
       </div>
       {error && <p className="auth-error">{error}</p>}
       <button className="auth-submit" type="submit" disabled={submitting}>
@@ -319,7 +320,7 @@ function StaffLoginForm({
       </div>
       <div className="field">
         <label>PIN</label>
-        <input type="password" inputMode="numeric" required maxLength={6} placeholder="4-digit PIN" value={pin} onChange={(e) => setPin(e.target.value)} />
+        <input type="password" inputMode="numeric" required maxLength={6} placeholder="6-digit PIN" value={pin} onChange={(e) => setPin(e.target.value)} />
       </div>
 
       {lockedOut && <LockedOutMessage onForgotPin={onForgotPin} />}

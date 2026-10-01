@@ -67,7 +67,7 @@ npm run prisma:seed
 ```
 
 Seeds 7 demo clinics (with a General/Gynecology/Dental/Pediatrics department
-each on the first one) and three staff logins, all PIN `1234`:
+each on the first one) and three staff logins, all PIN `730194`:
 - `ACI-STF-TEST` — front-desk receptionist
 - `ACI-STF-DEMO` — doctor, assigned to the General department
 - `ACI-STF-ADMN` — clinic admin
@@ -143,6 +143,14 @@ npm run create-owner -- you@example.com "Your Name"
 It asks for a password (12+ characters, not echoed). Running it again for
 the same email resets the password and logs out every open owner session.
 Locally, run the owner site's dev server with `npm run dev:owner`.
+
+**PIN rules.** Every PIN is exactly 6 digits (staff also log in over USSD,
+where only digits work reliably). The system refuses PINs that are easy to
+guess: anything that reads as a date (birthdays especially), repeated or
+sequential digits (111111, 121212, 123456, 654321), and the last six digits
+of the account's phone number. The rules live in one place,
+`src/utils/pinPolicy.ts`, and only apply when a PIN is chosen — logging in
+just checks the stored PIN.
 
 **Forgotten PINs are self-service.** Patients, staff and doctors all reset
 their own PIN from the login page ("Forgot your PIN?"): a one-time code goes

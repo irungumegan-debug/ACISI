@@ -9,6 +9,7 @@ import {
   OTP_REQUEST_RATE_LIMIT_WINDOW_SECONDS,
 } from '../config/constants';
 import { InvalidPhoneNumberError, toE164 } from '../utils/phone';
+import { pinPolicyError } from '../utils/pinPolicy';
 import {
   findPatientByPhoneOrCode,
   registerPatient,
@@ -31,8 +32,6 @@ import { logger } from '../utils/logger';
 export interface AuthenticatedPatientRequest extends Request {
   patientSession: PatientSession;
 }
-
-const PIN_PATTERN = /^\d{4,6}$/;
 
 function rateLimitKey(prefix: string, identifier: string): string {
   return `portal:${prefix}:${identifier}`;
@@ -63,7 +62,7 @@ const registerSchema = z.object({
   phoneNumber: z.string().min(1),
   dateOfBirth: z.string().optional(),
   sex: z.enum(['MALE', 'FEMALE', 'OTHER', 'UNKNOWN']).optional(),
-  pin: z.string().regex(PIN_PATTERN, 'PIN must be 4-6 digits'),
+  pin: z.string().min(1),
   crossClinicConsent: z.boolean().optional(),
   // Optional — many patients won't have one, and nothing else in the
   // product depends on it (no email login, no email OTP). Only ever used
@@ -87,6 +86,12 @@ portalAuthRouter.post('/register', async (req, res) => {
       return;
     }
     throw err;
+  }
+
+  const pinError = pinPolicyError(parsed.data.pin, { phoneNumber: phoneE164 });
+  if (pinError) {
+    res.status(400).json({ error: pinError });
+    return;
   }
 
   const patient = await registerPatient({
@@ -226,7 +231,7 @@ portalAuthRouter.post('/forgot-pin', async (req, res) => {
 const resetPinSchema = z.object({
   identifier: z.string().min(1),
   code: z.string().min(1),
-  newPin: z.string().regex(PIN_PATTERN, 'PIN must be 4-6 digits'),
+  newPin: z.string().min(1),
 });
 
 portalAuthRouter.post('/reset-pin', async (req, res) => {
@@ -239,6 +244,14 @@ portalAuthRouter.post('/reset-pin', async (req, res) => {
   const patient = await findPatientByPhoneOrCode(parsed.data.identifier.trim());
   if (!patient) {
     res.status(400).json({ error: 'Invalid code' });
+    return;
+  }
+
+  // Checked before the code, so a rejected PIN doesn't use up the
+  // one-time code — the patient can fix the PIN and resubmit.
+  const pinError = pinPolicyError(parsed.data.newPin, { phoneNumber: patient.phoneNumber });
+  if (pinError) {
+    res.status(400).json({ error: pinError });
     return;
   }
 

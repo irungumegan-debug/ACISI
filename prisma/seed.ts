@@ -32,7 +32,7 @@ async function main() {
   );
 
   const primaryClinic = clinics[0]!;
-  const pinHash = await bcrypt.hash('1234', 10);
+  const pinHash = await bcrypt.hash('730194', 10);
 
   const DEPARTMENT_NAMES = ['General', 'Gynecology', 'Dental', 'Pediatrics'];
   const departments = await Promise.all(
@@ -84,7 +84,7 @@ async function main() {
 
   console.log(
     `Seeded ${clinics.length} clinics, ${departments.length} departments at "${primaryClinic.name}", ` +
-      `and ${staffSeeds.length} staff logins (PIN 1234): ` +
+      `and ${staffSeeds.length} staff logins (PIN 730194): ` +
       staffSeeds.map((s) => s.staffCode).join(', '),
   );
 }

@@ -105,18 +105,27 @@ describe('POST /auth/reset-pin', () => {
   it('rejects a wrong or expired code', async () => {
     mockFindStaff.mockResolvedValue(STAFF);
     mockVerifyOtp.mockResolvedValue(false);
-    const res = await request(buildApp()).post('/auth/reset-pin').send({ staffCode: 'ACI-STF-TEST', code: '000000', newPin: '5678' });
+    const res = await request(buildApp()).post('/auth/reset-pin').send({ staffCode: 'ACI-STF-TEST', code: '000000', newPin: '730194' });
     expect(res.status).toBe(400);
+    expect(mockResetPin).not.toHaveBeenCalled();
+  });
+
+  it("refuses an easy-to-guess PIN without using up the staff member's one-time code", async () => {
+    mockFindStaff.mockResolvedValue(STAFF);
+    const res = await request(buildApp()).post('/auth/reset-pin').send({ staffCode: 'ACI-STF-TEST', code: '123456', newPin: '123456' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/repeated or sequential/);
+    expect(mockVerifyOtp).not.toHaveBeenCalled();
     expect(mockResetPin).not.toHaveBeenCalled();
   });
 
   it('rejects a badly formatted new PIN', async () => {
     mockFindStaff.mockResolvedValue(STAFF);
     mockVerifyOtp.mockResolvedValue(true);
-    mockResetPin.mockRejectedValue(new InvalidPinFormatError());
+    mockResetPin.mockRejectedValue(new InvalidPinFormatError('Your PIN must be exactly 6 digits.'));
     const res = await request(buildApp()).post('/auth/reset-pin').send({ staffCode: 'ACI-STF-TEST', code: '123456', newPin: 'abc' });
     expect(res.status).toBe(400);
-    expect(res.body.error).toBe('PIN must be 4-6 digits');
+    expect(res.body.error).toBe('Your PIN must be exactly 6 digits.');
   });
 
   it('automatically unlocks a locked-out staff member once they reset', async () => {
@@ -127,15 +136,15 @@ describe('POST /auth/reset-pin', () => {
       await request(app).post('/auth/login').send({ staffCode: 'ACI-STF-TEST', pin: '0000' });
     }
     mockVerifyPin.mockResolvedValue(true);
-    expect((await request(app).post('/auth/login').send({ staffCode: 'ACI-STF-TEST', pin: '5678' })).status).toBe(429);
+    expect((await request(app).post('/auth/login').send({ staffCode: 'ACI-STF-TEST', pin: '730194' })).status).toBe(429);
 
     mockVerifyOtp.mockResolvedValue(true);
     mockResetPin.mockResolvedValue(STAFF);
-    const reset = await request(app).post('/auth/reset-pin').send({ staffCode: 'ACI-STF-TEST', code: '123456', newPin: '5678' });
+    const reset = await request(app).post('/auth/reset-pin').send({ staffCode: 'ACI-STF-TEST', code: '123456', newPin: '730194' });
     expect(reset.status).toBe(200);
-    expect(mockResetPin).toHaveBeenCalledWith('staff-1', '5678');
+    expect(mockResetPin).toHaveBeenCalledWith('staff-1', '730194');
 
-    expect((await request(app).post('/auth/login').send({ staffCode: 'ACI-STF-TEST', pin: '5678' })).status).toBe(200);
+    expect((await request(app).post('/auth/login').send({ staffCode: 'ACI-STF-TEST', pin: '730194' })).status).toBe(200);
   });
 
   it('logs out sessions that were open with the old PIN', async () => {
@@ -153,7 +162,7 @@ describe('POST /auth/reset-pin', () => {
     mockFindStaff.mockResolvedValue(STAFF);
     mockVerifyOtp.mockResolvedValue(true);
     mockResetPin.mockResolvedValue(STAFF);
-    await request(buildApp()).post('/auth/reset-pin').send({ staffCode: 'ACI-STF-TEST', code: '123456', newPin: '5678' });
+    await request(buildApp()).post('/auth/reset-pin').send({ staffCode: 'ACI-STF-TEST', code: '123456', newPin: '730194' });
     expect(await loadDashboardSession(oldSession)).toBeNull();
   });
 });

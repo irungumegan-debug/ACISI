@@ -16,6 +16,7 @@ import {
 } from '../services/staffService';
 import { requestStaffPinResetOtp, verifyStaffPinResetOtp } from '../services/otpService';
 import { revokeSessionsFor } from '../services/sessionRevocation';
+import { pinPolicyError } from '../utils/pinPolicy';
 import {
   createDashboardSession,
   destroyDashboardSession,
@@ -185,7 +186,20 @@ authRouter.post('/reset-pin', async (req, res) => {
 
   const staffCode = parsed.data.staffCode.trim().toUpperCase();
   const staff = await findActiveStaffWithClinicByCode(staffCode);
-  if (!staff || !(await verifyStaffPinResetOtp(staff.id, parsed.data.code.trim()))) {
+  if (!staff) {
+    res.status(400).json({ error: 'Invalid or expired code' });
+    return;
+  }
+
+  // Checked before the code, so a rejected PIN doesn't use up the one-time
+  // code — they can fix the PIN and resubmit.
+  const pinError = pinPolicyError(parsed.data.newPin, { phoneNumber: staff.phoneNumber });
+  if (pinError) {
+    res.status(400).json({ error: pinError });
+    return;
+  }
+
+  if (!(await verifyStaffPinResetOtp(staff.id, parsed.data.code.trim()))) {
     res.status(400).json({ error: 'Invalid or expired code' });
     return;
   }

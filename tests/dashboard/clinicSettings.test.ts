@@ -144,7 +144,7 @@ describe('POST /clinic/staff/:id/reset-pin', () => {
 
   it('returns 400 for a malformed admin-supplied PIN', async () => {
     mockLoadSession.mockResolvedValue(ADMIN_SESSION);
-    mockResetPin.mockRejectedValue(new InvalidPinFormatError());
+    mockResetPin.mockRejectedValue(new InvalidPinFormatError('Your PIN must be exactly 6 digits.'));
 
     const res = await request(buildApp())
       .post('/clinic/staff/s1/reset-pin')

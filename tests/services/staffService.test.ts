@@ -3,7 +3,13 @@ import bcrypt from 'bcrypt';
 jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
 jest.mock('../../src/db/prisma', () => ({
   prisma: {
-    staff: { findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn() },
+    staff: {
+      findUnique: jest.fn(),
+      findUniqueOrThrow: jest.fn(async () => ({ phoneNumber: '+254700000000' })),
+      findFirst: jest.fn(),
+      findMany: jest.fn(),
+      update: jest.fn(),
+    },
   },
 }));
 
@@ -106,12 +112,12 @@ describe('resetStaffPinViaConsole', () => {
     mockFindUnique.mockResolvedValue({ id: 'staff-1', staffCode: 'ACI-STF-7F2K', name: 'Jane Wanjiru' });
     mockUpdate.mockResolvedValue({ id: 'staff-1', staffCode: 'ACI-STF-7F2K', name: 'Jane Wanjiru' });
 
-    const result = await resetStaffPinViaConsole('aci-stf-7f2k', '654321');
+    const result = await resetStaffPinViaConsole('aci-stf-7f2k', '730194');
 
     expect(mockFindUnique).toHaveBeenCalledWith({ where: { staffCode: 'ACI-STF-7F2K' } });
     expect(mockUpdate).toHaveBeenCalledWith({ where: { id: 'staff-1' }, data: { pinHash: expect.any(String) } });
     const setHash = mockUpdate.mock.calls[0][0].data.pinHash;
-    await expect(bcrypt.compare('654321', setHash)).resolves.toBe(true);
+    await expect(bcrypt.compare('730194', setHash)).resolves.toBe(true);
     expect(mockRecordAudit).toHaveBeenCalledWith(
       expect.objectContaining({ actorType: 'SYSTEM', action: 'STAFF_PIN_RESET_VIA_CONSOLE', entityType: 'Staff', entityId: 'staff-1' }),
     );

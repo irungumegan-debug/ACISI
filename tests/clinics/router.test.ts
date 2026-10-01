@@ -92,7 +92,7 @@ describe('POST /clinics/register', () => {
       county: 'Nairobi',
       adminName: 'Jane Wanjiru',
       adminPhoneNumber: '0712345678',
-      adminPin: '1234',
+      adminPin: '730194',
     });
 
     expect(res.status).toBe(201);
@@ -109,7 +109,7 @@ describe('POST /clinics/register', () => {
       name: 'Sunrise Family Clinic',
       adminName: 'Jane Wanjiru',
       adminPhoneNumber: '0712345678',
-      adminPin: '1234',
+      adminPin: '730194',
     });
     expect(res.status).toBe(409);
   });

@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { pinPolicyError } from './pinPolicy';
 
 /**
  * Excludes visually-ambiguous characters (0/O, 1/I/L) so codes are easy to
@@ -42,8 +43,12 @@ export function generateOtpCode(): string {
 }
 
 /** Six-digit numeric temporary PIN — for an admin-initiated PIN reset, not an OTP (this one becomes the new login credential, not a single-use code). */
+/** A random 6-digit PIN that itself passes the PIN rules (no dates, repeats or sequences). */
 export function generateTemporaryPin(): string {
-  return String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
+  for (;;) {
+    const pin = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
+    if (!pinPolicyError(pin)) return pin;
+  }
 }
 
 /** Three-digit USSD clinic-selection code, e.g. "482". */

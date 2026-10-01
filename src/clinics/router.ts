@@ -1,12 +1,11 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { InvalidPhoneNumberError, toE164 } from '../utils/phone';
+import { pinPolicyError } from '../utils/pinPolicy';
 import { findClinicByInviteCode, listActiveClinics, registerClinic } from '../services/clinicService';
 import { listActiveDepartments } from '../services/departmentService';
 
 export const clinicsRouter = Router();
-
-const PIN_PATTERN = /^\d{4,6}$/;
 
 /** Used by the web check-in form (patient portal) to populate a clinic picker — same list the USSD menu offers. */
 clinicsRouter.get('/', async (_req, res) => {
@@ -42,7 +41,7 @@ const registerSchema = z.object({
   county: z.string().optional(),
   adminName: z.string().min(1),
   adminPhoneNumber: z.string().min(1),
-  adminPin: z.string().regex(PIN_PATTERN, 'PIN must be 4-6 digits'),
+  adminPin: z.string().min(1),
 });
 
 /**
@@ -66,6 +65,12 @@ clinicsRouter.post('/register', async (req, res) => {
       return;
     }
     throw err;
+  }
+
+  const pinError = pinPolicyError(parsed.data.adminPin, { phoneNumber: adminPhoneE164 });
+  if (pinError) {
+    res.status(400).json({ error: pinError });
+    return;
   }
 
   const result = await registerClinic({

@@ -494,6 +494,12 @@ footer {
   padding: 9px 12px;
   margin: 0 0 18px 0;
 }
+.field-hint {
+  font-size: 12px;
+  color: var(--ink-dim);
+  margin: 6px 0 0 0;
+  line-height: 1.45;
+}
 .auth-inline-link {
   color: var(--gold);
   background: none;
