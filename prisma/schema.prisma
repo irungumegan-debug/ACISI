@@ -63,6 +63,9 @@ enum ActorType {
   PATIENT
   STAFF
   SYSTEM
+  /// The platform owner (see PlatformOwner) — the one actor type that can
+  /// see across every clinic.
+  OWNER
 }
 
 /// Purpose of a one-time code sent to a patient's phone. Currently only PIN reset.
@@ -182,6 +185,7 @@ model Staff {
 
   checkIns              CheckIn[]
   auditLogs             AuditLog[]
+  otps                  StaffOtp[]
   assignedEncounters    Encounter[]   @relation("EncounterAssignedDoctor")
   consultedEncounters   Encounter[]   @relation("EncounterConsultedBy")
   checkedOutEncounters  Encounter[]   @relation("EncounterCheckedOutBy")
@@ -218,6 +222,14 @@ model Patient {
   /// Null for a patient registered via USSD check-in who has never set one —
   /// they use the same OTP flow to set their first PIN as to reset it.
   pinHash     String?
+  /// Set when the account is deleted, by the patient themselves (portal) or
+  /// the platform owner — see patientDeletionService. Deletion wipes every
+  /// identifying field above (name, phone, email, DOB, county, PIN) in the
+  /// same update, but keeps this row and its Encounters/CheckIns/payments,
+  /// now anonymous, so clinics keep their medical and financial records.
+  /// Every patient lookup used for login/USSD/OTP excludes deleted rows.
+  deletedAt     DateTime?
+  deletedByType ActorType?
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
@@ -246,6 +258,26 @@ model Otp {
 
   @@index([patientId])
   @@map("otps")
+}
+
+/// Staff/doctor counterpart of Otp: a one-time code sent by SMS to the
+/// staff member's registered phone so they can reset a forgotten PIN
+/// themselves. Same rules as Otp — reset-only, never a login credential,
+/// hashed, short-lived, limited guesses.
+model StaffOtp {
+  id         String     @id @default(cuid())
+  staffId    String
+  staff      Staff      @relation(fields: [staffId], references: [id])
+  purpose    OtpPurpose
+  /// bcrypt hash of the OTP. Never store or log the raw code.
+  codeHash   String
+  attempts   Int        @default(0)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime   @default(now())
+
+  @@index([staffId])
+  @@map("staff_otps")
 }
 
 /// One row per consent grant or revocation. Never mutated after creation —
@@ -411,6 +443,27 @@ model MpesaTransaction {
 
   @@index([checkInId])
   @@map("mpesa_transactions")
+}
+
+/// The company owner's account, for the separate owner site (/owner). Can
+/// see every clinic, staff member and patient record across the platform,
+/// deactivate clinics and staff, and delete patient accounts — every one of
+/// which is written to AuditLog with actorType OWNER. Deliberately not a
+/// StaffRole: staff belong to exactly one clinic, an owner belongs to none.
+/// Never created through any HTTP endpoint — only via
+/// scripts/createOwner.ts, run from the server console.
+model PlatformOwner {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String
+  /// bcrypt hash of the owner's password. Never store or log the raw value.
+  passwordHash String
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@map("platform_owners")
 }
 
 /// Append-only. Every access to or mutation of patient data should leave a

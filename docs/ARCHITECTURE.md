@@ -181,7 +181,7 @@ as an httpOnly cookie. Same "server holds the truth, client just holds a
 lookup key" pattern as the USSD session store — logout is a single Redis
 delete. The login endpoint itself is rate-limited per staffCode
 (`LOGIN_RATE_LIMIT_MAX_ATTEMPTS` failures per `LOGIN_RATE_LIMIT_WINDOW_SECONDS`,
-tracked in Redis) — a 4-digit PIN with no throttling would be trivially
+tracked in Redis) — a numeric PIN with no throttling would be trivially
 brute-forceable, and this endpoint gates access to every patient at the
 clinic, so it gets the same security treatment as everything else patient-data-adjacent in this codebase.
 

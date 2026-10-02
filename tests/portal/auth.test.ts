@@ -83,7 +83,7 @@ beforeEach(() => {
 });
 
 describe('POST /patients/register', () => {
-  it('rejects a PIN that is not 4-6 digits', async () => {
+  it('rejects a PIN that is not 6 digits', async () => {
     const res = await request(buildApp()).post('/patients/register').send({
       firstName: 'Jane',
       lastName: 'Wanjiru',
@@ -99,14 +99,14 @@ describe('POST /patients/register', () => {
       firstName: 'Jane',
       lastName: 'Wanjiru',
       phoneNumber: '0712345678',
-      pin: '1234',
+      pin: '730194',
       crossClinicConsent: false,
     });
 
     expect(res.status).toBe(201);
     expect(res.body.patientCode).toBe('ACI-7F2K');
     expect(mockRegisterPatient).toHaveBeenCalledWith(
-      expect.objectContaining({ crossClinicConsent: false, pin: '1234' }),
+      expect.objectContaining({ crossClinicConsent: false, pin: '730194' }),
     );
     expect(res.headers['set-cookie']?.[0]).toContain('acisi_patient_session=');
   });
@@ -117,7 +117,7 @@ describe('POST /patients/register', () => {
       firstName: 'Jane',
       lastName: 'Wanjiru',
       phoneNumber: '0712345678',
-      pin: '1234',
+      pin: '730194',
     });
     expect(res.status).toBe(409);
   });
@@ -128,7 +128,7 @@ describe('POST /patients/register', () => {
       firstName: 'Jane',
       lastName: 'Wanjiru',
       phoneNumber: '0712345678',
-      pin: '1234',
+      pin: '730194',
     });
 
     expect(res.status).toBe(201);
@@ -141,7 +141,7 @@ describe('POST /patients/register', () => {
       firstName: 'Jane',
       lastName: 'Wanjiru',
       phoneNumber: '0712345678',
-      pin: '1234',
+      pin: '730194',
       email: 'jane@example.com',
     });
 
@@ -154,7 +154,7 @@ describe('POST /patients/register', () => {
       firstName: 'Jane',
       lastName: 'Wanjiru',
       phoneNumber: '0712345678',
-      pin: '1234',
+      pin: '730194',
       email: 'not-an-email',
     });
 
@@ -166,7 +166,7 @@ describe('POST /patients/register', () => {
 describe('POST /patients/login', () => {
   it('returns the same 401 for an unknown identifier as for a wrong PIN', async () => {
     mockFindPatient.mockResolvedValue(null);
-    const res = await request(buildApp()).post('/patients/login').send({ identifier: 'ACI-9999', pin: '1234' });
+    const res = await request(buildApp()).post('/patients/login').send({ identifier: 'ACI-9999', pin: '730194' });
     expect(res.status).toBe(401);
   });
 
@@ -174,7 +174,7 @@ describe('POST /patients/login', () => {
     mockFindPatient.mockResolvedValue(PATIENT);
     mockVerifyPin.mockResolvedValue(true);
 
-    const res = await request(buildApp()).post('/patients/login').send({ identifier: 'ACI-7F2K', pin: '1234' });
+    const res = await request(buildApp()).post('/patients/login').send({ identifier: 'ACI-7F2K', pin: '730194' });
 
     expect(res.status).toBe(200);
     expect(res.body.patientCode).toBe('ACI-7F2K');
@@ -216,7 +216,7 @@ describe('POST /patients/reset-pin', () => {
 
     const res = await request(buildApp())
       .post('/patients/reset-pin')
-      .send({ identifier: 'ACI-7F2K', code: '000000', newPin: '4321' });
+      .send({ identifier: 'ACI-7F2K', code: '000000', newPin: '730194' });
 
     expect(res.status).toBe(400);
     expect(mockSetPin).not.toHaveBeenCalled();
@@ -228,9 +228,40 @@ describe('POST /patients/reset-pin', () => {
 
     const res = await request(buildApp())
       .post('/patients/reset-pin')
-      .send({ identifier: 'ACI-7F2K', code: '123456', newPin: '4321' });
+      .send({ identifier: 'ACI-7F2K', code: '123456', newPin: '730194' });
 
     expect(res.status).toBe(200);
-    expect(mockSetPin).toHaveBeenCalledWith('patient-1', '4321');
+    expect(mockSetPin).toHaveBeenCalledWith('patient-1', '730194');
+  });
+
+  it('automatically unlocks a patient who was locked out, under every identifier they log in with', async () => {
+    const app = buildApp();
+    mockFindPatient.mockResolvedValue(PATIENT);
+    mockVerifyPin.mockResolvedValue(false);
+    for (const identifier of ['ACI-7F2K', '+254712345678']) {
+      for (let i = 0; i < LOGIN_RATE_LIMIT_MAX_ATTEMPTS; i++) {
+        await request(app).post('/patients/login').send({ identifier, pin: '0000' });
+      }
+    }
+    mockVerifyPin.mockResolvedValue(true);
+    expect((await request(app).post('/patients/login').send({ identifier: 'ACI-7F2K', pin: '730194' })).status).toBe(429);
+
+    mockVerifyOtp.mockResolvedValue(true);
+    await request(app).post('/patients/reset-pin').send({ identifier: 'ACI-7F2K', code: '123456', newPin: '730194' });
+
+    expect((await request(app).post('/patients/login').send({ identifier: 'ACI-7F2K', pin: '730194' })).status).toBe(200);
+    expect((await request(app).post('/patients/login').send({ identifier: '+254712345678', pin: '730194' })).status).toBe(200);
+  });
+
+  it("refuses an easy-to-guess PIN without using up the patient's one-time code", async () => {
+    mockFindPatient.mockResolvedValue(PATIENT);
+    const res = await request(buildApp())
+      .post('/patients/reset-pin')
+      .send({ identifier: 'ACI-7F2K', code: '123456', newPin: '150390' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/looks like a date/);
+    expect(mockVerifyOtp).not.toHaveBeenCalled();
+    expect(mockSetPin).not.toHaveBeenCalled();
   });
 });

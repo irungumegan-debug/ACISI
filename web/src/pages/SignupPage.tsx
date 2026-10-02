@@ -154,7 +154,8 @@ function PatientSignupForm({ onBack }: { onBack: () => void }) {
       </div>
       <div className="field">
         <label>Create a PIN</label>
-        <input type="password" inputMode="numeric" required maxLength={6} placeholder="4-digit PIN" value={pin} onChange={(e) => setPin(e.target.value)} />
+        <input type="password" inputMode="numeric" required minLength={6} maxLength={6} pattern="\d{6}" placeholder="6-digit PIN" value={pin} onChange={(e) => setPin(e.target.value)} />
+        <p className="field-hint">6 digits. Avoid birthdays, your phone number, and easy patterns like 123456 or 111111.</p>
       </div>
       <label style={{ display: 'flex', gap: 8, fontSize: 13, color: 'var(--ink-dim)', marginBottom: 16, alignItems: 'flex-start' }}>
         <input type="checkbox" checked={crossClinicConsent} onChange={(e) => setCrossClinicConsent(e.target.checked)} style={{ width: 'auto', marginTop: 3 }} />
@@ -285,7 +286,8 @@ function StaffSignupForm({
       )}
       <div className="field">
         <label>Create a PIN</label>
-        <input type="password" inputMode="numeric" required maxLength={6} placeholder="4-digit PIN" value={pin} onChange={(e) => setPin(e.target.value)} />
+        <input type="password" inputMode="numeric" required minLength={6} maxLength={6} pattern="\d{6}" placeholder="6-digit PIN" value={pin} onChange={(e) => setPin(e.target.value)} />
+        <p className="field-hint">6 digits. Avoid birthdays, your phone number, and easy patterns like 123456 or 111111.</p>
       </div>
 
       {error && <p className="auth-error">{error}</p>}
@@ -348,7 +350,8 @@ function ClinicSignupForm({ onBack, onDone }: { onBack: () => void; onDone: (inv
       </div>
       <div className="field">
         <label>Create a PIN</label>
-        <input type="password" inputMode="numeric" required maxLength={6} placeholder="4-digit PIN" value={adminPin} onChange={(e) => setAdminPin(e.target.value)} />
+        <input type="password" inputMode="numeric" required minLength={6} maxLength={6} pattern="\d{6}" placeholder="6-digit PIN" value={adminPin} onChange={(e) => setAdminPin(e.target.value)} />
+        <p className="field-hint">6 digits. Avoid birthdays, your phone number, and easy patterns like 123456 or 111111.</p>
       </div>
 
       {error && <p className="auth-error">{error}</p>}

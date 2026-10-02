@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, ApiError, ClinicStaffListItem, DoctorPresenceStatus } from '../lib/api';
 
-const PIN_PATTERN = /^\d{4,6}$/;
+const PIN_PATTERN = /^\d{6}$/;
 
 const PRESENCE_LABEL: Record<DoctorPresenceStatus, string> = {
   IN: 'In today',
@@ -55,11 +55,11 @@ export function SettingsPage() {
   async function handleResetPin(member: ClinicStaffListItem): Promise<void> {
     if (!confirm(`Reset the PIN for ${member.name} (${member.staffCode})? They'll need the new PIN to log in.`)) return;
 
-    const typed = prompt('Enter a specific PIN (4-6 digits), or leave blank to generate one automatically:');
+    const typed = prompt('Enter a specific 6-digit PIN, or leave blank to generate one automatically (recommended):');
     if (typed === null) return; // cancelled
     const customPin = typed.trim();
     if (customPin && !PIN_PATTERN.test(customPin)) {
-      setStaffError('PIN must be 4-6 digits');
+      setStaffError('PIN must be exactly 6 digits');
       return;
     }
 

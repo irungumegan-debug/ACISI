@@ -8,12 +8,17 @@ import { env } from '../config/env';
 
 const MAX_CODE_GENERATION_ATTEMPTS = 10;
 
+// Every lookup below excludes deleted accounts (see patientDeletionService):
+// a deleted patient can't log in, reset a PIN, or be found over USSD — their
+// phone number was already freed at deletion, so dialing in again starts a
+// brand-new registration.
+
 export async function findPatientByPhone(phoneNumberE164: string): Promise<Patient | null> {
-  return prisma.patient.findUnique({ where: { phoneNumber: phoneNumberE164 } });
+  return prisma.patient.findFirst({ where: { phoneNumber: phoneNumberE164, deletedAt: null } });
 }
 
 export async function findPatientByCode(patientCode: string): Promise<Patient | null> {
-  return prisma.patient.findUnique({ where: { patientCode } });
+  return prisma.patient.findFirst({ where: { patientCode, deletedAt: null } });
 }
 
 /** Looks a patient up by phone number or patientCode, whichever the identifier looks like. */
@@ -22,7 +27,7 @@ export async function findPatientByPhoneOrCode(identifier: string): Promise<Pati
   if (/^ACI-/i.test(trimmed)) {
     return findPatientByCode(trimmed.toUpperCase());
   }
-  return prisma.patient.findUnique({ where: { phoneNumber: trimmed } }).catch(() => null);
+  return findPatientByPhone(trimmed).catch(() => null);
 }
 
 async function generateUniquePatientCode(): Promise<string> {

@@ -13,6 +13,7 @@ import { mpesaRouter } from './mpesa/router';
 import { dashboardRouter } from './dashboard/router';
 import { portalRouter } from './portal/router';
 import { clinicsRouter } from './clinics/router';
+import { ownerRouter } from './owner/router';
 import { requestLogger } from './middleware/requestLogger';
 import { errorHandler } from './middleware/errorHandler';
 import { logger } from './utils/logger';
@@ -41,12 +42,14 @@ export function createApp(): Express {
   app.use('/api/staff', dashboardRouter);
   app.use('/api/patients', portalRouter);
   app.use('/api/clinics', clinicsRouter);
+  app.use('/api/owner', ownerRouter);
 
-  // Two separate SPA builds, served statically from this same
+  // Three separate SPA builds, served statically from this same
   // process/origin — no CORS needed, and session cookies work the same way
   // they do in dev via each app's Vite proxy. The staff/doctor console
-  // lives under /console; everything else (marketing site, signup/login,
-  // patient portal) is the web/ app at the root.
+  // lives under /console, the owner site under /owner; everything else
+  // (marketing site, signup/login, patient portal) is the web/ app at the
+  // root.
   //
   // Gated on the built dist/ directories actually existing on disk, not on
   // NODE_ENV — some hosts (Railway among them) don't set NODE_ENV=production
@@ -57,7 +60,9 @@ export function createApp(): Express {
   // build output is what determines whether there's anything to serve.
   const webDist = path.join(__dirname, '../web/dist');
   const dashboardDist = path.join(__dirname, '../dashboard/dist');
+  const ownerDist = path.join(__dirname, '../owner/dist');
   const hasDashboardBuild = fs.existsSync(path.join(dashboardDist, 'index.html'));
+  const hasOwnerBuild = fs.existsSync(path.join(ownerDist, 'index.html'));
   const hasWebBuild = fs.existsSync(path.join(webDist, 'index.html'));
 
   if (hasDashboardBuild) {
@@ -69,10 +74,19 @@ export function createApp(): Express {
     logger.warn({ dashboardDist }, 'dashboard/dist not found — /console will 404. Did the dashboard build run?');
   }
 
+  if (hasOwnerBuild) {
+    app.use('/owner', express.static(ownerDist));
+    app.get('/owner/*', (_req, res) => {
+      res.sendFile(path.join(ownerDist, 'index.html'));
+    });
+  } else {
+    logger.warn({ ownerDist }, 'owner/dist not found — /owner will 404. Did the owner build run?');
+  }
+
   if (hasWebBuild) {
     app.use(express.static(webDist));
     app.get('*', (req, res, next) => {
-      if (req.path.startsWith('/api/') || req.path.startsWith('/console')) {
+      if (req.path.startsWith('/api/') || req.path.startsWith('/console') || req.path.startsWith('/owner')) {
         next();
         return;
       }

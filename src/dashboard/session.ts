@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { redis } from '../config/redis';
 import { DASHBOARD_SESSION_TTL_SECONDS } from '../config/constants';
 import { logger } from '../utils/logger';
+import { isSessionRevoked } from '../services/sessionRevocation';
 
 const SESSION_KEY_PREFIX = 'dashboard:session:';
 
@@ -17,6 +18,12 @@ export interface DashboardSession {
   clinicName: string;
   /** Set only for department-scoped roles (doctors). Null for front desk/admin. */
   departmentId: string | null;
+  /**
+   * Epoch ms the session was created — compared against revocation markers
+   * (see services/sessionRevocation.ts) so deactivating a staff member or
+   * their clinic logs them out immediately. Set by createDashboardSession.
+   */
+  issuedAt?: number;
 }
 
 function key(token: string): string {
@@ -31,19 +38,25 @@ function key(token: string): string {
  */
 export async function createDashboardSession(session: DashboardSession): Promise<string> {
   const token = crypto.randomBytes(32).toString('hex');
-  await redis.set(key(token), JSON.stringify(session), 'EX', DASHBOARD_SESSION_TTL_SECONDS);
+  await redis.set(key(token), JSON.stringify({ ...session, issuedAt: Date.now() }), 'EX', DASHBOARD_SESSION_TTL_SECONDS);
   return token;
 }
 
 export async function loadDashboardSession(token: string): Promise<DashboardSession | null> {
   const raw = await redis.get(key(token));
   if (!raw) return null;
+  let session: DashboardSession;
   try {
-    return JSON.parse(raw) as DashboardSession;
+    session = JSON.parse(raw) as DashboardSession;
   } catch (err) {
     logger.warn({ err }, 'Failed to parse cached dashboard session; treating as invalid');
     return null;
   }
+  if (await isSessionRevoked([`staff:${session.staffId}`, `clinic:${session.clinicId}`], session.issuedAt)) {
+    await redis.del(key(token));
+    return null;
+  }
+  return session;
 }
 
 export async function destroyDashboardSession(token: string): Promise<void> {

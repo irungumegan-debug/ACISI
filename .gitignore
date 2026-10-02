@@ -17,3 +17,6 @@ prisma/*.db
 
 .vscode/
 .idea/
+
+# Local Redis snapshot
+dump.rdb

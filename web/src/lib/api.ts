@@ -127,6 +127,11 @@ export const api = {
     return request<void>('/patients/logout', { method: 'POST' });
   },
 
+  /** Permanently deletes the logged-in patient's account. Requires their PIN again. */
+  deletePatientAccount(pin: string) {
+    return request<void>('/patients/account/delete', { method: 'POST', body: JSON.stringify({ pin }) });
+  },
+
   patientMe() {
     return request<PatientSession>('/patients/me');
   },
@@ -135,6 +140,20 @@ export const api = {
     return request<{ message: string }>('/patients/forgot-pin', {
       method: 'POST',
       body: JSON.stringify({ identifier }),
+    });
+  },
+
+  forgotStaffPin(staffCode: string) {
+    return request<{ message: string }>('/staff/auth/forgot-pin', {
+      method: 'POST',
+      body: JSON.stringify({ staffCode }),
+    });
+  },
+
+  resetStaffPin(staffCode: string, code: string, newPin: string) {
+    return request<{ message: string }>('/staff/auth/reset-pin', {
+      method: 'POST',
+      body: JSON.stringify({ staffCode, code, newPin }),
     });
   },
 

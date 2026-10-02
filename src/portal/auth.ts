@@ -9,6 +9,7 @@ import {
   OTP_REQUEST_RATE_LIMIT_WINDOW_SECONDS,
 } from '../config/constants';
 import { InvalidPhoneNumberError, toE164 } from '../utils/phone';
+import { pinPolicyError } from '../utils/pinPolicy';
 import {
   findPatientByPhoneOrCode,
   registerPatient,
@@ -16,6 +17,9 @@ import {
   verifyPatientPin,
 } from '../services/patientService';
 import { requestPinResetOtp, verifyPinResetOtp } from '../services/otpService';
+import { deletePatientAccount, PatientNotFoundError } from '../services/patientDeletionService';
+import { prisma } from '../db/prisma';
+import { revokeSessionsFor } from '../services/sessionRevocation';
 import {
   createPatientSession,
   destroyPatientSession,
@@ -28,8 +32,6 @@ import { logger } from '../utils/logger';
 export interface AuthenticatedPatientRequest extends Request {
   patientSession: PatientSession;
 }
-
-const PIN_PATTERN = /^\d{4,6}$/;
 
 function rateLimitKey(prefix: string, identifier: string): string {
   return `portal:${prefix}:${identifier}`;
@@ -60,7 +62,7 @@ const registerSchema = z.object({
   phoneNumber: z.string().min(1),
   dateOfBirth: z.string().optional(),
   sex: z.enum(['MALE', 'FEMALE', 'OTHER', 'UNKNOWN']).optional(),
-  pin: z.string().regex(PIN_PATTERN, 'PIN must be 4-6 digits'),
+  pin: z.string().min(1),
   crossClinicConsent: z.boolean().optional(),
   // Optional — many patients won't have one, and nothing else in the
   // product depends on it (no email login, no email OTP). Only ever used
@@ -84,6 +86,12 @@ portalAuthRouter.post('/register', async (req, res) => {
       return;
     }
     throw err;
+  }
+
+  const pinError = pinPolicyError(parsed.data.pin, { phoneNumber: phoneE164 });
+  if (pinError) {
+    res.status(400).json({ error: pinError });
+    return;
   }
 
   const patient = await registerPatient({
@@ -223,7 +231,7 @@ portalAuthRouter.post('/forgot-pin', async (req, res) => {
 const resetPinSchema = z.object({
   identifier: z.string().min(1),
   code: z.string().min(1),
-  newPin: z.string().regex(PIN_PATTERN, 'PIN must be 4-6 digits'),
+  newPin: z.string().min(1),
 });
 
 portalAuthRouter.post('/reset-pin', async (req, res) => {
@@ -239,6 +247,14 @@ portalAuthRouter.post('/reset-pin', async (req, res) => {
     return;
   }
 
+  // Checked before the code, so a rejected PIN doesn't use up the
+  // one-time code — the patient can fix the PIN and resubmit.
+  const pinError = pinPolicyError(parsed.data.newPin, { phoneNumber: patient.phoneNumber });
+  if (pinError) {
+    res.status(400).json({ error: pinError });
+    return;
+  }
+
   const isValid = await verifyPinResetOtp(patient.id, parsed.data.code.trim());
   if (!isValid) {
     res.status(400).json({ error: 'Invalid or expired code' });
@@ -246,7 +262,62 @@ portalAuthRouter.post('/reset-pin', async (req, res) => {
   }
 
   await setPatientPin(patient.id, parsed.data.newPin);
+
+  // Unlock automatically: clear the failed-login counter for every form of
+  // identifier they might log in with (it's keyed by what was typed), and
+  // log out any existing sessions, since the old PIN may be what someone
+  // else was using.
+  for (const id of new Set([parsed.data.identifier.trim(), patient.patientCode, patient.phoneNumber])) {
+    await clearAttempts('login_attempts', id);
+  }
+  await revokeSessionsFor(`patient:${patient.id}`);
+
   res.json({ message: 'PIN updated. You can now log in with your new PIN.' });
+});
+
+const deleteAccountSchema = z.object({ pin: z.string().min(1) });
+
+/**
+ * Patient-initiated account deletion. Re-asks for the PIN even though the
+ * patient is already logged in, so an unattended logged-in phone isn't
+ * enough to wipe someone's account. Shares the login rate limit, keyed by
+ * patient, so it can't be used to brute-force a PIN either.
+ */
+portalAuthRouter.post('/account/delete', requirePatientSession, async (req, res) => {
+  const parsed = deleteAccountSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Enter your PIN to confirm' });
+    return;
+  }
+
+  const { patientId } = (req as AuthenticatedPatientRequest).patientSession;
+
+  if (await isRateLimited('delete_attempts', patientId, LOGIN_RATE_LIMIT_MAX_ATTEMPTS)) {
+    res.status(429).json({ error: 'Too many failed attempts. Try again in a few minutes.' });
+    return;
+  }
+
+  const patient = await prisma.patient.findFirst({ where: { id: patientId, deletedAt: null } });
+  const isValid = patient ? await verifyPatientPin(patient, parsed.data.pin) : false;
+  if (!patient || !isValid) {
+    await recordAttempt('delete_attempts', patientId, LOGIN_RATE_LIMIT_WINDOW_SECONDS);
+    res.status(401).json({ error: 'Incorrect PIN' });
+    return;
+  }
+
+  try {
+    await deletePatientAccount(patientId, { type: 'PATIENT' });
+  } catch (err) {
+    if (err instanceof PatientNotFoundError) {
+      res.status(404).json({ error: 'Account not found' });
+      return;
+    }
+    throw err;
+  }
+
+  await clearAttempts('delete_attempts', patientId);
+  res.clearCookie(PATIENT_SESSION_COOKIE_NAME);
+  res.status(204).send();
 });
 
 export async function requirePatientSession(req: Request, res: Response, next: NextFunction): Promise<void> {

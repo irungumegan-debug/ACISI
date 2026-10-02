@@ -39,7 +39,7 @@ describe('POST /register (staff/doctor signup)', () => {
       name: 'Anne Otieno',
       phoneNumber: '0712345678',
       inviteCode: 'SUNRISE-7F2K',
-      pin: '1234',
+      pin: '730194',
       role: 'ADMIN',
     });
     expect(res.status).toBe(400);
@@ -53,7 +53,7 @@ describe('POST /register (staff/doctor signup)', () => {
       name: 'Anne Otieno',
       phoneNumber: '0712345678',
       inviteCode: 'SUNRISE-7F2K',
-      pin: '1234',
+      pin: '730194',
       role: 'RECEPTIONIST',
     });
 
@@ -68,7 +68,7 @@ describe('POST /register (staff/doctor signup)', () => {
       name: 'Anne Otieno',
       phoneNumber: '0712345678',
       inviteCode: 'BOGUS-0000',
-      pin: '1234',
+      pin: '730194',
       role: 'DOCTOR',
     });
 
@@ -83,7 +83,7 @@ describe('POST /register (staff/doctor signup)', () => {
       name: 'Anne Otieno',
       phoneNumber: '0712345678',
       inviteCode: 'SUNRISE-7F2K',
-      pin: '1234',
+      pin: '730194',
       role: 'DOCTOR',
     });
 

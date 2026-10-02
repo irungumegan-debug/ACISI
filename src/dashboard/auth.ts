@@ -1,8 +1,22 @@
 import { NextFunction, Request, Response, Router } from 'express';
 import { z } from 'zod';
 import { redis } from '../config/redis';
-import { LOGIN_RATE_LIMIT_MAX_ATTEMPTS, LOGIN_RATE_LIMIT_WINDOW_SECONDS, DASHBOARD_SESSION_TTL_SECONDS } from '../config/constants';
-import { findActiveStaffWithClinicByCode, verifyStaffPin } from '../services/staffService';
+import {
+  LOGIN_RATE_LIMIT_MAX_ATTEMPTS,
+  LOGIN_RATE_LIMIT_WINDOW_SECONDS,
+  DASHBOARD_SESSION_TTL_SECONDS,
+  OTP_REQUEST_RATE_LIMIT_MAX_ATTEMPTS,
+  OTP_REQUEST_RATE_LIMIT_WINDOW_SECONDS,
+} from '../config/constants';
+import {
+  findActiveStaffWithClinicByCode,
+  InvalidPinFormatError,
+  resetStaffPinBySelf,
+  verifyStaffPin,
+} from '../services/staffService';
+import { requestStaffPinResetOtp, verifyStaffPinResetOtp } from '../services/otpService';
+import { revokeSessionsFor } from '../services/sessionRevocation';
+import { pinPolicyError } from '../utils/pinPolicy';
 import {
   createDashboardSession,
   destroyDashboardSession,
@@ -104,6 +118,105 @@ authRouter.post('/logout', async (req, res) => {
 
 authRouter.get('/me', requireStaffSession, (req, res) => {
   res.json((req as AuthenticatedRequest).dashboardSession);
+});
+
+function otpRequestRateLimitKey(staffCode: string): string {
+  return `dashboard:otp_requests:${staffCode}`;
+}
+
+const forgotPinSchema = z.object({ staffCode: z.string().min(1) });
+
+/**
+ * Self-service "forgot PIN" for staff and doctors: texts a one-time code to
+ * the phone number on their account. Always returns the same generic
+ * response whether or not the staff ID exists, so it can't be used to
+ * discover valid staff IDs. Rate-limited per staff ID so it can't be used
+ * to flood someone's phone with SMS.
+ */
+authRouter.post('/forgot-pin', async (req, res) => {
+  const parsed = forgotPinSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Staff ID is required' });
+    return;
+  }
+
+  const staffCode = parsed.data.staffCode.trim().toUpperCase();
+  const k = otpRequestRateLimitKey(staffCode);
+  if (Number((await redis.get(k)) ?? 0) >= OTP_REQUEST_RATE_LIMIT_MAX_ATTEMPTS) {
+    res.status(429).json({ error: 'Too many requests. Try again in a few minutes.' });
+    return;
+  }
+  const count = await redis.incr(k);
+  if (count === 1) {
+    await redis.expire(k, OTP_REQUEST_RATE_LIMIT_WINDOW_SECONDS);
+  }
+
+  // Deactivated staff (or staff at a deactivated clinic) can't log in, so
+  // there's no point letting them reset a PIN either.
+  const staff = await findActiveStaffWithClinicByCode(staffCode);
+  if (staff) {
+    try {
+      await requestStaffPinResetOtp(staff);
+    } catch (err) {
+      logger.error({ err }, 'Failed to send staff PIN reset OTP');
+    }
+  }
+
+  res.json({ message: 'If that staff ID exists, we sent a one-time code by SMS to the phone number on the account.' });
+});
+
+const resetPinSchema = z.object({
+  staffCode: z.string().min(1),
+  code: z.string().min(1),
+  newPin: z.string().min(1),
+});
+
+/**
+ * Completes the self-service reset. On success the staff member is also
+ * unlocked (their failed-login counter is cleared, so a lockout from
+ * guessing doesn't outlast the reset) and logged out of every existing
+ * session, since the old PIN may be what someone else was using.
+ */
+authRouter.post('/reset-pin', async (req, res) => {
+  const parsed = resetPinSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'A valid code and new PIN are required' });
+    return;
+  }
+
+  const staffCode = parsed.data.staffCode.trim().toUpperCase();
+  const staff = await findActiveStaffWithClinicByCode(staffCode);
+  if (!staff) {
+    res.status(400).json({ error: 'Invalid or expired code' });
+    return;
+  }
+
+  // Checked before the code, so a rejected PIN doesn't use up the one-time
+  // code — they can fix the PIN and resubmit.
+  const pinError = pinPolicyError(parsed.data.newPin, { phoneNumber: staff.phoneNumber });
+  if (pinError) {
+    res.status(400).json({ error: pinError });
+    return;
+  }
+
+  if (!(await verifyStaffPinResetOtp(staff.id, parsed.data.code.trim()))) {
+    res.status(400).json({ error: 'Invalid or expired code' });
+    return;
+  }
+
+  try {
+    await resetStaffPinBySelf(staff.id, parsed.data.newPin);
+  } catch (err) {
+    if (err instanceof InvalidPinFormatError) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
+
+  await clearRateLimit(staffCode);
+  await revokeSessionsFor(`staff:${staff.id}`);
+  res.json({ message: 'PIN updated. You can now log in with your new PIN.' });
 });
 
 export async function requireStaffSession(req: Request, res: Response, next: NextFunction): Promise<void> {

@@ -27,6 +27,16 @@ export const CLINICS_PER_PAGE = 5;
 /** Staff dashboard web session lifetime — roughly a shift. */
 export const DASHBOARD_SESSION_TTL_SECONDS = 8 * 60 * 60;
 
+/**
+ * Owner site session lifetime — deliberately much shorter than a staff
+ * shift, since an owner session can read and delete every record on the
+ * platform.
+ */
+export const OWNER_SESSION_TTL_SECONDS = 2 * 60 * 60;
+
+/** Minimum length for the owner's password (set via scripts/createOwner.ts). */
+export const OWNER_PASSWORD_MIN_LENGTH = 12;
+
 /** Brute-force guard on the dashboard PIN login endpoint. */
 export const LOGIN_RATE_LIMIT_MAX_ATTEMPTS = 5;
 export const LOGIN_RATE_LIMIT_WINDOW_SECONDS = 15 * 60;

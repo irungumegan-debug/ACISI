@@ -1,17 +1,16 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { InvalidPhoneNumberError, toE164 } from '../utils/phone';
+import { pinPolicyError } from '../utils/pinPolicy';
 import { InvalidDepartmentError, InvalidInviteCodeError, registerStaffViaInviteCode } from '../services/staffService';
 
 export const staffRegistrationRouter = Router();
-
-const PIN_PATTERN = /^\d{4,6}$/;
 
 const registerSchema = z.object({
   name: z.string().min(1),
   phoneNumber: z.string().min(1),
   inviteCode: z.string().min(1),
-  pin: z.string().regex(PIN_PATTERN, 'PIN must be 4-6 digits'),
+  pin: z.string().min(1),
   role: z.enum(['RECEPTIONIST', 'CLINICIAN', 'DOCTOR']),
   /** Required when role is DOCTOR; see GET /api/clinics/invite-code/:code/departments. */
   departmentId: z.string().optional(),
@@ -38,6 +37,12 @@ staffRegistrationRouter.post('/', async (req, res) => {
       return;
     }
     throw err;
+  }
+
+  const pinError = pinPolicyError(parsed.data.pin, { phoneNumber: phoneE164 });
+  if (pinError) {
+    res.status(400).json({ error: pinError });
+    return;
   }
 
   try {

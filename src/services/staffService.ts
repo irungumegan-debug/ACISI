@@ -7,8 +7,8 @@ import { generateStaffCode, generateTemporaryPin } from '../utils/idCodes';
 import { env } from '../config/env';
 import { findClinicByInviteCode } from './clinicService';
 import { findActiveDepartment } from './departmentService';
+import { pinPolicyError } from '../utils/pinPolicy';
 
-const PIN_PATTERN = /^\d{4,6}$/;
 
 const MAX_CODE_GENERATION_ATTEMPTS = 10;
 
@@ -156,9 +156,10 @@ export async function verifyStaffPin(staff: Staff, pin: string): Promise<boolean
   return isValid;
 }
 
+/** A chosen PIN that breaks the PIN rules (see utils/pinPolicy.ts); the message says which. */
 export class InvalidPinFormatError extends Error {
-  constructor() {
-    super('PIN must be 4-6 digits');
+  constructor(message: string) {
+    super(message);
     this.name = 'InvalidPinFormatError';
   }
 }
@@ -172,8 +173,10 @@ export class InvalidPinFormatError extends Error {
  * recordAuditEvent call, same as the rest of this codebase's convention.
  */
 async function setPin(staffId: string, newPin: string): Promise<Staff> {
-  if (!PIN_PATTERN.test(newPin)) {
-    throw new InvalidPinFormatError();
+  const staff = await prisma.staff.findUniqueOrThrow({ where: { id: staffId }, select: { phoneNumber: true } });
+  const pinError = pinPolicyError(newPin, { phoneNumber: staff.phoneNumber });
+  if (pinError) {
+    throw new InvalidPinFormatError(pinError);
   }
   const pinHash = await hashPin(newPin);
   return prisma.staff.update({ where: { id: staffId }, data: { pinHash } });
@@ -206,6 +209,26 @@ export async function resetStaffPinViaConsole(staffCode: string, newPin: string)
     action: 'STAFF_PIN_RESET_VIA_CONSOLE',
     entityType: 'Staff',
     entityId: staff.id,
+  });
+
+  return updated;
+}
+
+/**
+ * Self-service reset: the staff member proved they hold their registered
+ * phone by entering the SMS code (see otpService.verifyStaffPinResetOtp),
+ * so they set their own new PIN — no admin involved.
+ */
+export async function resetStaffPinBySelf(staffId: string, newPin: string): Promise<Staff> {
+  const updated = await setPin(staffId, newPin);
+
+  await recordAuditEvent({
+    actorType: 'STAFF',
+    actorId: staffId,
+    staffId,
+    action: 'STAFF_PIN_RESET_SELF',
+    entityType: 'Staff',
+    entityId: staffId,
   });
 
   return updated;
