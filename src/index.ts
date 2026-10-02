@@ -1,6 +1,7 @@
 import { createApp } from './app';
 import { env } from './config/env';
 import { logger } from './utils/logger';
+import { ensureOwnerFromEnv } from './services/ownerService';
 import { startSmsReceiptWorker } from './jobs/workers/smsReceiptWorker';
 import { startStkStatusWorker } from './jobs/workers/stkStatusWorker';
 import { startVisitSummarySmsWorker } from './jobs/workers/visitSummarySmsWorker';
@@ -15,6 +16,8 @@ const visitSummaryEmailWorker = startVisitSummaryEmailWorker();
 const server = app.listen(env.PORT, () => {
   logger.info({ port: env.PORT, env: env.NODE_ENV }, 'ACISI server listening');
 });
+
+void ensureOwnerFromEnv({ email: env.OWNER_EMAIL, name: env.OWNER_NAME, password: env.OWNER_PASSWORD });
 
 async function shutdown(signal: string): Promise<void> {
   logger.info({ signal }, 'Shutting down');

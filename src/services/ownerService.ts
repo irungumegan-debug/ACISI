@@ -1,6 +1,7 @@
 import bcrypt from 'bcrypt';
 import { PlatformOwner } from '@prisma/client';
 import { prisma } from '../db/prisma';
+import { logger } from '../utils/logger';
 import { OWNER_PASSWORD_MIN_LENGTH } from '../config/constants';
 import { recordAuditEvent } from './auditService';
 import { revokeSessionsFor } from './sessionRevocation';
@@ -60,11 +61,14 @@ export async function authenticateOwner(email: string, password: string): Promis
  * session. Only ever called from scripts/createOwner.ts on the server
  * console; there is deliberately no HTTP route that creates an owner.
  */
-export async function createOrResetOwner(input: {
-  email: string;
-  name: string;
-  password: string;
-}): Promise<{ owner: PlatformOwner; created: boolean }> {
+export async function createOrResetOwner(
+  input: {
+    email: string;
+    name: string;
+    password: string;
+  },
+  channel: 'CONSOLE_SCRIPT' | 'ENV_BOOTSTRAP' = 'CONSOLE_SCRIPT',
+): Promise<{ owner: PlatformOwner; created: boolean }> {
   const email = normalizeOwnerEmail(input.email);
   const name = input.name.trim();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -93,8 +97,68 @@ export async function createOrResetOwner(input: {
     action: existing ? 'OWNER_PASSWORD_RESET' : 'OWNER_CREATED',
     entityType: 'PlatformOwner',
     entityId: owner.id,
-    metadata: { channel: 'CONSOLE_SCRIPT' },
+    metadata: { channel },
   });
 
   return { owner, created: !existing };
+}
+
+export interface OwnerBootstrapConfig {
+  email?: string;
+  name?: string;
+  password?: string;
+}
+
+/**
+ * Creates the owner account from environment variables (OWNER_EMAIL,
+ * OWNER_NAME, OWNER_PASSWORD) at server startup — the no-shell alternative
+ * to scripts/createOwner.ts, for hosts like Railway where setting a variable
+ * is easier than opening a console.
+ *
+ * Create-only by design: if an owner already exists for that email, nothing
+ * changes, so a forgotten OWNER_PASSWORD left in the environment can never
+ * silently reset the password on a later deploy (use the console script to
+ * reset it). Only a bcrypt hash of the password is stored; neither the
+ * password nor anything derived from it is logged. Never throws — a bad
+ * config is logged and the server carries on without it.
+ */
+export async function ensureOwnerFromEnv(config: OwnerBootstrapConfig): Promise<void> {
+  const provided = { OWNER_EMAIL: config.email, OWNER_NAME: config.name, OWNER_PASSWORD: config.password };
+  const missing = Object.entries(provided)
+    .filter(([, v]) => !v?.trim())
+    .map(([k]) => k);
+  if (missing.length === 3) return;
+  if (missing.length > 0) {
+    logger.warn({ missing }, 'Owner bootstrap skipped: set all of OWNER_EMAIL, OWNER_NAME and OWNER_PASSWORD');
+    return;
+  }
+
+  const email = normalizeOwnerEmail(config.email as string);
+  try {
+    const existing = await prisma.platformOwner.findUnique({ where: { email } });
+    if (existing) {
+      logger.info(
+        { email },
+        'Owner account already exists; OWNER_PASSWORD was ignored. You can now delete OWNER_PASSWORD from your environment.',
+      );
+      return;
+    }
+
+    await createOrResetOwner(
+      { email, name: config.name as string, password: config.password as string },
+      'ENV_BOOTSTRAP',
+    );
+    logger.info(
+      { email },
+      'Owner account created from environment variables. Sign in at /owner, then delete OWNER_PASSWORD from your environment.',
+    );
+  } catch (err) {
+    if (err instanceof InvalidOwnerInputError) {
+      logger.error({ reason: err.message }, 'Owner bootstrap failed: fix the OWNER_* environment variables');
+      return;
+    }
+    // Another instance starting at the same moment may have just created it.
+    if ((err as { code?: string })?.code === 'P2002') return;
+    logger.error({ err }, 'Owner bootstrap failed');
+  }
 }
