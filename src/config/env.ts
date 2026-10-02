@@ -32,6 +32,17 @@ const envSchema = z.object({
   RESEND_API_KEY: z.string().optional(),
   EMAIL_FROM_ADDRESS: z.string().optional(),
 
+  // --- Owner account bootstrap (optional) ---
+  // Lets the owner account for the /owner site be created from the host's
+  // environment settings (e.g. Railway variables) instead of a shell. Read
+  // once at startup by ownerService.ensureOwnerFromEnv: if all three are set
+  // and no owner exists for OWNER_EMAIL, one is created with a bcrypt hash of
+  // OWNER_PASSWORD. Never overwrites an existing owner, so OWNER_PASSWORD
+  // can (and should) be deleted once the account exists.
+  OWNER_EMAIL: z.string().optional(),
+  OWNER_NAME: z.string().optional(),
+  OWNER_PASSWORD: z.string().optional(),
+
   STAFF_PIN_SALT_ROUNDS: z.coerce.number().int().min(4).max(15).default(10),
 
   USSD_SESSION_TTL_SECONDS: z.coerce.number().int().positive().default(170),

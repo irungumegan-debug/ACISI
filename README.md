@@ -133,15 +133,27 @@ owner can:
   handled);
 - browse the full audit log.
 
-There is no signup form for it. The owner account is created from the
-server console (on Railway: the service's shell):
+There is no signup form for it. The owner account is created privately, in
+one of two ways — either way only a bcrypt hash of the password is stored,
+never the password itself, and nothing about it is in the code:
+
+**Option A — environment variables (no shell needed; easiest on Railway).**
+Add `OWNER_EMAIL`, `OWNER_NAME` and `OWNER_PASSWORD` (12+ characters) to the
+service's variables and let it redeploy. On startup, if no owner exists for
+that email, one is created; the deploy log says "Owner account created from
+environment variables". Then **delete `OWNER_PASSWORD`** from the variables.
+It never overwrites an existing account, so a leftover value can't reset
+your password later.
+
+**Option B — one-time setup script (from the server's shell):**
 
 ```bash
 npm run create-owner -- you@example.com "Your Name"
 ```
 
 It asks for a password (12+ characters, not echoed). Running it again for
-the same email resets the password and logs out every open owner session.
+the same email resets the password and logs out every open owner session —
+this is also how to reset a forgotten owner password.
 Locally, run the owner site's dev server with `npm run dev:owner`.
 
 **PIN rules.** Every PIN is exactly 6 digits (staff also log in over USSD,
