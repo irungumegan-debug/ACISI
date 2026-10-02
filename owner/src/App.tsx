@@ -5,9 +5,7 @@ import { LoginPage } from './pages/LoginPage';
 import { OverviewPage } from './pages/OverviewPage';
 import { ClinicsPage } from './pages/ClinicsPage';
 import { ClinicDetailPage } from './pages/ClinicDetailPage';
-import { StaffPage } from './pages/StaffPage';
-import { PatientsPage } from './pages/PatientsPage';
-import { PatientDetailPage } from './pages/PatientDetailPage';
+import { DeletePatientPage } from './pages/DeletePatientPage';
 import { ActivityPage } from './pages/ActivityPage';
 
 // Derived from BASE_URL ('/' in dev, '/owner/' in a build), not
@@ -25,9 +23,7 @@ export function App() {
             <Route path="/overview" element={<OverviewPage />} />
             <Route path="/clinics" element={<ClinicsPage />} />
             <Route path="/clinics/:id" element={<ClinicDetailPage />} />
-            <Route path="/staff" element={<StaffPage />} />
-            <Route path="/patients" element={<PatientsPage />} />
-            <Route path="/patients/:id" element={<PatientDetailPage />} />
+            <Route path="/delete-patient" element={<DeletePatientPage />} />
             <Route path="/activity" element={<ActivityPage />} />
             <Route path="*" element={<Navigate to="/overview" replace />} />
           </Route>

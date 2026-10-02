@@ -4,9 +4,8 @@ import { useAuth } from '../context/AuthContext';
 const NAV = [
   { to: '/overview', label: 'Overview' },
   { to: '/clinics', label: 'Clinics' },
-  { to: '/staff', label: 'Staff' },
-  { to: '/patients', label: 'Patients' },
   { to: '/activity', label: 'Activity log' },
+  { to: '/delete-patient', label: 'Delete a patient' },
 ];
 
 export function Layout() {

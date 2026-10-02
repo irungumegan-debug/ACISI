@@ -39,16 +39,14 @@ export function OverviewPage() {
             to="/clinics"
           />
           <Stat
-            label="Staff & doctors"
-            value={data.staff.active.toLocaleString()}
-            detail={`${data.staff.total - data.staff.active} deactivated`}
-            to="/staff"
+            label="Doctors"
+            value={data.doctors.active.toLocaleString()}
+            detail={`${data.staff.active - data.doctors.active} front desk & admin staff`}
           />
           <Stat
-            label="Patients"
+            label="Registered patients"
             value={data.patients.active.toLocaleString()}
             detail={`${data.patients.deleted} deleted account${data.patients.deleted === 1 ? '' : 's'}`}
-            to="/patients"
           />
           <Stat
             label="Visits"
@@ -57,7 +55,7 @@ export function OverviewPage() {
           />
           <Stat label="Upcoming appointments" value={data.upcomingAppointments.toLocaleString()} />
           <Stat
-            label="Check-in fees collected"
+            label="Revenue (check-in fees)"
             value={formatKes(data.revenueKes.total)}
             detail={`${formatKes(data.revenueKes.last30Days)} in the last 30 days`}
           />

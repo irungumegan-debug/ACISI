@@ -1,11 +1,10 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
-import { formatDate, formatDateTime, formatKes } from '../lib/format';
+import { formatDate, formatKes } from '../lib/format';
 import { useLoad } from '../lib/useLoad';
-import { ActiveBadge, Badge, Button, Card, Empty, ErrorText, Loading, PageHeader, TableWrap, td, th } from '../components/ui';
+import { ActiveBadge, Badge, Button, Card, Empty, ErrorText, Loading, PageHeader } from '../components/ui';
 import { StaffTable } from '../components/StaffTable';
-import { DeletedBadge, EncounterBadge } from '../components/StatusBadges';
 
 export function ClinicDetailPage() {
   const { id = '' } = useParams();
@@ -35,6 +34,9 @@ export function ClinicDetailPage() {
   if (loading && !clinic) return <Loading />;
   if (error) return <ErrorText>{error}</ErrorText>;
   if (!clinic) return null;
+
+  const doctors = clinic.staff.filter((s) => s.role === 'DOCTOR');
+  const otherStaff = clinic.staff.filter((s) => s.role !== 'DOCTOR');
 
   return (
     <>
@@ -66,69 +68,50 @@ export function ClinicDetailPage() {
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[
-          ['USSD code', clinic.ussdCode],
-          ['Invite code', clinic.inviteCode],
-          ['Visits', clinic.visitCount.toLocaleString()],
-          ['Fees collected', formatKes(clinic.revenueKes)],
-        ].map(([label, value]) => (
+          ['Total revenue', formatKes(clinic.revenueKes), `${formatKes(clinic.revenueLast30DaysKes)} in the last 30 days`],
+          ['Visits', clinic.visitCount.toLocaleString(), `${clinic.visitsLast30Days} in the last 30 days`],
+          ['Upcoming appointments', clinic.upcomingAppointments.toLocaleString(), null],
+          ['Doctors', String(doctors.filter((d) => d.isActive).length), `${otherStaff.filter((s) => s.isActive).length} other staff`],
+        ].map(([label, value, detail]) => (
           <div key={label} className="rounded-lg border border-stone-200 bg-white p-3">
             <p className="text-xs font-medium uppercase tracking-wide text-stone-500">{label}</p>
-            <p className="mt-1 break-all font-semibold tabular-nums text-stone-900">{value}</p>
+            <p className="mt-1 text-lg font-semibold tabular-nums text-stone-900">{value}</p>
+            {detail && <p className="text-xs text-stone-500">{detail}</p>}
           </div>
         ))}
       </div>
 
       <div className="space-y-6">
-        <Card title="Departments">
-          <div className="flex flex-wrap gap-2">
-            {clinic.departments.map((d) => (
-              <Badge key={d.id} tone={d.isActive ? 'stone' : 'red'}>
-                {d.name}
-                {!d.isActive && ' (inactive)'}
-              </Badge>
-            ))}
-          </div>
+        <Card title={`Doctors (${doctors.length})`}>
+          {doctors.length === 0 ? <Empty>No doctors have joined yet.</Empty> : <StaffTable staff={doctors} kind="doctors" onChanged={reload} />}
         </Card>
 
-        <Card title={`Staff (${clinic.staff.length})`}>
-          {clinic.staff.length === 0 ? <Empty>No staff yet.</Empty> : <StaffTable staff={clinic.staff} showClinic={false} onChanged={reload} />}
+        <Card title={`Front desk & admin (${otherStaff.length})`}>
+          {otherStaff.length === 0 ? <Empty>No staff yet.</Empty> : <StaffTable staff={otherStaff} kind="staff" onChanged={reload} />}
         </Card>
 
-        <Card title="Recent visits">
-          {clinic.recentVisits.length === 0 ? (
-            <Empty>No visits yet.</Empty>
-          ) : (
-            <TableWrap>
-              <table className="min-w-full divide-y divide-stone-200">
-                <thead>
-                  <tr>
-                    <th className={th}>Patient</th>
-                    <th className={th}>Department</th>
-                    <th className={th}>Status</th>
-                    <th className={th}>Date</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-stone-100">
-                  {clinic.recentVisits.map((v) => (
-                    <tr key={v.encounterId}>
-                      <td className={td}>
-                        <Link to={`/patients/${v.patientId}`} className="font-medium text-stone-900 underline-offset-2 hover:underline">
-                          {v.patientName}
-                        </Link>{' '}
-                        <span className="font-mono text-xs text-stone-500">{v.patientCode}</span>{' '}
-                        {v.patientDeleted && <DeletedBadge />}
-                      </td>
-                      <td className={td}>{v.departmentName}</td>
-                      <td className={td}>
-                        <EncounterBadge status={v.status} />
-                      </td>
-                      <td className={`${td} whitespace-nowrap`}>{formatDateTime(v.visitedAt)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </TableWrap>
-          )}
+        <Card title="Clinic details">
+          <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-3">
+            <div>
+              <dt className="text-xs font-medium uppercase tracking-wide text-stone-500">USSD code</dt>
+              <dd className="mt-0.5 tabular-nums text-stone-900">{clinic.ussdCode}</dd>
+            </div>
+            <div>
+              <dt className="text-xs font-medium uppercase tracking-wide text-stone-500">Staff invite code</dt>
+              <dd className="mt-0.5 font-mono text-stone-900">{clinic.inviteCode}</dd>
+            </div>
+            <div>
+              <dt className="text-xs font-medium uppercase tracking-wide text-stone-500">Departments</dt>
+              <dd className="mt-1 flex flex-wrap gap-1.5">
+                {clinic.departments.map((d) => (
+                  <Badge key={d.id} tone={d.isActive ? 'stone' : 'red'}>
+                    {d.name}
+                    {!d.isActive && ' (inactive)'}
+                  </Badge>
+                ))}
+              </dd>
+            </div>
+          </dl>
         </Card>
       </div>
     </>

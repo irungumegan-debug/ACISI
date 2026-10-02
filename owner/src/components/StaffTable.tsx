@@ -1,15 +1,14 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
 import { api, ApiError, StaffListItem } from '../lib/api';
 import { formatDateTime, humanize } from '../lib/format';
 import { ActiveBadge, Button, TableWrap, td, th } from './ui';
 
 /**
- * Staff list with deactivate/reactivate. Staff are never erased — their
- * names stay on the visits they handled — so "remove" here means blocking
- * their login and logging them out, which can be undone.
+ * A clinic's doctors or staff, with deactivate/reactivate. Staff are never
+ * erased — their names stay on the visits they handled — so "remove" here
+ * means blocking their login and logging them out, which can be undone.
  */
-export function StaffTable({ staff, showClinic, onChanged }: { staff: StaffListItem[]; showClinic: boolean; onChanged: () => void }) {
+export function StaffTable({ staff, kind, onChanged }: { staff: StaffListItem[]; kind: 'doctors' | 'staff'; onChanged: () => void }) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,8 +40,8 @@ export function StaffTable({ staff, showClinic, onChanged }: { staff: StaffListI
             <tr>
               <th className={th}>Name</th>
               <th className={th}>Staff ID</th>
-              <th className={th}>Role</th>
-              {showClinic && <th className={th}>Clinic</th>}
+              <th className={th}>{kind === 'doctors' ? 'Department' : 'Role'}</th>
+              {kind === 'doctors' && <th className={`${th} text-right`}>Visits handled</th>}
               <th className={th}>Phone</th>
               <th className={th}>Last login</th>
               <th className={th}>Status</th>
@@ -56,21 +55,8 @@ export function StaffTable({ staff, showClinic, onChanged }: { staff: StaffListI
               <tr key={s.id}>
                 <td className={`${td} font-medium text-stone-900`}>{s.name}</td>
                 <td className={`${td} whitespace-nowrap font-mono text-xs`}>{s.staffCode}</td>
-                <td className={td}>
-                  {humanize(s.role)}
-                  {s.departmentName && <span className="text-stone-500"> · {s.departmentName}</span>}
-                </td>
-                {showClinic && (
-                  <td className={td}>
-                    {s.clinicId ? (
-                      <Link to={`/clinics/${s.clinicId}`} className="underline-offset-2 hover:underline">
-                        {s.clinicName}
-                      </Link>
-                    ) : (
-                      s.clinicName
-                    )}
-                  </td>
-                )}
+                <td className={td}>{kind === 'doctors' ? (s.departmentName ?? '—') : humanize(s.role)}</td>
+                {kind === 'doctors' && <td className={`${td} text-right tabular-nums`}>{s.consultationCount}</td>}
                 <td className={`${td} whitespace-nowrap tabular-nums`}>{s.phoneNumber}</td>
                 <td className={`${td} whitespace-nowrap`}>{formatDateTime(s.lastLoginAt)}</td>
                 <td className={td}>

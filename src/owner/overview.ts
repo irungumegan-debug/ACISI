@@ -14,6 +14,7 @@ ownerOverviewRouter.get('/', async (_req, res) => {
     totalClinics,
     activeStaff,
     totalStaff,
+    activeDoctors,
     activePatients,
     deletedPatients,
     totalVisits,
@@ -26,6 +27,7 @@ ownerOverviewRouter.get('/', async (_req, res) => {
     prisma.clinic.count(),
     prisma.staff.count({ where: { isActive: true } }),
     prisma.staff.count(),
+    prisma.staff.count({ where: { isActive: true, role: 'DOCTOR' } }),
     prisma.patient.count({ where: { deletedAt: null } }),
     prisma.patient.count({ where: { deletedAt: { not: null } } }),
     prisma.encounter.count(),
@@ -38,6 +40,7 @@ ownerOverviewRouter.get('/', async (_req, res) => {
   res.json({
     clinics: { active: activeClinics, total: totalClinics },
     staff: { active: activeStaff, total: totalStaff },
+    doctors: { active: activeDoctors },
     patients: { active: activePatients, deleted: deletedPatients },
     visits: { total: totalVisits, last30Days: visitsLast30Days },
     upcomingAppointments,
