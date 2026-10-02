@@ -203,6 +203,12 @@ npm test
 | `npm run prisma:migrate`  | Create/apply a dev migration                                 |
 | `npm run prisma:studio`   | Browse the database                                          |
 
+`npm start` applies any pending database migrations (`prisma migrate
+deploy`) before starting the server, so merging a change that includes a
+migration needs no extra step on the host: the next deploy brings the
+database up to date first. It only ever applies migrations that haven't run
+yet, so it's safe on every start.
+
 `npm run build` is also the Render (or similar) build command — it installs
 and builds all three frontend SPAs as part of the same step, so a bare
 `npm install && npx prisma generate && npm run build` on the backend service
