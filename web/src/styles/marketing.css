@@ -391,7 +391,7 @@ a {
   margin: 0 auto;
   padding: 0 24px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.08fr);
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
   gap: 48px;
   align-items: center;
 }
@@ -412,13 +412,15 @@ a {
   margin: 0 0 24px;
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: clamp(46px, 7.4vw, 96px);
-  line-height: 0.98;
+  font-size: clamp(44px, 5.6vw, 84px);
+  line-height: 1;
   letter-spacing: var(--tracking-display);
+  word-spacing: 0.06em;
   color: #fff;
 }
 .hero-title span {
   display: block;
+  white-space: nowrap;
   padding-bottom: 0.06em;
 }
 .hero-sub {
@@ -508,8 +510,8 @@ a {
 .laptop {
   position: relative;
   transform-style: preserve-3d;
-  transform: rotateX(8deg) rotateY(-24deg) rotateZ(2deg);
-  transform-origin: 50% 100%;
+  transform: rotateX(-16deg) rotateY(-26deg) rotateZ(3deg);
+  transform-origin: 50% 70%;
 }
 .laptop-lid {
   position: relative;
@@ -547,11 +549,11 @@ a {
 .laptop-base {
   position: relative;
   height: 0;
-  padding-bottom: 7%;
-  margin: 0 -7%;
+  padding-bottom: 46%;
+  margin: 0 -6%;
   transform-origin: 50% 0;
-  transform: rotateX(78deg);
-  border-radius: 2px 2px 18px 18px;
+  transform: rotateX(90deg);
+  border-radius: 4px 4px 20px 20px;
   background: linear-gradient(180deg, #d9dce3, #b7bbc6 55%, #8d929f);
   box-shadow:
     inset 0 2px 0 rgba(255, 255, 255, 0.7),
@@ -559,7 +561,7 @@ a {
 }
 .laptop-keys {
   position: absolute;
-  inset: 12% 12% 40%;
+  inset: 9% 9% 42%;
   display: grid;
   grid-template-columns: repeat(13, 1fr);
   gap: 2px;
@@ -570,19 +572,19 @@ a {
 }
 .laptop-trackpad {
   position: absolute;
-  left: 40%;
-  right: 40%;
-  bottom: 8%;
-  height: 24%;
+  left: 36%;
+  right: 36%;
+  bottom: 7%;
+  height: 28%;
   border-radius: 3px;
   background: rgba(0, 0, 0, 0.12);
 }
 .laptop-shadow {
   position: absolute;
-  left: 2%;
-  right: 4%;
-  bottom: -8%;
-  height: 12%;
+  left: 8%;
+  right: 6%;
+  bottom: 12%;
+  height: 14%;
   background: radial-gradient(closest-side, rgba(0, 0, 0, 0.55), transparent);
   filter: blur(8px);
   transform: rotate(2deg);
@@ -2045,6 +2047,9 @@ a.contact-card:hover {
   }
   .hero-actions .btn {
     flex: 1 1 100%;
+  }
+  .hero-title {
+    font-size: min(12.2vw, 60px);
   }
   .steps {
     grid-template-columns: 1fr;

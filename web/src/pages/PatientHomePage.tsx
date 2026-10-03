@@ -104,7 +104,7 @@ function CheckInPanel({ patientCode }: { patientCode: string }) {
   return (
     <>
       <h1>Check in</h1>
-      <p className="lede">Tell us where you&apos;re headed. This is the same check-in a USSD dial-in triggers, on a browser.</p>
+      <p className="lede">Tell us where you&apos;re headed and we&apos;ll add you to the clinic&apos;s queue.</p>
       <div className="panel">
         <div className="field">
           <label>Clinic</label>
