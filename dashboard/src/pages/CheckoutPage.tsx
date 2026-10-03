@@ -225,7 +225,7 @@ function BillEditor({ view, onSaved, onCancel }: { view: CheckoutView; onSaved: 
 
 // --- Taking payment ----------------------------------------------------------------
 
-function PaymentPanel({ view, onChanged }: { view: CheckoutView; onChanged: () => Promise<void> }) {
+function PaymentPanel({ view, isAdmin, onChanged }: { view: CheckoutView; isAdmin: boolean; onChanged: () => Promise<void> }) {
   const bill = view.bill!;
   const s = view.settings;
   const methods = useMemo(
@@ -298,6 +298,20 @@ function PaymentPanel({ view, onChanged }: { view: CheckoutView; onChanged: () =
           </button>
         ))}
       </div>
+
+      {(!s.acceptsCard || !s.acceptsMobileMoney) && (
+        <p className="text-xs text-slate-500">
+          {[!s.acceptsCard && 'Card', !s.acceptsMobileMoney && 'M-Pesa'].filter(Boolean).join(' and ')}{' '}
+          {!s.acceptsCard && !s.acceptsMobileMoney ? 'are' : 'is'} turned off for this clinic.{' '}
+          {isAdmin ? (
+            <Link to="/settings" className="font-medium text-slate-700 underline">
+              Turn on in Settings → Payments
+            </Link>
+          ) : (
+            `A clinic admin can turn ${!s.acceptsCard && !s.acceptsMobileMoney ? 'them' : 'it'} on in Settings → Payments.`
+          )}
+        </p>
+      )}
 
       {pending && tab !== 'mpesa' && (
         <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-900">An M-Pesa request is waiting for the patient. Other payments are paused until it finishes.</p>
@@ -732,7 +746,7 @@ export function CheckoutPage() {
           {bill && !editing && bill.balanceKes > 0 && (
             <section className="rounded-lg border border-slate-200 bg-white p-5 print:hidden">
               <h2 className="mb-3 font-semibold text-slate-900">Take payment</h2>
-              <PaymentPanel view={view} onChanged={load} />
+              <PaymentPanel view={view} isAdmin={session?.role === 'ADMIN'} onChanged={load} />
             </section>
           )}
 
