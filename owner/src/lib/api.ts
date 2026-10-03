@@ -57,7 +57,7 @@ export interface ClinicDetail {
   upcomingAppointments: number;
   revenueKes: number;
   revenueLast30DaysKes: number;
-  departments: { id: string; name: string; isActive: boolean }[];
+  departments: { id: string; name: string; code: string; isActive: boolean }[];
   staff: StaffListItem[];
 }
 

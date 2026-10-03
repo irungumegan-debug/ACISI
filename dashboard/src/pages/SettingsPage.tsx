@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { api, ApiError, ClinicStaffListItem, DoctorPresenceStatus } from '../lib/api';
+import { AdminDepartment, api, ApiError, ClinicStaffListItem, DoctorPresenceStatus } from '../lib/api';
 import { PaymentSettingsSection } from '../components/PaymentSettingsSection';
-import { KeyRound, RefreshCw, UsersRound, Wallet } from 'lucide-react';
+import { DepartmentsSection } from '../components/DepartmentsSection';
+import { Building2, KeyRound, RefreshCw, UsersRound, Wallet } from 'lucide-react';
 import { Avatar, Badge, Card, EmptyState, SkeletonList, Tone } from '../components/ui';
 
 const PIN_PATTERN = /^\d{6}$/;
@@ -32,17 +33,32 @@ export function SettingsPage() {
   const [resettingId, setResettingId] = useState<string | null>(null);
   const [resetResult, setResetResult] = useState<{ staffCode: string; name: string; newPin: string } | null>(null);
   const [togglingPresenceId, setTogglingPresenceId] = useState<string | null>(null);
+  const [departments, setDepartments] = useState<AdminDepartment[] | null>(null);
+  const [editingDeptsFor, setEditingDeptsFor] = useState<string | null>(null);
+
+  async function loadStaff(): Promise<void> {
+    try {
+      const res = await api.getClinicStaff();
+      setStaff(res.staff);
+    } catch (err) {
+      setStaffError(err instanceof ApiError ? err.message : 'Failed to load staff');
+    }
+  }
+
+  async function loadDepartments(): Promise<void> {
+    const res = await api.getAdminDepartments();
+    setDepartments(res.departments);
+  }
 
   useEffect(() => {
+    loadDepartments().catch(() => setDepartments([]));
+
     api
       .getInviteCode()
       .then((res) => setInviteCode(res.inviteCode))
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load invite code'));
 
-    api
-      .getClinicStaff()
-      .then((res) => setStaff(res.staff))
-      .catch((err) => setStaffError(err instanceof ApiError ? err.message : 'Failed to load staff'));
+    void loadStaff();
   }, []);
 
   async function handleRegenerate(): Promise<void> {
@@ -121,13 +137,26 @@ export function SettingsPage() {
           )}
         </Card>
 
+        <Card title="Departments" icon={Building2}>
+          <p className="mb-5 text-sm text-ink-500">
+            The departments patients check in to. Each can have its own short code and consultation fee.
+          </p>
+          <DepartmentsSection
+            departments={departments}
+            onChanged={async () => {
+              await loadDepartments();
+              await loadStaff();
+            }}
+          />
+        </Card>
+
         <Card title="Payments" icon={Wallet}>
           <p className="mb-5 text-sm text-ink-500">How patients pay the clinic at checkout. The ACISI check-in fee is separate and unaffected.</p>
           <PaymentSettingsSection />
         </Card>
 
         <Card title="Staff & doctors" icon={UsersRound}>
-          <p className="mb-4 text-sm text-ink-500">Reset a staff or doctor&apos;s PIN if they&apos;ve forgotten it.</p>
+          <p className="mb-4 text-sm text-ink-500">Reset a staff or doctor&apos;s PIN if they&apos;ve forgotten it, and choose which departments each doctor sees.</p>
 
           {resetResult && (
             <div className="mb-4 rounded-2xl border border-gold-500/50 bg-gold-tint p-4" role="status">
@@ -167,8 +196,24 @@ export function SettingsPage() {
                       </p>
                       <p className="text-xs text-ink-500">
                         {member.staffCode} · {ROLE_LABEL[member.role] ?? member.role}
-                        {member.departmentName ? ` · ${member.departmentName}` : ''}
+                        {member.role !== 'DOCTOR' && member.departmentName ? ` · ${member.departmentName}` : ''}
                       </p>
+                      {member.role === 'DOCTOR' && (
+                        <p className="mt-1 flex flex-wrap items-center gap-1.5">
+                          {member.departments.map((d) => (
+                            <span key={d.id} className="rounded-full bg-gold-tint px-2 py-0.5 text-[11px] font-semibold text-navy-900">
+                              {d.name}
+                            </span>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => setEditingDeptsFor(editingDeptsFor === member.id ? null : member.id)}
+                            className="text-[11px] font-semibold text-gold-700 underline underline-offset-2"
+                          >
+                            {editingDeptsFor === member.id ? 'Close' : 'Edit departments'}
+                          </button>
+                        </p>
+                      )}
                     </div>
                   </div>
                   <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -182,11 +227,100 @@ export function SettingsPage() {
                       {resettingId === member.id ? 'Resetting…' : 'Reset PIN'}
                     </button>
                   </div>
+                  {editingDeptsFor === member.id && (
+                    <DoctorDepartmentsEditor
+                      doctor={member}
+                      departments={(departments ?? []).filter((d) => d.isActive)}
+                      onCancel={() => setEditingDeptsFor(null)}
+                      onSaved={async () => {
+                        setEditingDeptsFor(null);
+                        await Promise.all([loadStaff(), loadDepartments()]);
+                      }}
+                    />
+                  )}
                 </li>
               ))}
             </ul>
           )}
         </Card>
+      </div>
+    </div>
+  );
+}
+
+/** Checklist of the clinic's active departments for one doctor (at least one). */
+function DoctorDepartmentsEditor({
+  doctor,
+  departments,
+  onCancel,
+  onSaved,
+}: {
+  doctor: ClinicStaffListItem;
+  departments: AdminDepartment[];
+  onCancel: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  const activeIds = new Set(departments.map((d) => d.id));
+  const [selected, setSelected] = useState<Set<string>>(new Set(doctor.departments.map((d) => d.id).filter((id) => activeIds.has(id))));
+  const [saving, setSaving] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  function toggle(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function save() {
+    if (selected.size === 0) return setProblem('Pick at least one department.');
+    setSaving(true);
+    setProblem(null);
+    try {
+      await api.setDoctorDepartments(doctor.id, [...selected]);
+      await onSaved();
+    } catch (err) {
+      setProblem(err instanceof ApiError ? err.message : 'Failed to save departments');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="w-full rounded-2xl border border-slate-200 bg-cream-50 p-4">
+      <p className="mb-2 text-sm font-semibold text-navy-900">Departments {doctor.name} sees</p>
+      <p className="mb-3 text-xs text-ink-500">They only see patients checked in to these departments.</p>
+      <div className="flex flex-wrap gap-2">
+        {departments.map((d) => {
+          const on = selected.has(d.id);
+          return (
+            <label
+              key={d.id}
+              className={`inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-full border px-3.5 py-1.5 text-sm font-medium transition ${
+                on ? 'border-navy-900 bg-navy-900 text-white' : 'border-slate-300 bg-white text-navy-900 hover:border-gold-500'
+              }`}
+            >
+              <input type="checkbox" className="sr-only" checked={on} onChange={() => toggle(d.id)} />
+              {d.name}
+              <span className={`font-mono text-[10px] tracking-wider ${on ? 'text-gold-300' : 'text-ink-500'}`}>{d.code}</span>
+            </label>
+          );
+        })}
+      </div>
+      {problem && (
+        <p role="alert" className="mt-2 text-sm text-red-700">
+          {problem}
+        </p>
+      )}
+      <div className="mt-3 flex justify-end gap-2">
+        <button type="button" onClick={onCancel} disabled={saving} className={smallBtn}>
+          Cancel
+        </button>
+        <button type="button" onClick={() => void save()} disabled={saving} className={`${smallBtn} border-navy-900 bg-navy-900 text-white hover:text-gold-300`}>
+          {saving ? 'Saving…' : 'Save departments'}
+        </button>
       </div>
     </div>
   );

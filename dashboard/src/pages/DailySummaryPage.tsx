@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
-import { ArrowRight, Banknote, CalendarDays, CircleCheckBig, CreditCard, ReceiptText, Smartphone, Sigma, XCircle } from 'lucide-react';
+import { ArrowRight, Banknote, Building2, CalendarDays, CircleCheckBig, CreditCard, ReceiptText, Smartphone, Sigma, XCircle } from 'lucide-react';
 import { api, ApiError, DailySummary } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { BillStatusChip, kes } from './CheckoutPage';
@@ -99,6 +99,51 @@ function MethodSplit({ totals }: { totals: DailySummary['totals'] }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+/** Money received per department — horizontal bars, every value printed beside its bar. */
+function DepartmentTotals({ rows, total }: { rows: DailySummary['byDepartment']; total: number }) {
+  if (rows.length === 0 || total <= 0) {
+    return <p className="py-2 text-sm text-ink-500">No money received on this day yet.</p>;
+  }
+  const max = Math.max(...rows.map((r) => r.totalKes));
+  return (
+    <table className="w-full text-sm">
+      <caption className="sr-only">Money received by department</caption>
+      <thead>
+        <tr className="text-left text-xs uppercase tracking-wider text-ink-500">
+          <th className="pb-2 font-semibold">Department</th>
+          <th className="hidden pb-2 font-semibold sm:table-cell">
+            <span className="sr-only">Share</span>
+          </th>
+          <th className="pb-2 text-right font-semibold">Amount</th>
+          <th className="pb-2 text-right font-semibold">Payments</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-slate-100">
+        {rows.map((r) => (
+          <tr key={r.departmentId}>
+            <td className="py-2.5 pr-3">
+              <span className="flex items-center gap-2">
+                <span className="rounded-md bg-navy-900 px-1.5 py-0.5 font-mono text-[10px] font-semibold tracking-wider text-gold-300">{r.code}</span>
+                <span className="font-medium text-navy-900">{r.name}</span>
+              </span>
+            </td>
+            <td className="hidden w-2/5 py-2.5 pr-3 sm:table-cell">
+              <span aria-hidden className="block h-2.5 rounded-full bg-cream-100">
+                <span className="block h-full rounded-full bg-gold-500" style={{ width: `${Math.max(3, (r.totalKes / max) * 100)}%` }} />
+              </span>
+            </td>
+            <td className="py-2.5 text-right font-semibold tabular-nums text-navy-900">
+              {kes(r.totalKes)}
+              <span className="ml-1.5 text-xs font-normal text-ink-500">{Math.round((r.totalKes / total) * 100)}%</span>
+            </td>
+            <td className="py-2.5 text-right tabular-nums text-ink-500">{r.paymentCount}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
@@ -228,6 +273,12 @@ export function DailySummaryPage() {
               )}
             </Card>
           </div>
+
+          {summary.departmentCount > 1 && (
+            <Card title="By department" icon={Building2}>
+              <DepartmentTotals rows={summary.byDepartment} total={summary.totals.totalKes} />
+            </Card>
+          )}
         </div>
       )}
     </div>

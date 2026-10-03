@@ -83,7 +83,13 @@ ownerClinicsRouter.get('/:id', async (req, res) => {
     where: { id: req.params.id },
     include: {
       departments: { orderBy: { name: 'asc' } },
-      staff: { orderBy: { createdAt: 'asc' }, include: { department: { select: { name: true } } } },
+      staff: {
+        orderBy: { createdAt: 'asc' },
+        include: {
+          department: { select: { name: true } },
+          departments: { select: { department: { select: { name: true } } }, orderBy: { createdAt: 'asc' } },
+        },
+      },
     },
   });
 
@@ -132,7 +138,8 @@ ownerClinicsRouter.get('/:id', async (req, res) => {
       name: s.name,
       role: s.role,
       phoneNumber: s.phoneNumber,
-      departmentName: s.department?.name ?? null,
+      // Doctors can work in several departments; others keep their single (optional) one.
+      departmentName: s.departments.length ? s.departments.map((d) => d.department.name).join(', ') : (s.department?.name ?? null),
       isActive: s.isActive,
       lastLoginAt: s.lastLoginAt,
       createdAt: s.createdAt,

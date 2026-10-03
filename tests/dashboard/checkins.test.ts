@@ -33,6 +33,11 @@ jest.mock('../../src/services/doctorReassignmentService', () => ({
   changeDoctor: jest.fn(),
 }));
 
+jest.mock('../../src/services/departmentService', () => ({
+  ...jest.requireActual('../../src/services/departmentService'),
+  getDoctorDepartmentIds: jest.fn(),
+}));
+
 jest.mock('../../src/db/prisma', () => ({
   prisma: {
     checkIn: { findMany: jest.fn() },
@@ -46,6 +51,7 @@ import { checkoutEncounter, EncounterNotReadyForCheckoutError } from '../../src/
 import { prisma } from '../../src/db/prisma';
 import { checkinsRouter } from '../../src/dashboard/checkins';
 import { changeDoctor, listDoctorOptions, ReassignError } from '../../src/services/doctorReassignmentService';
+import { getDoctorDepartmentIds } from '../../src/services/departmentService';
 
 const mockLoadSession = loadDashboardSession as jest.Mock;
 const mockConfirmPaid = confirmCheckInPaidManually as jest.Mock;
@@ -81,6 +87,30 @@ beforeEach(() => {
 });
 
 describe('GET /checkins/today', () => {
+  it('shows a doctor only the patients in their own departments', async () => {
+    mockLoadSession.mockResolvedValue({ ...SESSION, role: 'DOCTOR', staffId: 'doc-1' });
+    (getDoctorDepartmentIds as jest.Mock).mockResolvedValue(['dept-braces', 'dept-invisalign']);
+    mockFindManyCheckIns.mockResolvedValue([]);
+
+    await withCookie(request(buildApp()).get('/checkins/today'));
+
+    expect(getDoctorDepartmentIds).toHaveBeenCalledWith('doc-1');
+    expect(mockFindManyCheckIns).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ clinicId: 'clinic-1', departmentId: { in: ['dept-braces', 'dept-invisalign'] } }),
+      }),
+    );
+  });
+
+  it('shows front desk every department', async () => {
+    mockFindManyCheckIns.mockResolvedValue([]);
+
+    await withCookie(request(buildApp()).get('/checkins/today'));
+
+    expect(getDoctorDepartmentIds).not.toHaveBeenCalled();
+    expect(mockFindManyCheckIns.mock.calls[0][0].where).not.toHaveProperty('departmentId');
+  });
+
   it('includes department name and encounter status per row', async () => {
     mockFindManyCheckIns.mockResolvedValue([
       {

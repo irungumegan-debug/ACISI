@@ -12,7 +12,11 @@ eventsRouter.use(requireStaffSession);
  * no WebSocket upgrade, no extra protocol handling.
  */
 eventsRouter.get('/', (req, res) => {
-  const { clinicId } = (req as AuthenticatedRequest).dashboardSession;
+  const { clinicId, role } = (req as AuthenticatedRequest).dashboardSession;
+  // Doctors only see their own departments' patients, so they get a bare
+  // "something changed" ping and refetch their scoped queue — never the
+  // clinic-wide event with another department's patient in it.
+  const isDoctor = role === 'DOCTOR';
 
   res.set({
     'Content-Type': 'text/event-stream',
@@ -22,7 +26,7 @@ eventsRouter.get('/', (req, res) => {
   res.flushHeaders();
 
   const unsubscribe = subscribeCheckInPaid(clinicId, (event) => {
-    res.write(`data: ${JSON.stringify(event)}\n\n`);
+    res.write(`data: ${JSON.stringify(isDoctor ? { type: 'QUEUE_CHANGED' } : event)}\n\n`);
   });
 
   // Keeps the connection alive through proxies/load balancers that would
