@@ -30,7 +30,14 @@ checkinsRouter.get('/today', async (req, res) => {
       patient: { select: { firstName: true, lastName: true, patientCode: true, phoneNumber: true, email: true } },
       department: { select: { name: true } },
       staff: { select: { name: true } },
-      encounter: { select: { id: true, status: true, assignedDoctor: { select: { name: true } } } },
+      encounter: {
+        select: {
+          id: true,
+          status: true,
+          assignedDoctor: { select: { name: true } },
+          bill: { select: { status: true, totalKes: true, paidKes: true } },
+        },
+      },
     },
   });
 
@@ -55,6 +62,9 @@ checkinsRouter.get('/today', async (req, res) => {
       checkedInByName: c.staff?.name ?? null,
       encounterStatus: c.encounter?.status ?? null,
       assignedDoctorName: c.encounter?.assignedDoctor?.name ?? null,
+      // Clinic checkout bill (separate from the ACISI check-in fee above).
+      billStatus: c.encounter?.bill?.status ?? null,
+      billBalanceKes: c.encounter?.bill ? c.encounter.bill.totalKes - c.encounter.bill.paidKes : null,
       paidAt: c.paidAt,
       createdAt: c.createdAt,
     })),

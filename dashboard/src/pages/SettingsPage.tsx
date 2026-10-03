@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, ApiError, ClinicStaffListItem, DoctorPresenceStatus } from '../lib/api';
+import { PaymentSettingsSection } from '../components/PaymentSettingsSection';
 
 const PIN_PATTERN = /^\d{6}$/;
 
@@ -107,6 +108,12 @@ export function SettingsPage() {
         >
           {regenerating ? 'Regenerating…' : 'Regenerate invite code'}
         </button>
+      </div>
+
+      <div className="mb-6 rounded-lg border border-slate-200 bg-white p-6">
+        <h2 className="mb-1 text-base font-semibold text-slate-900">Payments</h2>
+        <p className="mb-4 text-sm text-slate-500">How patients pay the clinic at checkout. The ACISI check-in fee is separate and unaffected.</p>
+        <PaymentSettingsSection />
       </div>
 
       <div className="rounded-lg border border-slate-200 bg-white p-6">

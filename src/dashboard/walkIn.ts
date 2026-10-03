@@ -59,6 +59,7 @@ const checkInSchema = z.object({
   reasonForVisit: z.string().trim().min(2, 'Enter the reason for the visit').max(200, 'Keep the reason under 200 characters'),
   newPatient: newPatientSchema.optional(),
   smsConsent: z.boolean().default(false),
+  smsOptOut: z.boolean().default(false),
 });
 
 /** Step 2: add the patient (found or newly registered) to today's queue. No fee, no payment prompt. */

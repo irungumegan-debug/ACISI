@@ -23,6 +23,11 @@ export function generatePatientCode(): string {
 }
 
 /** e.g. "ACI-STF-7F2K" */
+/** Short bill number for receipts and paybill references, e.g. "B-7F2K9Q". */
+export function generateBillNumber(): string {
+  return `B-${randomCode(6)}`;
+}
+
 export function generateStaffCode(): string {
   return `ACI-STF-${randomCode(4)}`;
 }

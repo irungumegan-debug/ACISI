@@ -16,7 +16,7 @@ export const PATIENT_CHECKIN_URL = 'acisi.co.ke/patient';
  * clinic name, an emoji — silently switches the whole SMS to UCS-2, where
  * the limit drops from 160 to 70 characters.
  */
-function toSmsSafe(text: string): string {
+export function toSmsSafe(text: string): string {
   return text
     .normalize('NFKD')
     .replace(/[‘’]/g, "'")
@@ -50,4 +50,54 @@ export function buildWalkInInviteSms(clinicName: string): string {
     name = name.slice(0, room - 3).trimEnd() + '...';
   }
   return `${before}${name}${after}`;
+}
+
+/** 1500 -> "1,500" (integer KES only — no floating point anywhere in money). */
+export function formatKes(amountKes: number): string {
+  return String(Math.trunc(amountKes)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+/** One payment as it appears on an SMS receipt. */
+export interface ReceiptPaymentLine {
+  method: 'CASH' | 'CARD' | 'MPESA_STK' | 'MPESA_MANUAL';
+  /** M-Pesa code or card reference, if any. */
+  reference: string | null;
+}
+
+function describePayment(p: ReceiptPaymentLine): string {
+  const ref = p.reference ? ` ${toSmsSafe(p.reference)}` : '';
+  if (p.method === 'CASH') return 'Cash';
+  if (p.method === 'CARD') return `Card${ref}`;
+  return `M-Pesa${ref}`;
+}
+
+/**
+ * The paid receipt SMS, sent once when a bill is fully paid:
+ * "Sunrise Family Clinic: Received KES 1,500 on 03/10/2026 via M-Pesa
+ * QAB12CD34E, Cash. Thank you." Always one SMS — the payment list and then
+ * the clinic name are shortened if needed, never split into two messages.
+ */
+export function buildPaymentReceiptSms(input: {
+  clinicName: string;
+  totalPaidKes: number;
+  /** Already formatted DD/MM/YYYY. */
+  date: string;
+  payments: ReceiptPaymentLine[];
+}): string {
+  const methods = [...new Set(input.payments.map(describePayment))];
+  const build = (name: string, methodText: string) =>
+    `${name}: Received KES ${formatKes(input.totalPaidKes)} on ${input.date} via ${methodText}. Thank you.`;
+
+  let methodText = methods.join(', ');
+  let name = toSmsSafe(input.clinicName) || 'Clinic';
+
+  if (build(name, methodText).length > SINGLE_SMS_MAX_CHARS) {
+    // Too many references to fit: keep the method names, drop the codes.
+    methodText = [...new Set(input.payments.map((p) => describePayment({ ...p, reference: null })))].join(', ');
+  }
+  const overflow = build(name, methodText).length - SINGLE_SMS_MAX_CHARS;
+  if (overflow > 0) {
+    name = name.slice(0, Math.max(name.length - overflow - 3, 8)).trimEnd() + '...';
+  }
+  return build(name, methodText);
 }

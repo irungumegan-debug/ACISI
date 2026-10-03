@@ -34,6 +34,7 @@ export function WalkInPage() {
   const [sex, setSex] = useState<Sex | ''>('');
   const [registrationConsent, setRegistrationConsent] = useState(false);
   const [smsConsent, setSmsConsent] = useState(false);
+  const [smsOptOut, setSmsOptOut] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<WalkInResult | null>(null);
@@ -67,6 +68,7 @@ export function WalkInPage() {
     setSex('');
     setRegistrationConsent(false);
     setSmsConsent(false);
+    setSmsOptOut(false);
     setError(null);
     setResult(null);
   }
@@ -99,6 +101,7 @@ export function WalkInPage() {
         departmentId,
         reasonForVisit: reason,
         smsConsent,
+        smsOptOut,
         newPatient: isNewPatient
           ? {
               fullName,
@@ -295,8 +298,26 @@ export function WalkInPage() {
               </label>
             )}
             <label className="flex items-start gap-3 text-sm text-slate-700">
-              <input type="checkbox" checked={smsConsent} onChange={(e) => setSmsConsent(e.target.checked)} className="mt-0.5 h-5 w-5 shrink-0" />
-              <span>Patient agreed to receive SMS from the clinic</span>
+              <input
+                type="checkbox"
+                checked={smsConsent}
+                disabled={smsOptOut}
+                onChange={(e) => setSmsConsent(e.target.checked)}
+                className="mt-0.5 h-5 w-5 shrink-0"
+              />
+              <span className={smsOptOut ? 'text-slate-400' : ''}>Patient agreed to receive SMS from the clinic</span>
+            </label>
+            <label className="flex items-start gap-3 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={smsOptOut}
+                onChange={(e) => {
+                  setSmsOptOut(e.target.checked);
+                  if (e.target.checked) setSmsConsent(false);
+                }}
+                className="mt-0.5 h-5 w-5 shrink-0"
+              />
+              <span>Patient does not want any SMS (no payment receipts or visit summaries)</span>
             </label>
           </div>
 

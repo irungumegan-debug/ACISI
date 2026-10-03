@@ -15,7 +15,7 @@ export function ProtectedLayout() {
 
   return (
     <div className="min-h-screen">
-      <header className="border-b border-slate-200 bg-white">
+      <header className="border-b border-slate-200 bg-white print:hidden">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3">
           <div className="min-w-0">
             <p className="font-semibold text-slate-900">{session.clinicName}</p>
@@ -43,9 +43,14 @@ export function ProtectedLayout() {
                   Appointments
                 </Link>
                 {session.role === 'ADMIN' && (
-                  <Link to="/settings" className="text-slate-600 hover:text-slate-900">
-                    Settings
-                  </Link>
+                  <>
+                    <Link to="/reports/daily" className="text-slate-600 hover:text-slate-900">
+                      Daily summary
+                    </Link>
+                    <Link to="/settings" className="text-slate-600 hover:text-slate-900">
+                      Settings
+                    </Link>
+                  </>
                 )}
               </>
             )}
