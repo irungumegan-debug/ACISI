@@ -118,6 +118,24 @@ full page navigation after authenticating (the session cookie set by that
 request carries over, since it's the same origin) — everything else is
 client-side routing within whichever of the SPAs is active.
 
+### Walk-in check-in (front desk)
+
+For patients who arrive without checking in remotely. On the console's
+**Queue** page, front-desk roles (receptionist, clinician, admin — not
+doctors) use **Check in walk-in patient**: search by phone (any Kenyan
+format, normalised to `+254…`), confirm the patient found or register a new
+one (never a duplicate for the same phone), and add them to the same queue
+as remote check-ins. Walk-ins are stored with `source = WALK_IN` and status
+`NO_FEE` — no ACISI check-in fee and no M-Pesa prompt — and record which
+staff member checked them in. From there they go through the doctor and
+checkout like any other visit.
+
+If staff tick "Patient agreed to receive SMS from the clinic", the consent
+is saved (`SMS_CLINIC_MESSAGES`) and a one-off invite is sent (wording in
+`src/services/smsTemplates.ts`); unticked, nothing is sent. A failed SMS
+never blocks the check-in. The queue shows today's walk-in vs remote counts.
+Logic: `src/services/walkInService.ts`; routes: `src/dashboard/walkIn.ts`.
+
 ### 10. The owner site (`/owner`)
 
 A separate site for the company owner, focused on the business rather than

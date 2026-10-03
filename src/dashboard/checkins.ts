@@ -24,11 +24,12 @@ checkinsRouter.get('/today', async (req, res) => {
   const startOfToday = dayjs().startOf('day').toDate();
 
   const checkIns = await prisma.checkIn.findMany({
-    where: { clinicId, createdAt: { gte: startOfToday }, status: { in: ['PENDING_PAYMENT', 'PAID', 'FAILED'] } },
+    where: { clinicId, createdAt: { gte: startOfToday }, status: { in: ['PENDING_PAYMENT', 'PAID', 'FAILED', 'NO_FEE'] } },
     orderBy: { createdAt: 'desc' },
     include: {
       patient: { select: { firstName: true, lastName: true, patientCode: true, phoneNumber: true, email: true } },
       department: { select: { name: true } },
+      staff: { select: { name: true } },
       encounter: { select: { id: true, status: true, assignedDoctor: { select: { name: true } } } },
     },
   });
@@ -50,6 +51,8 @@ checkinsRouter.get('/today', async (req, res) => {
       departmentName: c.department.name,
       amountKes: Number(c.amountKes),
       checkInStatus: c.status,
+      source: c.source,
+      checkedInByName: c.staff?.name ?? null,
       encounterStatus: c.encounter?.status ?? null,
       assignedDoctorName: c.encounter?.assignedDoctor?.name ?? null,
       paidAt: c.paidAt,

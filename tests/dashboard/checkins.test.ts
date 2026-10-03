@@ -108,8 +108,36 @@ describe('GET /checkins/today', () => {
     await withCookie(request(buildApp()).get('/checkins/today'));
 
     expect(mockFindManyCheckIns).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ status: { in: ['PENDING_PAYMENT', 'PAID', 'FAILED'] } }) }),
+      expect.objectContaining({ where: expect.objectContaining({ status: { in: ['PENDING_PAYMENT', 'PAID', 'FAILED', 'NO_FEE'] } }) }),
     );
+  });
+
+  it('includes walk-ins (NO_FEE) and reports their source and who checked them in', async () => {
+    mockFindManyCheckIns.mockResolvedValue([
+      {
+        id: 'ci-walk',
+        patientId: 'p-1',
+        patient: { firstName: 'Jane', lastName: 'Wanjiru', patientCode: 'ACI-7F2K', phoneNumber: '+254712345678', email: null },
+        department: { name: 'General' },
+        staff: { name: 'Test Receptionist' },
+        amountKes: 0,
+        status: 'NO_FEE',
+        source: 'WALK_IN',
+        encounter: { id: 'enc-1', status: 'WAITING', assignedDoctor: null },
+        paidAt: null,
+        createdAt: new Date(),
+      },
+    ]);
+
+    const res = await withCookie(request(buildApp()).get('/checkins/today'));
+
+    expect(res.body.checkIns[0]).toMatchObject({
+      checkInStatus: 'NO_FEE',
+      source: 'WALK_IN',
+      checkedInByName: 'Test Receptionist',
+      amountKes: 0,
+      encounterStatus: 'WAITING',
+    });
   });
 
   it('reports assignedDoctorName as null when the encounter has no assigned doctor', async () => {
