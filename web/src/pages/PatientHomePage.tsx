@@ -1,6 +1,30 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { api, ApiError, ClinicListItem, DepartmentListItem, OwnAppointment, VisitHistoryEntry } from '../lib/api';
 import { usePatientAuth } from '../context/PatientAuthContext';
+import type { LucideIcon } from 'lucide-react';
+import {
+  Building2,
+  CalendarCheck,
+  CalendarClock,
+  CalendarPlus,
+  Check,
+  Download,
+  FileText,
+  Pill,
+  Smartphone,
+  Stethoscope,
+  UserRound,
+} from 'lucide-react';
+
+const TABS: { key: Tab; label: string; short: string; icon: LucideIcon }[] = [
+  { key: 'checkin', label: 'Check in', short: 'Check in', icon: Smartphone },
+  { key: 'book', label: 'Book appointment', short: 'Book', icon: CalendarPlus },
+  { key: 'appointments', label: 'My appointments', short: 'Visits', icon: CalendarCheck },
+  { key: 'records', label: 'My records', short: 'Records', icon: FileText },
+  { key: 'account', label: 'Account', short: 'Account', icon: UserRound },
+];
+
+const STATUS_TONE: Record<string, string> = { REQUESTED: 'warning', CONFIRMED: 'info', CANCELLED: 'neutral', COMPLETED: 'success' };
 
 type Tab = 'checkin' | 'book' | 'appointments' | 'records' | 'account';
 
@@ -10,23 +34,24 @@ export function PatientHomePage() {
 
   return (
     <div>
-      <div className="tabs">
-        <button className={`tab ${tab === 'checkin' ? 'active' : ''}`} onClick={() => setTab('checkin')}>
-          Check in
-        </button>
-        <button className={`tab ${tab === 'book' ? 'active' : ''}`} onClick={() => setTab('book')}>
-          Book appointment
-        </button>
-        <button className={`tab ${tab === 'appointments' ? 'active' : ''}`} onClick={() => setTab('appointments')}>
-          My appointments
-        </button>
-        <button className={`tab ${tab === 'records' ? 'active' : ''}`} onClick={() => setTab('records')}>
-          My records
-        </button>
-        <button className={`tab ${tab === 'account' ? 'active' : ''}`} onClick={() => setTab('account')}>
-          Account
-        </button>
-      </div>
+      <nav className="tabs" aria-label="Patient portal">
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            className={`tab ${tab === t.key ? 'active' : ''}`}
+            aria-current={tab === t.key ? 'page' : undefined}
+            onClick={() => {
+              setTab(t.key);
+              window.scrollTo({ top: 0 });
+            }}
+          >
+            <t.icon size={20} aria-hidden />
+            <span className="tab-label-long">{t.label}</span>
+            <span className="tab-label-short">{t.short}</span>
+          </button>
+        ))}
+      </nav>
 
       {tab === 'checkin' && <CheckInPanel patientCode={session?.patientCode ?? ''} />}
       {tab === 'book' && <BookAppointmentPanel patientCode={session?.patientCode ?? ''} />}
@@ -89,7 +114,9 @@ function CheckInPanel({ patientCode }: { patientCode: string }) {
   if (confirmed) {
     return (
       <div className="panel confirm">
-        <div className="badge">&#10003;</div>
+        <div className="badge">
+          <Smartphone size={28} aria-hidden />
+        </div>
         <h2>Check your phone</h2>
         <p>{confirmed.departmentName}</p>
         <div className="patient-id">{patientCode}</div>
@@ -103,12 +130,19 @@ function CheckInPanel({ patientCode }: { patientCode: string }) {
 
   return (
     <>
-      <h1>Check in</h1>
-      <p className="lede">Tell us where you&apos;re headed and we&apos;ll add you to the clinic&apos;s queue.</p>
+      <div className="hero-card">
+        <span className="hero-card-icon">
+          <Smartphone size={26} aria-hidden />
+        </span>
+        <div>
+          <h1>Check in</h1>
+          <p className="lede">Tell us where you&apos;re headed and we&apos;ll add you to the clinic&apos;s queue.</p>
+        </div>
+      </div>
       <div className="panel">
         <div className="field">
-          <label>Clinic</label>
-          <select value={clinicId} onChange={(e) => setClinicId(e.target.value)}>
+          <label htmlFor="checkin-clinic">Clinic</label>
+          <select id="checkin-clinic" value={clinicId} onChange={(e) => setClinicId(e.target.value)}>
             {clinics.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
@@ -117,16 +151,19 @@ function CheckInPanel({ patientCode }: { patientCode: string }) {
           </select>
         </div>
         <div className="field">
-          <label>Department</label>
-          <div className="chip-row">
+          <span className="field-label">Department</span>
+          <div className="chip-row" role="group" aria-label="Department">
             {departments.map((d) => (
-              <div
+              <button
+                type="button"
                 key={d.id}
                 className={`chip ${departmentId === d.id ? 'selected' : ''}`}
+                aria-pressed={departmentId === d.id}
                 onClick={() => setDepartmentId(d.id)}
               >
+                {departmentId === d.id && <Check size={15} aria-hidden />}
                 {d.name}
-              </div>
+              </button>
             ))}
           </div>
         </div>
@@ -192,7 +229,9 @@ function BookAppointmentPanel({ patientCode }: { patientCode: string }) {
   if (confirmed) {
     return (
       <div className="panel confirm">
-        <div className="badge">&#10003;</div>
+        <div className="badge">
+          <Check size={28} aria-hidden />
+        </div>
         <h2>Appointment requested</h2>
         <p>{confirmed.departmentName}</p>
         <div className="patient-id">{patientCode}</div>
@@ -213,12 +252,14 @@ function BookAppointmentPanel({ patientCode }: { patientCode: string }) {
 
   return (
     <>
-      <h1>Book an appointment</h1>
+      <h1 className="page-h1">
+        <CalendarPlus size={24} aria-hidden /> Book an appointment
+      </h1>
       <p className="lede">Ask to be seen on a future date — this doesn&apos;t take today&apos;s place in the walk-in queue.</p>
       <div className="panel">
         <div className="field">
-          <label>Clinic</label>
-          <select value={clinicId} onChange={(e) => setClinicId(e.target.value)}>
+          <label htmlFor="book-clinic">Clinic</label>
+          <select id="book-clinic" value={clinicId} onChange={(e) => setClinicId(e.target.value)}>
             {clinics.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
@@ -227,22 +268,26 @@ function BookAppointmentPanel({ patientCode }: { patientCode: string }) {
           </select>
         </div>
         <div className="field">
-          <label>Department</label>
-          <div className="chip-row">
+          <span className="field-label">Department</span>
+          <div className="chip-row" role="group" aria-label="Department">
             {departments.map((d) => (
-              <div
+              <button
+                type="button"
                 key={d.id}
                 className={`chip ${departmentId === d.id ? 'selected' : ''}`}
+                aria-pressed={departmentId === d.id}
                 onClick={() => setDepartmentId(d.id)}
               >
+                {departmentId === d.id && <Check size={15} aria-hidden />}
                 {d.name}
-              </div>
+              </button>
             ))}
           </div>
         </div>
         <div className="field">
-          <label>Date and time</label>
+          <label htmlFor="book-when">Date and time</label>
           <input
+            id="book-when"
             type="datetime-local"
             value={scheduledFor}
             min={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
@@ -296,14 +341,22 @@ function AppointmentsPanel() {
 
   return (
     <>
-      <h1>My appointments</h1>
+      <h1 className="page-h1">
+        <CalendarCheck size={24} aria-hidden /> My appointments
+      </h1>
       <p className="lede">Everything you&apos;ve requested, at any clinic.</p>
       <div className="panel">
         {error && <p className="error-text">{error}</p>}
         {appointments === null ? (
-          <p style={{ color: 'var(--ink-soft)', fontSize: 13.5 }}>Loading…</p>
+          <div className="skeleton-list" role="status" aria-label="Loading">
+            <span />
+            <span />
+          </div>
         ) : appointments.length === 0 ? (
-          <p style={{ color: 'var(--ink-soft)', fontSize: 13.5 }}>No appointments booked yet.</p>
+          <div className="empty">
+            <CalendarClock size={26} aria-hidden />
+            <p>No appointments booked yet.</p>
+          </div>
         ) : (
           <div className="timeline">
             {appointments.map((a) => (
@@ -313,10 +366,15 @@ function AppointmentsPanel() {
                   <span className="t-dept">{a.departmentName}</span>
                 </div>
                 <div className="t-body">
-                  <b>{a.clinicName}</b>
-                  <p style={{ margin: '6px 0 0' }}>
-                    <b>Status:</b> {APPOINTMENT_STATUS_LABEL[a.status] ?? a.status}
-                  </p>
+                  <div className="t-head">
+                    <b>
+                      <Building2 size={15} aria-hidden /> {a.clinicName}
+                    </b>
+                    <span className={`pill tone-${STATUS_TONE[a.status] ?? 'neutral'}`}>
+                      <span className="sr-only">Status: </span>
+                      {APPOINTMENT_STATUS_LABEL[a.status] ?? a.status}
+                    </span>
+                  </div>
                   {(a.status === 'REQUESTED' || a.status === 'CONFIRMED') && (
                     <button
                       className="btn btn-secondary"
@@ -346,15 +404,23 @@ function RecordsPanel({ patientCode }: { patientCode: string }) {
 
   return (
     <>
-      <h1>My records</h1>
+      <h1 className="page-h1">
+        <FileText size={24} aria-hidden /> My records
+      </h1>
       <p className="lede">
         Patient ID <strong>{patientCode}</strong> — every visit, in order.
       </p>
       <div className="panel">
         {history === null ? (
-          <p style={{ color: 'var(--ink-soft)', fontSize: 13.5 }}>Loading…</p>
+          <div className="skeleton-list" role="status" aria-label="Loading">
+            <span />
+            <span />
+          </div>
         ) : history.length === 0 ? (
-          <p style={{ color: 'var(--ink-soft)', fontSize: 13.5 }}>No visits on record yet.</p>
+          <div className="empty">
+            <FileText size={26} aria-hidden />
+            <p>No visits on record yet.</p>
+          </div>
         ) : (
           <div className="timeline">
             {history.map((h) => (
@@ -364,15 +430,26 @@ function RecordsPanel({ patientCode }: { patientCode: string }) {
                   <span className="t-dept">{h.departmentName}</span>
                 </div>
                 <div className="t-body">
-                  <b>{h.clinicName}</b>
-                  <p style={{ margin: '6px 0 0' }}>
-                    <b>Diagnosis / notes:</b> {h.diagnosis || 'Not recorded'}
+                  <div className="t-head">
+                    <b>
+                      <Building2 size={15} aria-hidden /> {h.clinicName}
+                    </b>
+                    <span className="pill tone-success">Visit summary</span>
+                  </div>
+                  <p className="t-line">
+                    <Stethoscope size={15} aria-hidden />
+                    <span>
+                      <b>Diagnosis / notes:</b> {h.diagnosis || 'Not recorded'}
+                    </span>
                   </p>
-                  <p style={{ margin: '4px 0 0' }}>
-                    <b>Prescription:</b> {h.prescription || 'Not recorded'}
+                  <p className="t-line">
+                    <Pill size={15} aria-hidden />
+                    <span>
+                      <b>Prescription:</b> {h.prescription || 'Not recorded'}
+                    </span>
                   </p>
-                  <a className="btn btn-secondary" style={{ marginTop: 10 }} href={api.recordDownloadUrl(h.encounterId)} download>
-                    Download
+                  <a className="btn btn-secondary" style={{ marginTop: 12 }} href={api.recordDownloadUrl(h.encounterId)} download>
+                    <Download size={16} aria-hidden /> Download
                   </a>
                 </div>
               </div>
@@ -410,7 +487,9 @@ function AccountPanel({ patientCode }: { patientCode: string }) {
     return (
       <div className="panel">
         <div className="confirm">
-          <div className="badge">✓</div>
+          <div className="badge">
+            <Check size={28} aria-hidden />
+          </div>
           <h2>Your account has been deleted</h2>
           <p>Your personal details have been removed and you&apos;ve been logged out.</p>
           <p>We&apos;ve sent a confirmation SMS. You can register again any time.</p>
@@ -424,7 +503,9 @@ function AccountPanel({ patientCode }: { patientCode: string }) {
 
   return (
     <>
-      <h1>Account</h1>
+      <h1 className="page-h1">
+        <UserRound size={24} aria-hidden /> Account
+      </h1>
       <p className="lede">
         Patient ID <strong>{patientCode}</strong>
       </p>
