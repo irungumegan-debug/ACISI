@@ -285,7 +285,8 @@ function PaymentPanel({ view, isAdmin, onChanged }: { view: CheckoutView; isAdmi
   const tenderedKes = parseKes(tendered);
   const change = tenderedKes !== null ? Math.max(tenderedKes - bill.balanceKes, 0) : null;
 
-  async function run(action: () => Promise<string | null>): Promise<void> {
+  /** An action returns a success message, or `{ failed }` when the server accepted the request but it didn't go through. */
+  async function run(action: () => Promise<string | null | { failed: string }>): Promise<void> {
     if (busy) return;
     setBusy(true);
     setError(null);
@@ -296,7 +297,8 @@ function PaymentPanel({ view, isAdmin, onChanged }: { view: CheckoutView; isAdmi
       setTendered('');
       setCardRef('');
       setMpesaCode('');
-      setNotice(message);
+      if (message && typeof message === 'object') setError(message.failed);
+      else setNotice(message);
       await onChanged();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong. Try again.');
@@ -434,7 +436,9 @@ function PaymentPanel({ view, isAdmin, onChanged }: { view: CheckoutView; isAdmi
                 if (amountKes === null) return;
                 void run(async () => {
                   const res = await api.requestMpesa(bill.id, { amountKes, phone, idempotencyKey: attemptKey.current });
-                  return res.status === 'PENDING' ? 'Payment request sent. Ask the patient to enter their M-Pesa PIN.' : res.resultDesc;
+                  return res.status === 'PENDING'
+                    ? 'Payment request sent. Ask the patient to enter their M-Pesa PIN.'
+                    : { failed: res.resultDesc ?? 'The M-Pesa request could not be sent. Try again.' };
                 });
               }}
               className="space-y-3"
