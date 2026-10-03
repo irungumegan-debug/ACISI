@@ -230,7 +230,7 @@ export function WalkInPage() {
                   autoComplete="off"
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
-                  placeholder="e.g. Jane Wanjiru"
+                  placeholder="e.g. Lisa Jane"
                   className={input}
                 />
               </div>

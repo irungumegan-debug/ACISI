@@ -118,7 +118,7 @@ function PatientSignupForm({ onBack }: { onBack: () => void }) {
 
       <div className="field">
         <label>Full name</label>
-        <input type="text" required placeholder="Jane Wanjiru" value={fullName} onChange={(e) => setFullName(e.target.value)} />
+        <input type="text" required placeholder="Lisa Jane" value={fullName} onChange={(e) => setFullName(e.target.value)} />
       </div>
       <div className="field">
         <label>Phone number</label>
@@ -233,7 +233,7 @@ function StaffSignupForm({
 
       <div className="field">
         <label>Full name</label>
-        <input type="text" required placeholder={role === 'DOCTOR' ? 'Dr. Amani Wambui' : 'Anne Otieno'} value={name} onChange={(e) => setName(e.target.value)} />
+        <input type="text" required placeholder={role === 'DOCTOR' ? 'Dr. Matthew James' : 'Sarah Grace'} value={name} onChange={(e) => setName(e.target.value)} />
       </div>
       <div className="field">
         <label>Phone number</label>

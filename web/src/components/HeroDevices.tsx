@@ -9,10 +9,10 @@ import { LogoMark } from './Logo';
  * decorative, so the whole thing is hidden from screen readers.
  */
 const QUEUE = [
-  { initials: 'AD', name: 'Achieng Demo', time: '08:42', dept: 'General', status: 'In consultation', tone: 'info' },
-  { initials: 'KS', name: 'Kamau Sample', time: '08:55', dept: 'Pediatrics', status: 'Waiting', tone: 'warning', walkIn: true },
-  { initials: 'WE', name: 'Wanjiku Example', time: '09:10', dept: 'General', status: 'Waiting', tone: 'warning' },
-  { initials: 'OT', name: 'Otieno Test', time: '08:20', dept: 'Dental', status: 'Paid', tone: 'success' },
+  { initials: 'LJ', name: 'Lisa Jane', time: '08:42', dept: 'General', status: 'In consultation', tone: 'info' },
+  { initials: 'M', name: 'Matthew', time: '08:55', dept: 'Pediatrics', status: 'Waiting', tone: 'warning', walkIn: true },
+  { initials: 'SG', name: 'Sarah Grace', time: '09:10', dept: 'General', status: 'Waiting', tone: 'warning' },
+  { initials: 'A', name: 'Andrew', time: '08:20', dept: 'Dental', status: 'Paid', tone: 'success' },
 ] as const;
 
 function LaptopScreen() {
@@ -69,7 +69,7 @@ function LaptopScreen() {
             ))}
           </ul>
           <div className="mock-checkout">
-            <p className="mock-card-label">Checkout · Otieno Test</p>
+            <p className="mock-card-label">Checkout · Andrew</p>
             <p className="mock-total">KES 1,500</p>
             <p className="mock-line">
               <span>M-Pesa</span>
