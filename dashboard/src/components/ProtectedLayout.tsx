@@ -16,12 +16,12 @@ export function ProtectedLayout() {
   return (
     <div className="min-h-screen">
       <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
-          <div>
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3">
+          <div className="min-w-0">
             <p className="font-semibold text-slate-900">{session.clinicName}</p>
             <p className="text-sm text-slate-500">{session.staffName}</p>
           </div>
-          <nav className="flex items-center gap-4 text-sm">
+          <nav className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
             {session.role === 'DOCTOR' ? (
               <>
                 <Link to="/doctor/queue" className="text-slate-600 hover:text-slate-900">

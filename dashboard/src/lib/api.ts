@@ -46,7 +46,8 @@ export interface PatientDetail {
   hasHiddenHistoryElsewhere: boolean;
 }
 
-export type CheckInStatus = 'PENDING_PAYMENT' | 'PAID' | 'FAILED' | 'CANCELLED';
+export type CheckInStatus = 'PENDING_PAYMENT' | 'PAID' | 'FAILED' | 'CANCELLED' | 'NO_FEE';
+export type CheckInSource = 'REMOTE' | 'WALK_IN';
 export type EncounterStatus = 'WAITING' | 'IN_CONSULTATION' | 'READY_FOR_CHECKOUT' | 'DONE';
 
 export interface QueueItem {
@@ -60,6 +61,9 @@ export interface QueueItem {
   departmentName: string;
   amountKes: number;
   checkInStatus: CheckInStatus;
+  source: CheckInSource;
+  /** Who checked the patient in at the front desk (walk-ins); null for remote check-ins. */
+  checkedInByName: string | null;
   encounterStatus: EncounterStatus | null;
   assignedDoctorName: string | null;
   paidAt: string | null;
@@ -118,6 +122,42 @@ export interface EncounterDetail {
   hasHiddenHistoryElsewhere: boolean;
 }
 
+export interface DepartmentOption {
+  id: string;
+  name: string;
+}
+
+export interface WalkInLookup {
+  phoneNumber: string;
+  patient: { id: string; name: string; patientCode: string; lastVisitAt: string | null } | null;
+}
+
+export type Sex = 'MALE' | 'FEMALE' | 'OTHER' | 'UNKNOWN';
+
+export interface WalkInRequest {
+  phone: string;
+  departmentId: string;
+  reasonForVisit: string;
+  smsConsent: boolean;
+  newPatient?: {
+    fullName: string;
+    dateOfBirth?: string;
+    age?: number;
+    sex?: Sex;
+    registrationConsent: boolean;
+  };
+}
+
+export interface WalkInResult {
+  checkInId: string;
+  patientName: string;
+  patientCode: string;
+  isNewPatient: boolean;
+  departmentName: string;
+  queuePosition: number;
+  sms: 'sent' | 'failed' | 'not_requested';
+}
+
 class ApiError extends Error {
   constructor(
     message: string,
@@ -145,6 +185,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  /** Active departments at a clinic — the same public list the patient check-in form uses. */
+  async getDepartments(clinicId: string): Promise<{ departments: DepartmentOption[] }> {
+    const res = await fetch(`/api/clinics/${encodeURIComponent(clinicId)}/departments`, { credentials: 'include' });
+    if (!res.ok) throw new ApiError('Could not load departments', res.status);
+    return res.json() as Promise<{ departments: DepartmentOption[] }>;
+  },
+  lookupWalkIn(phone: string) {
+    return request<WalkInLookup>(`/walk-in/lookup?phone=${encodeURIComponent(phone)}`);
+  },
+  checkInWalkIn(body: WalkInRequest) {
+    return request<WalkInResult>('/walk-in', { method: 'POST', body: JSON.stringify(body) });
+  },
+  getTodayCheckInCounts() {
+    return request<{ walkIn: number; remote: number }>('/walk-in/stats/today');
+  },
   login(staffCode: string, pin: string) {
     return request<{ staffName: string; clinicName: string; role: string }>('/auth/login', {
       method: 'POST',

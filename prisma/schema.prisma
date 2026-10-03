@@ -52,11 +52,28 @@ enum CheckInStatus {
   PAID
   FAILED
   CANCELLED
+  /// A walk-in checked in at the front desk (source WALK_IN): no ACISI
+  /// check-in fee is charged and no payment is ever requested. The visit
+  /// starts immediately, exactly as if a remote check-in had just been paid.
+  NO_FEE
+}
+
+/// How a CheckIn came about. REMOTE covers every path that charges the ACISI
+/// check-in fee via M-Pesa (USSD, web portal, and staff checking in a booked
+/// appointment); WALK_IN is a patient who arrived without checking in and
+/// was added at the front desk (see walkInService) — no fee.
+enum CheckInSource {
+  REMOTE
+  WALK_IN
 }
 
 enum ConsentType {
   CROSS_CLINIC_RECORD_SHARING
   PLATFORM_REGISTRATION
+  /// Agreement to receive non-essential SMS from the clinic (e.g. the
+  /// walk-in "check in from home next time" invite). Never assumed: no such
+  /// SMS is sent unless the latest row of this type is granted=true.
+  SMS_CLINIC_MESSAGES
 }
 
 enum ActorType {
@@ -352,8 +369,11 @@ model CheckIn {
   patient                Patient       @relation(fields: [patientId], references: [id])
   clinicId               String
   clinic                 Clinic        @relation(fields: [clinicId], references: [id])
+  /// The staff member who checked the patient in, for staff-initiated
+  /// check-ins (walk-ins). Null when the patient checked in themselves.
   staffId                String?
   staff                  Staff?        @relation(fields: [staffId], references: [id])
+  source                 CheckInSource @default(REMOTE)
   departmentId           String
   department             Department    @relation(fields: [departmentId], references: [id])
   /// Idempotency guard: one CheckIn per USSD session, so a dropped-session

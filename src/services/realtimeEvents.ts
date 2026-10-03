@@ -46,6 +46,20 @@ export function publishCheckInFailed(event: CheckInFailedEvent): void {
   emitter.emit(channel(event.clinicId), event);
 }
 
+export interface WalkInCheckedInEvent {
+  checkInId: string;
+  clinicId: string;
+}
+
+/**
+ * Same live-queue channel again, for a walk-in added at the front desk — so
+ * every other dashboard open at the clinic (another receptionist, a doctor's
+ * queue) refetches and shows the new patient straight away.
+ */
+export function publishWalkInCheckedIn(event: WalkInCheckedInEvent): void {
+  emitter.emit(channel(event.clinicId), event);
+}
+
 export function subscribeCheckInPaid(clinicId: string, listener: (event: CheckInPaidEvent) => void): () => void {
   emitter.on(channel(clinicId), listener);
   return () => emitter.off(channel(clinicId), listener);
