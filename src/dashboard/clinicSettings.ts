@@ -3,6 +3,11 @@ import { z } from 'zod';
 import { prisma } from '../db/prisma';
 import { requireStaffSession, requireAdmin, AuthenticatedRequest } from './auth';
 import { regenerateInviteCode } from '../services/clinicService';
+import { recordAuditEvent } from '../services/auditService';
+import { getPaymentSettings } from '../services/billingService';
+import { MAX_AMOUNT_KES } from '../services/billingMath';
+import { clinicStkConfigured } from '../mpesa/clinicStk';
+import { env } from '../config/env';
 import {
   InvalidPinFormatError,
   StaffIsNotADoctorError,
@@ -106,4 +111,79 @@ clinicSettingsRouter.post('/staff/:id/presence', async (req, res) => {
     }
     throw err;
   }
+});
+
+// --- Payment settings (clinic admin only, like everything on this router) ---
+
+const paymentSettingsSchema = z
+  .object({
+    acceptsCash: z.boolean(),
+    acceptsCard: z.boolean(),
+    acceptsMobileMoney: z.boolean(),
+    mobileMoneyType: z.enum(['TILL', 'PAYBILL']).nullish(),
+    mobileMoneyNumber: z
+      .string()
+      .trim()
+      .regex(/^\d{5,7}$/, 'Till and paybill numbers are 5 to 7 digits')
+      .nullish()
+      .or(z.literal('')),
+    paybillAccountFormat: z
+      .string()
+      .trim()
+      .max(30)
+      .regex(/^[A-Za-z0-9-]*(\{(patientCode|billNumber)\}[A-Za-z0-9-]*)*$/, 'Use letters, numbers, - and {patientCode} or {billNumber}')
+      .nullish()
+      .or(z.literal('')),
+    defaultConsultationFeeKes: z.number().int('Use a whole number of KES').min(0).max(MAX_AMOUNT_KES),
+  })
+  .refine((s) => s.acceptsCash || s.acceptsCard || s.acceptsMobileMoney, { message: 'Accept at least one payment method' })
+  .refine((s) => !s.acceptsMobileMoney || (s.mobileMoneyType && s.mobileMoneyNumber), {
+    message: 'Choose till or paybill and enter the number to accept mobile money',
+  });
+
+clinicSettingsRouter.get('/payment-settings', async (req, res) => {
+  const { clinicId } = (req as AuthenticatedRequest).dashboardSession;
+  const settings = await getPaymentSettings(clinicId);
+  res.json({
+    acceptsCash: settings.acceptsCash,
+    acceptsCard: settings.acceptsCard,
+    acceptsMobileMoney: settings.acceptsMobileMoney,
+    mobileMoneyType: settings.mobileMoneyType,
+    mobileMoneyNumber: settings.mobileMoneyNumber,
+    paybillAccountFormat: settings.paybillAccountFormat,
+    defaultConsultationFeeKes: settings.defaultConsultationFeeKes,
+    stkConfigured: clinicStkConfigured(),
+    stkMode: env.CLINIC_MPESA_ENV,
+  });
+});
+
+clinicSettingsRouter.put('/payment-settings', async (req, res) => {
+  const parsed = paymentSettingsSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid settings' });
+    return;
+  }
+  const { clinicId, staffId } = (req as AuthenticatedRequest).dashboardSession;
+  const s = parsed.data;
+  const data = {
+    acceptsCash: s.acceptsCash,
+    acceptsCard: s.acceptsCard,
+    acceptsMobileMoney: s.acceptsMobileMoney,
+    mobileMoneyType: s.mobileMoneyType || null,
+    mobileMoneyNumber: s.mobileMoneyNumber || null,
+    paybillAccountFormat: s.mobileMoneyType === 'PAYBILL' ? s.paybillAccountFormat || null : null,
+    defaultConsultationFeeKes: s.defaultConsultationFeeKes,
+    updatedByStaffId: staffId,
+  };
+  await prisma.clinicPaymentSettings.upsert({ where: { clinicId }, create: { clinicId, ...data }, update: data });
+  await recordAuditEvent({
+    actorType: 'STAFF',
+    actorId: staffId,
+    staffId,
+    action: 'PAYMENT_SETTINGS_UPDATED',
+    entityType: 'Clinic',
+    entityId: clinicId,
+    metadata: { ...data, updatedByStaffId: undefined },
+  });
+  res.json({ ok: true });
 });

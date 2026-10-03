@@ -135,6 +135,42 @@ is saved (`SMS_CLINIC_MESSAGES`) and a one-off invite is sent (wording in
 `src/services/smsTemplates.ts`); unticked, nothing is sent. A failed SMS
 never blocks the check-in. The queue shows today's walk-in vs remote counts.
 Logic: `src/services/walkInService.ts`; routes: `src/dashboard/walkIn.ts`.
+Staff can instead tick "Patient does not want SMS": that is saved on the
+patient (also switchable on the patient page) and blocks the receipt and
+visit-summary SMS.
+
+### Checkout payments (front desk)
+
+After the doctor finishes, the queue shows **Bill & pay** for the visit.
+The bill starts with the clinic's default consultation fee; staff add lab,
+medication or other lines (whole KES) and an optional discount, which needs
+a reason. Payments can be split across methods until the balance is
+covered: **Cash** (amount received → change due), **Card** (amount plus
+the card machine reference or last 4 digits — no live card integration),
+and **M-Pesa** — either "Request payment" (an STK prompt to the patient's
+phone, status shown live, with retry) or a manually entered M-Pesa code
+(format-checked, and a code can never be used twice). The bill shows
+Unpaid / Partly paid / Paid with the balance. Only clinic admins can void a
+payment, with a reason; voided payments are kept, never deleted. When the
+bill is fully paid, one receipt SMS is sent (unless the patient opted out)
+and a printable receipt is shown. Admins get **Daily summary** (totals by
+method, paid visits, unpaid/partly paid list, any date) and set accepted
+methods, till/paybill details and the default fee under **Settings →
+Payments**.
+
+**Money boundary:** checkout money goes to the *clinic's* till/paybill.
+ACISI only records payments and triggers prompts; it never holds clinic
+money. ACISI's own till only ever collects the remote check-in fee, which
+is a separate flow (`src/mpesa/stkPush.ts`).
+
+**STK push is sandbox-only for now.** It uses a separate Daraja app from
+the check-in fee, configured with `CLINIC_DARAJA_CONSUMER_KEY`,
+`CLINIC_DARAJA_CONSUMER_SECRET`, `CLINIC_DARAJA_PASSKEY`,
+`CLINIC_DARAJA_SHORTCODE` (sandbox `174379`) and `CLINIC_MPESA_CALLBACK_URL`
+(`https://<your-domain>/api/mpesa/clinic-callback`) — credentials live only
+in environment variables. Without them, "Request payment" is hidden and
+staff enter M-Pesa codes manually. Logic: `src/services/billingService.ts`;
+routes: `src/dashboard/billing.ts`.
 
 ### 10. The owner site (`/owner`)
 

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useAuth } from '../context/AuthContext';
 import { Link, useParams } from 'react-router-dom';
 import { api, ApiError, PatientDetail } from '../lib/api';
 
@@ -44,6 +45,8 @@ export function PatientDetailPage() {
         {patient.dateOfBirth ? ` · Born ${new Date(patient.dateOfBirth).getFullYear()}` : ''}
       </p>
 
+      <SmsPreference patientId={patient.id} initial={patient.smsOptOut} onChange={(smsOptOut) => setPatient({ ...patient, smsOptOut })} />
+
       <h2 className="mb-2 text-sm font-medium text-slate-700">Visit history</h2>
       {patient.history.length === 0 && !patient.hasHiddenHistoryElsewhere ? (
         <p className="text-sm text-slate-500">No prior visits on record.</p>
@@ -75,6 +78,40 @@ export function PatientDetailPage() {
           with this clinic.
         </p>
       )}
+    </div>
+  );
+}
+
+/** "Patient does not want SMS" — front desk can set it for any patient (e.g. ones who checked in remotely). */
+function SmsPreference({ patientId, initial, onChange }: { patientId: string; initial: boolean; onChange: (v: boolean) => void }) {
+  const { session } = useAuth();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (session?.role === 'DOCTOR') return null;
+
+  async function toggle(next: boolean): Promise<void> {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await api.setSmsPreference(patientId, next);
+      onChange(res.smsOptOut);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not update the SMS preference.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4">
+      <label className="flex items-start gap-3 text-sm text-slate-700">
+        <input type="checkbox" checked={initial} disabled={busy} onChange={(e) => void toggle(e.target.checked)} className="mt-0.5 h-5 w-5 shrink-0" />
+        <span>
+          <span className="font-medium text-slate-900">Patient does not want SMS</span>
+          <span className="block text-slate-500">No payment receipts, visit summaries or invites will be texted.</span>
+        </span>
+      </label>
+      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
     </div>
   );
 }

@@ -6,12 +6,14 @@ import { startSmsReceiptWorker } from './jobs/workers/smsReceiptWorker';
 import { startStkStatusWorker } from './jobs/workers/stkStatusWorker';
 import { startVisitSummarySmsWorker } from './jobs/workers/visitSummarySmsWorker';
 import { startVisitSummaryEmailWorker } from './jobs/workers/visitSummaryEmailWorker';
+import { startClinicStkStatusWorker } from './jobs/workers/clinicStkStatusWorker';
 
 const app = createApp();
 const smsWorker = startSmsReceiptWorker();
 const stkStatusWorker = startStkStatusWorker();
 const visitSummaryWorker = startVisitSummarySmsWorker();
 const visitSummaryEmailWorker = startVisitSummaryEmailWorker();
+const clinicStkStatusWorker = startClinicStkStatusWorker();
 
 const server = app.listen(env.PORT, () => {
   logger.info({ port: env.PORT, env: env.NODE_ENV }, 'ACISI server listening');
@@ -22,7 +24,7 @@ void ensureOwnerFromEnv({ email: env.OWNER_EMAIL, name: env.OWNER_NAME, password
 async function shutdown(signal: string): Promise<void> {
   logger.info({ signal }, 'Shutting down');
   server.close();
-  await Promise.all([smsWorker.close(), stkStatusWorker.close(), visitSummaryWorker.close(), visitSummaryEmailWorker.close()]);
+  await Promise.all([smsWorker.close(), stkStatusWorker.close(), visitSummaryWorker.close(), visitSummaryEmailWorker.close(), clinicStkStatusWorker.close()]);
   process.exit(0);
 }
 

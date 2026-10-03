@@ -4,6 +4,7 @@ jest.mock('../../src/db/prisma', () => {
     encounter: { findFirst: jest.fn(), create: jest.fn() },
     checkIn: { findFirst: jest.fn(), create: jest.fn() },
     consent: { create: jest.fn() },
+    patient: { update: jest.fn() },
   };
   return {
     prisma: {
@@ -277,6 +278,35 @@ describe('SMS invite', () => {
   it('treats a recipient rejected by the provider as a failure', async () => {
     mockSend.mockResolvedValue({ SMSMessageData: { Recipients: [{ status: 'InsufficientBalance', statusCode: 405 }] } });
     expect((await checkInWalkIn(input({ smsConsent: true }))).sms).toBe('failed');
+  });
+});
+
+describe('"Does not want SMS"', () => {
+  it('records the opt-out on the patient and sends nothing', async () => {
+    const result = await checkInWalkIn(input({ smsOptOut: true }));
+    expect(tx.patient!.update).toHaveBeenCalledWith({
+      where: { id: 'p-1' },
+      data: expect.objectContaining({ smsOptOut: true }),
+    });
+    expect(mockSend).not.toHaveBeenCalled();
+    expect(result.sms).toBe('not_requested');
+  });
+
+  it('refuses both boxes ticked at once', async () => {
+    await expect(checkInWalkIn(input({ smsConsent: true, smsOptOut: true }))).rejects.toMatchObject({ status: 400 });
+    expect(tx.checkIn!.create).not.toHaveBeenCalled();
+  });
+
+  it('agreeing to SMS again clears an earlier opt-out', async () => {
+    mockFindPatient.mockResolvedValue({ ...PATIENT, smsOptOut: true });
+    await checkInWalkIn(input({ smsConsent: true }));
+    expect(tx.patient!.update).toHaveBeenCalledWith({ where: { id: 'p-1' }, data: expect.objectContaining({ smsOptOut: false }) });
+    expect(mockSend).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the preference alone when neither box is ticked', async () => {
+    await checkInWalkIn(input());
+    expect(tx.patient!.update).not.toHaveBeenCalled();
   });
 });
 

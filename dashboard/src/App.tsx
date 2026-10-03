@@ -11,6 +11,8 @@ import { DoctorEncounterPage } from './pages/DoctorEncounterPage';
 import { AppointmentsPage } from './pages/AppointmentsPage';
 import { DoctorAppointmentsPage } from './pages/DoctorAppointmentsPage';
 import { WalkInPage } from './pages/WalkInPage';
+import { CheckoutPage } from './pages/CheckoutPage';
+import { DailySummaryPage } from './pages/DailySummaryPage';
 
 /** A doctor's home is their own queue; everyone else lands on the front-desk queue. */
 function HomeRedirect() {
@@ -44,6 +46,8 @@ export function App() {
             <Route path="/" element={<HomeRedirect />} />
             <Route path="/queue" element={<QueuePage />} />
             <Route path="/walk-in" element={<WalkInPage />} />
+            <Route path="/checkout/:encounterId" element={<CheckoutPage />} />
+            <Route path="/reports/daily" element={<DailySummaryPage />} />
             <Route path="/patients" element={<PatientsPage />} />
             <Route path="/patients/:id" element={<PatientDetailPage />} />
             <Route path="/appointments" element={<AppointmentsPage />} />

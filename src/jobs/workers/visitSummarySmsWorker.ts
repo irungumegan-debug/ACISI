@@ -28,6 +28,12 @@ export function startVisitSummarySmsWorker(): Worker<VisitSummarySmsJobData> {
         return;
       }
 
+      // "Patient does not want SMS" (set by front desk) — no visit summary either.
+      if (encounter.patient.smsOptOut) {
+        logger.info({ encounterId: job.data.encounterId }, 'Visit summary SMS skipped: patient opted out of SMS');
+        return;
+      }
+
       const message =
         `ACISI — ${encounter.clinic.name}\n` +
         `Visit: ${encounter.checkIn.department.name}\n` +

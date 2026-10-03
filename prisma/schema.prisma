@@ -134,11 +134,14 @@ model Clinic {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  staff        Staff[]
-  checkIns     CheckIn[]
-  encounters   Encounter[]
-  departments  Department[]
-  appointments Appointment[]
+  staff           Staff[]
+  checkIns        CheckIn[]
+  encounters      Encounter[]
+  departments     Department[]
+  appointments    Appointment[]
+  paymentSettings ClinicPaymentSettings?
+  bills           Bill[]
+  payments        Payment[]
 
   @@map("clinics")
 }
@@ -166,45 +169,48 @@ model Department {
 }
 
 model Staff {
-  id          String     @id @default(cuid())
-  clinicId    String
-  clinic      Clinic     @relation(fields: [clinicId], references: [id])
+  id                 String                 @id @default(cuid())
+  clinicId           String
+  clinic             Clinic                 @relation(fields: [clinicId], references: [id])
   /// System-generated login identifier, e.g. "ACI-STF-7F2K". Never
   /// self-chosen or clinic-supplied. This — not phoneNumber — is what staff
   /// and doctors authenticate with, on both the dashboard and USSD.
-  staffCode   String     @unique
+  staffCode          String                 @unique
   /// E.164 phone number, e.g. "+2547XXXXXXXX". Contact/SMS purposes only —
   /// never used to authenticate.
-  phoneNumber String     @unique
-  name        String
+  phoneNumber        String                 @unique
+  name               String
   /// bcrypt hash of a staff-chosen numeric PIN. Never store or log the raw PIN.
-  pinHash     String
-  role        StaffRole  @default(RECEPTIONIST)
+  pinHash            String
+  role               StaffRole              @default(RECEPTIONIST)
   /// The one department this staff member (a doctor, typically) works in —
   /// null for roles that aren't department-scoped (front desk, admin).
-  departmentId String?
-  department   Department? @relation(fields: [departmentId], references: [id])
-  isActive    Boolean    @default(true)
+  departmentId       String?
+  department         Department?            @relation(fields: [departmentId], references: [id])
+  isActive           Boolean                @default(true)
   /// Set on every successful login (DOCTOR role only) — the automatic
   /// "in today" signal. Compared against presenceOverrideAt (whichever is
   /// more recent, restricted to today) to decide current presence; see
   /// staffService.getDoctorPresenceStatus. Not a schedule or a history —
   /// only today's value is ever meaningful.
-  lastLoginAt DateTime?
+  lastLoginAt        DateTime?
   /// An explicit "mark in" / "mark out" correction, settable by the doctor
   /// themselves or their clinic admin. Only meaningful when
   /// presenceOverrideAt falls on today; a stale value from a previous day
   /// is ignored, not carried forward.
   presenceOverride   StaffPresenceOverride?
   presenceOverrideAt DateTime?
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
 
   checkIns              CheckIn[]
   auditLogs             AuditLog[]
   otps                  StaffOtp[]
   assignedEncounters    Encounter[]   @relation("EncounterAssignedDoctor")
   consultedEncounters   Encounter[]   @relation("EncounterConsultedBy")
+  billsCreated          Bill[]        @relation("BillCreatedBy")
+  paymentsTaken         Payment[]     @relation("PaymentTakenBy")
+  paymentsVoided        Payment[]     @relation("PaymentVoidedBy")
   checkedOutEncounters  Encounter[]   @relation("EncounterCheckedOutBy")
   confirmedAppointments Appointment[] @relation("AppointmentConfirmedBy")
   cancelledAppointments Appointment[] @relation("AppointmentCancelledBy")
@@ -215,40 +221,45 @@ model Staff {
 }
 
 model Patient {
-  id          String      @id @default(cuid())
+  id                 String     @id @default(cuid())
   /// System-generated human-readable ID, e.g. "ACI-7F2K" — separate from
   /// the phone number and from the internal cuid `id`. Usable as an
   /// alternate login identifier alongside the phone number.
-  patientCode String      @unique
+  patientCode        String     @unique
   /// E.164 phone number — the primary lookup key, since Africa's Talking
   /// gives us the caller's number on every USSD session.
-  phoneNumber String      @unique
-  firstName   String
-  lastName    String
-  dateOfBirth DateTime?
-  sex         Sex         @default(UNKNOWN)
-  county      String?
+  phoneNumber        String     @unique
+  firstName          String
+  lastName           String
+  dateOfBirth        DateTime?
+  sex                Sex        @default(UNKNOWN)
+  county             String?
   /// Optional — collected only via the web portal signup form (not USSD,
   /// which has no practical way to enter one). Never used for login or any
   /// notification besides the staff-initiated visit-summary email at
   /// checkout; no uniqueness constraint since a shared household email is
   /// a reasonable, expected case.
-  email       String?
+  email              String?
   /// bcrypt hash of the patient's chosen numeric PIN. Everyday login
   /// credential; OTP (see Otp model) is reset-only, not primary login.
   /// Null for a patient registered via USSD check-in who has never set one —
   /// they use the same OTP flow to set their first PIN as to reset it.
-  pinHash     String?
+  pinHash            String?
   /// Set when the account is deleted, by the patient themselves (portal) or
   /// the platform owner — see patientDeletionService. Deletion wipes every
   /// identifying field above (name, phone, email, DOB, county, PIN) in the
   /// same update, but keeps this row and its Encounters/CheckIns/payments,
   /// now anonymous, so clinics keep their medical and financial records.
   /// Every patient lookup used for login/USSD/OTP excludes deleted rows.
-  deletedAt     DateTime?
-  deletedByType ActorType?
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  deletedAt          DateTime?
+  deletedByType      ActorType?
+  /// "Patient does not want SMS", set by front desk (at walk-in check-in or
+  /// on the patient's page). When true, no clinic SMS is sent to them —
+  /// no payment receipt, no visit summary, no invite. Off by default.
+  smsOptOut          Boolean    @default(false)
+  smsOptOutUpdatedAt DateTime?
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
 
   consents     Consent[]
   encounters   Encounter[]
@@ -324,38 +335,40 @@ model Consent {
 /// two together: payment and clinical progress are genuinely independent
 /// concerns that just happen to start at the same moment.
 model Encounter {
-  id          String           @id @default(cuid())
-  patientId   String
-  patient     Patient          @relation(fields: [patientId], references: [id])
-  clinicId    String
-  clinic      Clinic           @relation(fields: [clinicId], references: [id])
-  checkInId   String           @unique
-  checkIn     CheckIn          @relation(fields: [checkInId], references: [id])
-  status      EncounterStatus  @default(WAITING)
+  id                  String          @id @default(cuid())
+  patientId           String
+  patient             Patient         @relation(fields: [patientId], references: [id])
+  clinicId            String
+  clinic              Clinic          @relation(fields: [clinicId], references: [id])
+  checkInId           String          @unique
+  checkIn             CheckIn         @relation(fields: [checkInId], references: [id])
+  status              EncounterStatus @default(WAITING)
   /// The doctor this visit is routed to, decided once at the moment the
   /// CheckIn becomes WAITING (see doctorAssignmentService.assignDoctorForCheckIn)
   /// — never reassigned afterward (manual reassignment is future work). Null
   /// only when the department had zero registered doctors at that moment, in
   /// which case the visit stays open to any doctor in the department, same
   /// as before this field existed.
-  assignedDoctorId String?
-  assignedDoctor   Staff?  @relation("EncounterAssignedDoctor", fields: [assignedDoctorId], references: [id])
+  assignedDoctorId    String?
+  assignedDoctor      Staff?          @relation("EncounterAssignedDoctor", fields: [assignedDoctorId], references: [id])
   /// Optional free text a staff member can add later via a richer channel.
   /// Not collected over USSD at MVP.
-  visitReason String?
+  visitReason         String?
   /// Set by the doctor's consultation submission — never by the doctor's
   /// mere viewing of the patient.
-  diagnosis   String?
-  prescription String?
-  consultedByStaffId String?
-  consultedByStaff   Staff?   @relation("EncounterConsultedBy", fields: [consultedByStaffId], references: [id])
-  consultedAt        DateTime?
+  diagnosis           String?
+  prescription        String?
+  consultedByStaffId  String?
+  consultedByStaff    Staff?          @relation("EncounterConsultedBy", fields: [consultedByStaffId], references: [id])
+  consultedAt         DateTime?
   /// Set by the front-desk checkout action — the point at which the SMS
   /// visit summary goes out. Never set by the doctor's own submission.
   checkedOutByStaffId String?
-  checkedOutByStaff   Staff?   @relation("EncounterCheckedOutBy", fields: [checkedOutByStaffId], references: [id])
+  checkedOutByStaff   Staff?          @relation("EncounterCheckedOutBy", fields: [checkedOutByStaffId], references: [id])
   checkedOutAt        DateTime?
-  createdAt   DateTime @default(now())
+  createdAt           DateTime        @default(now())
+
+  bill Bill?
 
   @@index([patientId])
   @@index([clinicId])
@@ -393,7 +406,7 @@ model CheckIn {
   createdAt              DateTime      @default(now())
   paidAt                 DateTime?
 
-  encounter        Encounter?
+  encounter         Encounter?
   mpesaTransactions MpesaTransaction[]
 
   @@index([patientId])
@@ -443,23 +456,184 @@ model Appointment {
   @@map("appointments")
 }
 
+/// Whether a clinic's mobile money number is a Buy Goods till or a Paybill.
+enum MobileMoneyType {
+  TILL
+  PAYBILL
+}
+
+/// How a clinic gets paid at checkout. Clinic money only ever goes to the
+/// clinic's own till/paybill — never ACISI's (which only collects the
+/// patient check-in fee). Holds no secrets: Daraja API credentials live in
+/// environment variables (see env.ts CLINIC_DARAJA_*), never in the database.
+model ClinicPaymentSettings {
+  clinicId                  String           @id
+  clinic                    Clinic           @relation(fields: [clinicId], references: [id])
+  acceptsCash               Boolean          @default(true)
+  acceptsCard               Boolean          @default(false)
+  acceptsMobileMoney        Boolean          @default(false)
+  mobileMoneyType           MobileMoneyType?
+  /// The clinic's own till or paybill number.
+  mobileMoneyNumber         String?
+  /// Paybill account reference template, e.g. "{patientCode}". Placeholders:
+  /// {patientCode}, {billNumber}. Ignored for tills.
+  paybillAccountFormat      String?
+  /// Pre-filled as the first line of every new bill; staff can change it.
+  defaultConsultationFeeKes Int              @default(0)
+  updatedByStaffId          String?
+  updatedAt                 DateTime         @updatedAt
+
+  @@map("clinic_payment_settings")
+}
+
+enum BillStatus {
+  UNPAID
+  PARTLY_PAID
+  PAID
+}
+
+enum BillItemKind {
+  CONSULTATION
+  LAB
+  MEDICATION
+  OTHER
+}
+
+/// What the patient owes the clinic for one visit, built by front desk at
+/// checkout. All money is whole KES (Int) — never floating point. totalKes =
+/// subtotalKes - discountKes; paidKes is the sum of SUCCEEDED payments and
+/// status follows from the two. Both are recalculated in the same
+/// transaction as every payment or void (see billingService).
+model Bill {
+  id               String     @id @default(cuid())
+  /// Short human-readable number for receipts and paybill references, e.g. "B-7F2K9".
+  billNumber       String     @unique
+  encounterId      String     @unique
+  encounter        Encounter  @relation(fields: [encounterId], references: [id])
+  clinicId         String
+  clinic           Clinic     @relation(fields: [clinicId], references: [id])
+  createdByStaffId String
+  createdByStaff   Staff      @relation("BillCreatedBy", fields: [createdByStaffId], references: [id])
+  subtotalKes      Int
+  discountKes      Int        @default(0)
+  /// Required whenever discountKes > 0.
+  discountReason   String?
+  totalKes         Int
+  paidKes          Int        @default(0)
+  status           BillStatus @default(UNPAID)
+  /// When the bill first became fully paid.
+  paidAt           DateTime?
+  /// Set (once, atomically) when the paid receipt SMS is sent, so it's never sent twice.
+  receiptSmsSentAt DateTime?
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  items    BillItem[]
+  payments Payment[]
+
+  @@index([clinicId, createdAt])
+  @@map("bills")
+}
+
+model BillItem {
+  id          String       @id @default(cuid())
+  billId      String
+  bill        Bill         @relation(fields: [billId], references: [id], onDelete: Cascade)
+  kind        BillItemKind
+  description String
+  amountKes   Int
+  position    Int
+
+  @@index([billId])
+  @@map("bill_items")
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  /// STK push prompt to the patient's phone, paying the clinic's till/paybill.
+  MPESA_STK
+  /// An M-Pesa transaction code typed in by staff (prompt failed, or the
+  /// patient paid the till directly).
+  MPESA_MANUAL
+}
+
+enum PaymentStatus {
+  /// STK push sent, waiting for the patient / Daraja.
+  PENDING
+  SUCCEEDED
+  FAILED
+  /// The patient declined the prompt.
+  CANCELLED
+  /// No answer from the patient in time.
+  TIMED_OUT
+  /// Entered by mistake and voided by a clinic admin. Never deleted.
+  VOIDED
+}
+
+/// One payment towards a bill. Rows are never deleted — a mistake is voided
+/// (with who, when and why) and stays on record.
+model Payment {
+  id                       String        @id @default(cuid())
+  billId                   String
+  bill                     Bill          @relation(fields: [billId], references: [id])
+  clinicId                 String
+  clinic                   Clinic        @relation(fields: [clinicId], references: [id])
+  method                   PaymentMethod
+  status                   PaymentStatus
+  amountKes                Int
+  /// Cash only: what the patient handed over, and the change given back.
+  cashTenderedKes          Int?
+  changeKes                Int?
+  /// Card: reference or last 4 digits from the clinic's card machine.
+  reference                String?
+  /// M-Pesa transaction code (STK result or typed in). Unique so a code can
+  /// never be used twice; cleared into voidedMpesaReceiptNumber on void so
+  /// a mistaken entry doesn't block re-entering the code on the right bill.
+  mpesaReceiptNumber       String?       @unique
+  voidedMpesaReceiptNumber String?
+  mpesaCheckoutRequestId   String?       @unique
+  mpesaMerchantRequestId   String?
+  phoneNumber              String?
+  resultCode               Int?
+  resultDesc               String?
+  rawCallbackPayload       Json?
+  /// Sent by the browser with each payment attempt; a repeat (double click,
+  /// retry after a dropped connection) returns the original payment instead
+  /// of creating a second one or sending a second M-Pesa prompt.
+  idempotencyKey           String        @unique
+  takenByStaffId           String
+  takenByStaff             Staff         @relation("PaymentTakenBy", fields: [takenByStaffId], references: [id])
+  /// When the money was confirmed received (SUCCEEDED).
+  completedAt              DateTime?
+  voidedAt                 DateTime?
+  voidedByStaffId          String?
+  voidedByStaff            Staff?        @relation("PaymentVoidedBy", fields: [voidedByStaffId], references: [id])
+  voidReason               String?
+  createdAt                DateTime      @default(now())
+
+  @@index([billId])
+  @@index([clinicId, completedAt])
+  @@map("payments")
+}
+
 /// One row per Daraja STK push attempt/callback for a CheckIn. A CheckIn can
 /// have more than one (e.g. a timed-out push followed by a retry).
 model MpesaTransaction {
-  id                  String    @id @default(cuid())
-  checkInId           String
-  checkIn             CheckIn   @relation(fields: [checkInId], references: [id])
-  merchantRequestId   String
-  checkoutRequestId   String
-  resultCode          Int?
-  resultDesc          String?
-  mpesaReceiptNumber  String?   @unique
-  transactionDate     DateTime?
-  phoneNumber         String
-  amountKes           Decimal   @db.Decimal(10, 2)
+  id                 String    @id @default(cuid())
+  checkInId          String
+  checkIn            CheckIn   @relation(fields: [checkInId], references: [id])
+  merchantRequestId  String
+  checkoutRequestId  String
+  resultCode         Int?
+  resultDesc         String?
+  mpesaReceiptNumber String?   @unique
+  transactionDate    DateTime?
+  phoneNumber        String
+  amountKes          Decimal   @db.Decimal(10, 2)
   /// Full raw Daraja callback body, kept verbatim for reconciliation/audit.
-  rawCallbackPayload  Json?
-  createdAt           DateTime  @default(now())
+  rawCallbackPayload Json?
+  createdAt          DateTime  @default(now())
 
   @@index([checkInId])
   @@map("mpesa_transactions")

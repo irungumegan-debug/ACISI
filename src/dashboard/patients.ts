@@ -3,6 +3,7 @@ import { prisma } from '../db/prisma';
 import { requireStaffSession, AuthenticatedRequest } from './auth';
 import { getScopedHistory } from '../services/patientService';
 import { recordAuditEvent } from '../services/auditService';
+import { z } from 'zod';
 
 export const patientsRouter = Router();
 
@@ -86,7 +87,50 @@ patientsRouter.get('/:id', async (req, res) => {
     phoneNumber: patient.phoneNumber,
     dateOfBirth: patient.dateOfBirth,
     sex: patient.sex,
+    smsOptOut: patient.smsOptOut,
     history,
     hasHiddenHistoryElsewhere,
   });
+});
+
+const smsPreferenceSchema = z.object({ smsOptOut: z.boolean() });
+
+/**
+ * "Patient does not want SMS" toggle on the patient's page — for patients
+ * who checked in remotely (walk-ins can also set it at the front desk).
+ * Front-desk roles only; scoped to patients this clinic has seen.
+ */
+patientsRouter.patch('/:id/sms-preference', async (req, res) => {
+  const { clinicId, staffId, role } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  if (role === 'DOCTOR') {
+    res.status(403).json({ error: 'Only front-desk staff can change SMS preferences' });
+    return;
+  }
+  const parsed = smsPreferenceSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'smsOptOut must be true or false' });
+    return;
+  }
+
+  const patient = await prisma.patient.findFirst({
+    where: { id: req.params.id, deletedAt: null, OR: [{ checkIns: { some: { clinicId } } }, { encounters: { some: { clinicId } } }] },
+  });
+  if (!patient) {
+    res.status(404).json({ error: 'Patient not found' });
+    return;
+  }
+
+  await prisma.patient.update({
+    where: { id: patient.id },
+    data: { smsOptOut: parsed.data.smsOptOut, smsOptOutUpdatedAt: new Date() },
+  });
+  await recordAuditEvent({
+    actorType: 'STAFF',
+    actorId: staffId,
+    staffId,
+    action: parsed.data.smsOptOut ? 'PATIENT_SMS_OPTED_OUT' : 'PATIENT_SMS_OPTED_IN',
+    entityType: 'Patient',
+    entityId: patient.id,
+  });
+  res.json({ smsOptOut: parsed.data.smsOptOut });
 });

@@ -42,6 +42,7 @@ export interface PatientDetail {
   phoneNumber: string;
   dateOfBirth: string | null;
   sex: string;
+  smsOptOut: boolean;
   history: VisitHistoryEntry[];
   hasHiddenHistoryElsewhere: boolean;
 }
@@ -66,6 +67,9 @@ export interface QueueItem {
   checkedInByName: string | null;
   encounterStatus: EncounterStatus | null;
   assignedDoctorName: string | null;
+  /** Clinic checkout bill status (null until a bill is made). */
+  billStatus: BillStatus | null;
+  billBalanceKes: number | null;
   paidAt: string | null;
   createdAt: string;
 }
@@ -139,6 +143,7 @@ export interface WalkInRequest {
   departmentId: string;
   reasonForVisit: string;
   smsConsent: boolean;
+  smsOptOut?: boolean;
   newPatient?: {
     fullName: string;
     dateOfBirth?: string;
@@ -156,6 +161,109 @@ export interface WalkInResult {
   departmentName: string;
   queuePosition: number;
   sms: 'sent' | 'failed' | 'not_requested';
+}
+
+export type BillStatus = 'UNPAID' | 'PARTLY_PAID' | 'PAID';
+export type BillItemKind = 'CONSULTATION' | 'LAB' | 'MEDICATION' | 'OTHER';
+export type PaymentMethod = 'CASH' | 'CARD' | 'MPESA_STK' | 'MPESA_MANUAL';
+export type PaymentStatus = 'PENDING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED' | 'TIMED_OUT' | 'VOIDED';
+
+export interface BillItem {
+  kind: BillItemKind;
+  description: string;
+  amountKes: number;
+}
+
+export interface CheckoutPayment {
+  id: string;
+  method: PaymentMethod;
+  status: PaymentStatus;
+  amountKes: number;
+  cashTenderedKes: number | null;
+  changeKes: number | null;
+  reference: string | null;
+  mpesaReceiptNumber: string | null;
+  phoneNumber: string | null;
+  resultDesc: string | null;
+  takenByName: string;
+  createdAt: string;
+  completedAt: string | null;
+  voidedAt: string | null;
+  voidedByName: string | null;
+  voidReason: string | null;
+}
+
+export interface CheckoutView {
+  encounterId: string;
+  checkInId: string;
+  visitStatus: EncounterStatus;
+  patient: { id: string; name: string; patientCode: string; phoneNumber: string; smsOptOut: boolean };
+  departmentName: string;
+  settings: {
+    acceptsCash: boolean;
+    acceptsCard: boolean;
+    acceptsMobileMoney: boolean;
+    mobileMoneyType: 'TILL' | 'PAYBILL' | null;
+    mobileMoneyNumber: string | null;
+    defaultConsultationFeeKes: number;
+    stkAvailable: boolean;
+  };
+  bill: null | {
+    id: string;
+    billNumber: string;
+    items: BillItem[];
+    subtotalKes: number;
+    discountKes: number;
+    discountReason: string | null;
+    totalKes: number;
+    paidKes: number;
+    balanceKes: number;
+    status: BillStatus;
+    paidAt: string | null;
+    receiptSmsSentAt: string | null;
+    createdAt: string;
+  };
+  payments: CheckoutPayment[];
+}
+
+export type PaymentRequest =
+  | { method: 'CASH'; tenderedKes: number; idempotencyKey: string }
+  | { method: 'CARD'; amountKes: number; reference: string; idempotencyKey: string }
+  | { method: 'MPESA_MANUAL'; amountKes: number; mpesaCode: string; idempotencyKey: string };
+
+export interface PaymentSettings {
+  acceptsCash: boolean;
+  acceptsCard: boolean;
+  acceptsMobileMoney: boolean;
+  mobileMoneyType: 'TILL' | 'PAYBILL' | null;
+  mobileMoneyNumber: string | null;
+  paybillAccountFormat: string | null;
+  defaultConsultationFeeKes: number;
+}
+
+export interface DailySummary {
+  date: string;
+  totals: { cashKes: number; cardKes: number; mobileMoneyKes: number; totalKes: number };
+  paymentCount: number;
+  voidedCount: number;
+  paidVisitCount: number;
+  outstanding: {
+    encounterId: string;
+    checkInId: string;
+    patientName: string;
+    patientCode: string;
+    visitedAt: string;
+    visitStatus: EncounterStatus;
+    billStatus: 'NO_BILL' | 'UNPAID' | 'PARTLY_PAID';
+    totalKes: number | null;
+    paidKes: number;
+    balanceKes: number | null;
+  }[];
+}
+
+/** One key per payment attempt, so a double click or retry can't record it twice. */
+export function newIdempotencyKey(): string {
+  return crypto.randomUUID();
 }
 
 class ApiError extends Error {
@@ -185,6 +293,45 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  getCheckout(encounterId: string) {
+    return request<CheckoutView>(`/billing/visits/${encodeURIComponent(encounterId)}`);
+  },
+  saveBill(encounterId: string, body: { items: BillItem[]; discountKes: number; discountReason: string | null }) {
+    return request<CheckoutView>(`/billing/visits/${encodeURIComponent(encounterId)}/bill`, { method: 'PUT', body: JSON.stringify(body) });
+  },
+  recordPayment(billId: string, body: PaymentRequest) {
+    return request<{ paymentId: string; changeKes: number | null; billStatus: BillStatus }>(`/billing/bills/${encodeURIComponent(billId)}/payments`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
+  requestMpesa(billId: string, body: { amountKes: number; phone?: string; idempotencyKey: string }) {
+    return request<{ paymentId: string; status: PaymentStatus; resultDesc: string | null }>(
+      `/billing/bills/${encodeURIComponent(billId)}/mpesa-request`,
+      { method: 'POST', body: JSON.stringify(body) },
+    );
+  },
+  voidPayment(paymentId: string, reason: string) {
+    return request<{ billStatus: BillStatus; paidKes: number }>(`/billing/payments/${encodeURIComponent(paymentId)}/void`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  },
+  getDailySummary(date: string) {
+    return request<DailySummary>(`/billing/reports/daily?date=${encodeURIComponent(date)}`);
+  },
+  getPaymentSettings() {
+    return request<PaymentSettings & { stkConfigured: boolean; stkMode: string }>('/clinic/payment-settings');
+  },
+  savePaymentSettings(body: PaymentSettings) {
+    return request<{ ok: true }>('/clinic/payment-settings', { method: 'PUT', body: JSON.stringify(body) });
+  },
+  setSmsPreference(patientId: string, smsOptOut: boolean) {
+    return request<{ smsOptOut: boolean }>(`/patients/${encodeURIComponent(patientId)}/sms-preference`, {
+      method: 'PATCH',
+      body: JSON.stringify({ smsOptOut }),
+    });
+  },
   /** Active departments at a clinic — the same public list the patient check-in form uses. */
   async getDepartments(clinicId: string): Promise<{ departments: DepartmentOption[] }> {
     const res = await fetch(`/api/clinics/${encodeURIComponent(clinicId)}/departments`, { credentials: 'include' });

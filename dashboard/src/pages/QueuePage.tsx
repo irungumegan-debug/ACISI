@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, ApiError, CheckoutDeliveryMethod, QueueItem, subscribeToQueue } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
+import { BillStatusChip } from './CheckoutPage';
 
 const STATUS_LABEL: Record<string, string> = {
   PENDING_PAYMENT: 'Awaiting payment',
@@ -147,6 +148,24 @@ export function QueuePage() {
                   {item.checkInStatus === 'NO_FEE' ? 'No fee' : `KES ${item.amountKes}`}
                 </span>
                 <div className="flex w-full shrink-0 flex-col items-end gap-1.5 sm:w-44">
+                  {(item.encounterStatus === 'READY_FOR_CHECKOUT' || item.encounterStatus === 'DONE') && (
+                    <div className="flex items-center gap-2">
+                      <BillStatusChip status={item.billStatus} />
+                      {item.billStatus !== 'PAID' && session?.role !== 'DOCTOR' && (
+                        <Link
+                          to={`/checkout/${item.encounterId}`}
+                          className="rounded-md bg-amber-400 px-3 py-1.5 text-xs font-semibold text-slate-900 hover:bg-amber-300"
+                        >
+                          {item.billStatus === 'PARTLY_PAID' ? `Collect KES ${item.billBalanceKes}` : 'Bill & pay'}
+                        </Link>
+                      )}
+                      {item.billStatus === 'PAID' && (
+                        <Link to={`/checkout/${item.encounterId}`} className="text-xs text-slate-600 underline">
+                          Receipt
+                        </Link>
+                      )}
+                    </div>
+                  )}
                   {isUnresolvedPayment(item) && (
                     <button
                       onClick={() => void handleConfirmPayment(item.checkInId)}

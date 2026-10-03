@@ -112,6 +112,12 @@ export interface WalkInCheckInInput {
   newPatient?: NewWalkInPatientDetails;
   /** "Patient agreed to receive SMS from the clinic" — off unless staff tick it. */
   smsConsent: boolean;
+  /**
+   * "Patient does not want SMS" — no receipts, visit summaries or invites.
+   * Can't be combined with smsConsent. Ticking smsConsent for someone who
+   * previously opted out clears the opt-out (they've changed their mind).
+   */
+  smsOptOut?: boolean;
 }
 
 export type WalkInSmsOutcome = 'sent' | 'failed' | 'not_requested';
@@ -238,6 +244,9 @@ async function sendWalkInInvite(patient: Patient, clinicName: string, staffId: s
  */
 export async function checkInWalkIn(input: WalkInCheckInInput): Promise<WalkInCheckInResult> {
   const phoneNumber = normalizeWalkInPhone(input.phone);
+  if (input.smsConsent && input.smsOptOut) {
+    throw new WalkInError('Choose either "agreed to receive SMS" or "does not want SMS", not both', 400);
+  }
   const reasonForVisit = input.reasonForVisit.trim();
   if (!reasonForVisit) throw new WalkInError('Enter the reason for the visit', 400);
 
@@ -302,6 +311,12 @@ export async function checkInWalkIn(input: WalkInCheckInInput): Promise<WalkInCh
         visitReason: reasonForVisit,
       },
     });
+    if (input.smsOptOut || (input.smsConsent && patient.smsOptOut)) {
+      await tx.patient.update({
+        where: { id: patient.id },
+        data: { smsOptOut: Boolean(input.smsOptOut), smsOptOutUpdatedAt: new Date() },
+      });
+    }
     if (input.smsConsent) {
       await tx.consent.create({
         data: { patientId: patient.id, type: 'SMS_CLINIC_MESSAGES', granted: true, channel: 'STAFF_ASSISTED', version: CONSENT_VERSION },
@@ -324,6 +339,7 @@ export async function checkInWalkIn(input: WalkInCheckInInput): Promise<WalkInCh
       newPatient: isNew,
       departmentId: department.id,
       smsConsent: input.smsConsent,
+      smsOptOut: Boolean(input.smsOptOut),
       appointmentId: appointment?.id ?? null,
     },
   });

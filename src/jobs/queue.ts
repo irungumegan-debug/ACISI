@@ -28,6 +28,15 @@ export const stkStatusCheckQueue = new Queue<StkStatusCheckJobData>('stk-status-
   connection: redisQueueConnection,
 });
 
+export interface ClinicStkStatusCheckJobData {
+  paymentId: string;
+}
+
+/** Checkout payments to the clinic's till — separate from ACISI's own stk-status-check queue. */
+export const clinicStkStatusCheckQueue = new Queue<ClinicStkStatusCheckJobData>('clinic-stk-status-check', {
+  connection: redisQueueConnection,
+});
+
 export const visitSummarySmsQueue = new Queue<VisitSummarySmsJobData>('visit-summary-sms', {
   connection: redisQueueConnection,
 });
@@ -80,4 +89,13 @@ export async function scheduleStkStatusCheck(data: StkStatusCheckJobData): Promi
     delay: 90_000,
     attempts: 1,
   });
+}
+
+/**
+ * Safety net for a clinic checkout STK push: if Daraja's callback hasn't
+ * resolved the payment within ~90s, ask Daraja directly, and mark it timed
+ * out if there's still no answer (see clinicStkStatusWorker).
+ */
+export async function scheduleClinicStkStatusCheck(data: ClinicStkStatusCheckJobData): Promise<void> {
+  await clinicStkStatusCheckQueue.add('check-clinic-stk', data, { delay: 90_000, attempts: 2, backoff: { type: 'fixed', delay: 15_000 } });
 }

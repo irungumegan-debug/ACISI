@@ -32,6 +32,23 @@ const envSchema = z.object({
   RESEND_API_KEY: z.string().optional(),
   EMAIL_FROM_ADDRESS: z.string().optional(),
 
+  // --- Clinic checkout payments via M-Pesa (optional; SANDBOX ONLY for now) ---
+  // A separate Daraja app from ACISI's own (MPESA_* above, which only ever
+  // collects the patient check-in fee). Used to send STK push prompts that
+  // pay the CLINIC — ACISI never holds clinic money. Credentials live only
+  // here, never in the database or code. If any are missing, "Request
+  // payment" is unavailable and staff use the manual M-Pesa code instead.
+  // Only 'sandbox' is accepted until per-clinic live credentials exist (see
+  // "Planned features" in CLAUDE.md).
+  CLINIC_MPESA_ENV: z.literal('sandbox').default('sandbox'),
+  CLINIC_DARAJA_CONSUMER_KEY: z.string().optional(),
+  CLINIC_DARAJA_CONSUMER_SECRET: z.string().optional(),
+  /** Daraja sandbox shortcode — Safaricom's test paybill is 174379. */
+  CLINIC_DARAJA_SHORTCODE: z.string().default('174379'),
+  CLINIC_DARAJA_PASSKEY: z.string().optional(),
+  /** Public HTTPS URL of /api/mpesa/clinic-callback. */
+  CLINIC_MPESA_CALLBACK_URL: z.string().url().optional(),
+
   // --- Owner account bootstrap (optional) ---
   // Lets the owner account for the /owner site be created from the host's
   // environment settings (e.g. Railway variables) instead of a shell. Read
