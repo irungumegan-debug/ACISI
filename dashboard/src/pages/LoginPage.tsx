@@ -16,7 +16,7 @@ export function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
 
   if (session) {
-    const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname ?? '/queue';
+    const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname ?? '/';
     return <Navigate to={from} replace />;
   }
 
@@ -27,7 +27,8 @@ export function LoginPage() {
     setSubmitting(true);
     try {
       await login(staffCode, pin);
-      navigate('/queue', { replace: true });
+      // '/' sends doctors to their own queue and everyone else to the front-desk queue.
+      navigate('/', { replace: true });
     } catch (err) {
       if (err instanceof ApiError && err.status === 429) {
         setLockedOut(true);

@@ -5,6 +5,7 @@ import { recordAuditEvent } from './auditService';
 import { generatePatientCode } from '../utils/idCodes';
 import { CONSENT_VERSION, HISTORY_ENCOUNTER_LIMIT } from '../config/constants';
 import { env } from '../config/env';
+import { InvalidPhoneNumberError, toE164 } from '../utils/phone';
 
 const MAX_CODE_GENERATION_ATTEMPTS = 10;
 
@@ -27,7 +28,16 @@ export async function findPatientByPhoneOrCode(identifier: string): Promise<Pati
   if (/^ACI-/i.test(trimmed)) {
     return findPatientByCode(trimmed.toUpperCase());
   }
-  return findPatientByPhone(trimmed).catch(() => null);
+  // Patients type their number however they're used to (0712…, 254712…,
+  // +254 712…); stored numbers are E.164, so normalise before looking up.
+  let phoneNumber: string;
+  try {
+    phoneNumber = toE164(trimmed);
+  } catch (err) {
+    if (err instanceof InvalidPhoneNumberError) return null;
+    throw err;
+  }
+  return findPatientByPhone(phoneNumber).catch(() => null);
 }
 
 async function generateUniquePatientCode(): Promise<string> {

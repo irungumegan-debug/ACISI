@@ -2,13 +2,14 @@ jest.mock('../../src/db/prisma', () => ({
   prisma: {
     encounter: { findMany: jest.fn() },
     consent: { findFirst: jest.fn() },
+    patient: { findFirst: jest.fn() },
   },
 }));
 
 jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
 
 import { prisma } from '../../src/db/prisma';
-import { getOwnVisitHistory, getScopedHistory } from '../../src/services/patientService';
+import { findPatientByPhoneOrCode, getOwnVisitHistory, getScopedHistory } from '../../src/services/patientService';
 
 const mockFindManyEncounters = prisma.encounter.findMany as jest.Mock;
 const mockFindFirstConsent = prisma.consent.findFirst as jest.Mock;
@@ -124,5 +125,29 @@ describe('getOwnVisitHistory', () => {
     const result = await getOwnVisitHistory('patient-1');
 
     expect(result[0]).toMatchObject({ diagnosis: null, prescription: null });
+  });
+});
+
+describe('findPatientByPhoneOrCode', () => {
+  const mockFindPatient = prisma.patient.findFirst as jest.Mock;
+
+  it.each(['0711000111', '0711 000 111', '254711000111', '+254711000111', '+254 711 000 111'])(
+    'finds the patient by phone typed as %s',
+    async (typed) => {
+      mockFindPatient.mockResolvedValue({ id: 'p-1' });
+      await expect(findPatientByPhoneOrCode(typed)).resolves.toEqual({ id: 'p-1' });
+      expect(mockFindPatient).toHaveBeenCalledWith({ where: { phoneNumber: '+254711000111', deletedAt: null } });
+    },
+  );
+
+  it('looks patient IDs up by code, case-insensitively', async () => {
+    mockFindPatient.mockResolvedValue({ id: 'p-1' });
+    await findPatientByPhoneOrCode(' aci-dbub ');
+    expect(mockFindPatient).toHaveBeenCalledWith({ where: { patientCode: 'ACI-DBUB', deletedAt: null } });
+  });
+
+  it('returns null for something that is neither a phone number nor a patient ID', async () => {
+    await expect(findPatientByPhoneOrCode('hello')).resolves.toBeNull();
+    expect(mockFindPatient).not.toHaveBeenCalled();
   });
 });
