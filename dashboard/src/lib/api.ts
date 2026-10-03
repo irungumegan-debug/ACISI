@@ -66,12 +66,20 @@ export interface QueueItem {
   /** Who checked the patient in at the front desk (walk-ins); null for remote check-ins. */
   checkedInByName: string | null;
   encounterStatus: EncounterStatus | null;
+  assignedDoctorId: string | null;
   assignedDoctorName: string | null;
   /** Clinic checkout bill status (null until a bill is made). */
   billStatus: BillStatus | null;
   billBalanceKes: number | null;
   paidAt: string | null;
   createdAt: string;
+}
+
+export interface DoctorOption {
+  id: string;
+  name: string;
+  waitingCount: number;
+  inConsultation: boolean;
 }
 
 export type CheckoutDeliveryMethod = 'sms' | 'sms_and_email';
@@ -403,6 +411,17 @@ export const api = {
   confirmCheckInPaid(checkInId: string) {
     return request<{ checkInId: string; status: CheckInStatus }>(`/checkins/${checkInId}/confirm-payment`, {
       method: 'POST',
+    });
+  },
+
+  getDoctorOptions(checkInId: string) {
+    return request<{ currentDoctorId: string | null; doctors: DoctorOption[] }>(`/checkins/${encodeURIComponent(checkInId)}/doctor-options`);
+  },
+
+  changeDoctor(checkInId: string, doctorId: string) {
+    return request<{ changed: boolean; doctorName: string }>(`/checkins/${encodeURIComponent(checkInId)}/doctor`, {
+      method: 'POST',
+      body: JSON.stringify({ doctorId }),
     });
   },
 

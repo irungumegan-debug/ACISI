@@ -139,6 +139,18 @@ Staff can instead tick "Patient does not want SMS": that is saved on the
 patient (also switchable on the patient page) and blocks the receipt and
 visit-summary SMS.
 
+### Doctor assignment and "Change doctor"
+
+When a patient checks in, ACISI picks a doctor automatically: only doctors in
+the chosen department who are in today (logged in, or marked in), preferring
+one who is free, then the shortest waiting line
+(`src/services/doctorAssignmentService.ts`). Front desk can move a patient
+who is still **waiting** to another doctor in the same department who is in
+today, using **Change doctor** on the queue card. Doctors can't, a patient
+already with a doctor can't be moved, every move is logged
+(`ENCOUNTER_DOCTOR_CHANGED`), and open queues, including the doctor's own,
+refresh straight away (`src/services/doctorReassignmentService.ts`).
+
 ### Checkout payments (front desk)
 
 After the doctor finishes, the queue shows **Bill & pay** for the visit.

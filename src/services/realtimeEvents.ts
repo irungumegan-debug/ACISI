@@ -60,6 +60,16 @@ export function publishWalkInCheckedIn(event: WalkInCheckedInEvent): void {
   emitter.emit(channel(event.clinicId), event);
 }
 
+export interface QueueChangedEvent {
+  checkInId: string;
+  clinicId: string;
+}
+
+/** Same live-queue channel, for anything else that changes the queue (e.g. front desk moving a patient to another doctor). */
+export function publishQueueChanged(event: QueueChangedEvent): void {
+  emitter.emit(channel(event.clinicId), event);
+}
+
 export function subscribeCheckInPaid(clinicId: string, listener: (event: CheckInPaidEvent) => void): () => void {
   emitter.on(channel(clinicId), listener);
   return () => emitter.off(channel(clinicId), listener);

@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Request, Response, Router } from 'express';
 import { z } from 'zod';
 import dayjs from 'dayjs';
 import { prisma } from '../db/prisma';
@@ -6,6 +6,7 @@ import { requireStaffSession, AuthenticatedRequest } from './auth';
 import { CheckInNotPendingError, confirmCheckInPaidManually } from '../services/checkInService';
 import { CheckoutDeliveryMethod, EncounterNotReadyForCheckoutError, checkoutEncounter } from '../services/encounterService';
 import { emailConfigured } from '../config/email';
+import { changeDoctor, listDoctorOptions, ReassignError } from '../services/doctorReassignmentService';
 
 export const checkinsRouter = Router();
 
@@ -34,6 +35,7 @@ checkinsRouter.get('/today', async (req, res) => {
         select: {
           id: true,
           status: true,
+          assignedDoctorId: true,
           assignedDoctor: { select: { name: true } },
           bill: { select: { status: true, totalKes: true, paidKes: true } },
         },
@@ -61,6 +63,7 @@ checkinsRouter.get('/today', async (req, res) => {
       source: c.source,
       checkedInByName: c.staff?.name ?? null,
       encounterStatus: c.encounter?.status ?? null,
+      assignedDoctorId: c.encounter?.assignedDoctorId ?? null,
       assignedDoctorName: c.encounter?.assignedDoctor?.name ?? null,
       // Clinic checkout bill (separate from the ACISI check-in fee above).
       billStatus: c.encounter?.bill?.status ?? null,
@@ -128,6 +131,52 @@ checkinsRouter.post('/:id/checkout', async (req, res) => {
   } catch (err) {
     if (err instanceof EncounterNotReadyForCheckoutError) {
       res.status(409).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
+});
+
+/** Moving patients between doctors is front-desk work — doctors are refused on the server. */
+function refuseDoctors(req: Request, res: Response): boolean {
+  if ((req as unknown as AuthenticatedRequest).dashboardSession.role === 'DOCTOR') {
+    res.status(403).json({ error: 'Only front-desk staff can change a patient’s doctor' });
+    return true;
+  }
+  return false;
+}
+
+/** Doctors a waiting patient can be moved to: same department, in today, with their current load. */
+checkinsRouter.get('/:id/doctor-options', async (req, res) => {
+  if (refuseDoctors(req, res)) return;
+  const { clinicId } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  try {
+    res.json(await listDoctorOptions(req.params.id as string, clinicId));
+  } catch (err) {
+    if (err instanceof ReassignError) {
+      res.status(err.status).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
+});
+
+const changeDoctorSchema = z.object({ doctorId: z.string().trim().min(1).max(64) });
+
+/** "Change doctor" on the front-desk queue — only while the patient is still waiting. Audited. */
+checkinsRouter.post('/:id/doctor', async (req, res) => {
+  if (refuseDoctors(req, res)) return;
+  const parsed = changeDoctorSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Choose a doctor' });
+    return;
+  }
+  const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  try {
+    res.json(await changeDoctor({ checkInId: req.params.id as string, clinicId, doctorId: parsed.data.doctorId, staffId }));
+  } catch (err) {
+    if (err instanceof ReassignError) {
+      res.status(err.status).json({ error: err.message });
       return;
     }
     throw err;
