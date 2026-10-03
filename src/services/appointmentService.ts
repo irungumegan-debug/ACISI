@@ -229,14 +229,14 @@ export interface DepartmentAppointmentListItem {
 }
 
 /** A doctor's own read-only view: today's CONFIRMED appointments in their department, soonest first. */
-export async function listDepartmentAppointmentsToday(clinicId: string, departmentId: string): Promise<DepartmentAppointmentListItem[]> {
+export async function listDepartmentAppointmentsToday(clinicId: string, departmentIds: string[]): Promise<DepartmentAppointmentListItem[]> {
   const startOfToday = dayjs().startOf('day').toDate();
   const startOfTomorrow = dayjs().add(1, 'day').startOf('day').toDate();
 
   const appointments = await prisma.appointment.findMany({
     where: {
       clinicId,
-      departmentId,
+      departmentId: { in: departmentIds },
       status: 'CONFIRMED',
       scheduledFor: { gte: startOfToday, lt: startOfTomorrow },
     },

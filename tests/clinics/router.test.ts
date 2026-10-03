@@ -8,6 +8,7 @@ jest.mock('../../src/services/clinicService', () => ({
 }));
 
 jest.mock('../../src/services/departmentService', () => ({
+  ...jest.requireActual('../../src/services/departmentService'),
   listActiveDepartments: jest.fn(),
 }));
 
@@ -93,9 +94,19 @@ describe('POST /clinics/register', () => {
       adminName: 'Jane Wanjiru',
       adminPhoneNumber: '0712345678',
       adminPin: '730194',
+      departments: [{ name: 'General' }, { name: 'Braces', code: 'brc', consultationFeeKes: 2000 }, { name: 'Invisalign' }],
     });
 
     expect(res.status).toBe(201);
+    expect(mockRegisterClinic).toHaveBeenCalledWith(
+      expect.objectContaining({
+        departments: [
+          { name: 'General', nameKey: 'general', code: 'GEN', consultationFeeKes: null },
+          { name: 'Braces', nameKey: 'braces', code: 'BRC', consultationFeeKes: 2000 },
+          { name: 'Invisalign', nameKey: 'invisalign', code: 'INV', consultationFeeKes: null },
+        ],
+      }),
+    );
     expect(res.body).toEqual({
       clinicName: 'Sunrise Family Clinic',
       inviteCode: 'SUNRISE-7F2K',
@@ -110,7 +121,41 @@ describe('POST /clinics/register', () => {
       adminName: 'Jane Wanjiru',
       adminPhoneNumber: '0712345678',
       adminPin: '730194',
+      departments: [{ name: 'General' }],
     });
     expect(res.status).toBe(409);
+  });
+
+  const VALID = { name: 'Bright Smile Dental', adminName: 'Lisa Jane', adminPhoneNumber: '0712345678', adminPin: '730194' };
+
+  it('requires at least one department', async () => {
+    for (const body of [VALID, { ...VALID, departments: [] }]) {
+      const res = await request(buildApp()).post('/clinics/register').send(body);
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('Add at least one department');
+    }
+    expect(mockRegisterClinic).not.toHaveBeenCalled();
+  });
+
+  it('rejects duplicate department names, ignoring case and spaces', async () => {
+    const res = await request(buildApp())
+      .post('/clinics/register')
+      .send({ ...VALID, departments: [{ name: 'Braces' }, { name: '  braces ' }] });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('listed twice');
+    expect(mockRegisterClinic).not.toHaveBeenCalled();
+  });
+
+  it('rejects duplicate or invalid short codes', async () => {
+    const dup = await request(buildApp())
+      .post('/clinics/register')
+      .send({ ...VALID, departments: [{ name: 'General', code: 'GEN' }, { name: 'Gynecology', code: 'gen' }] });
+    expect(dup.status).toBe(400);
+    expect(dup.body.error).toContain('GEN');
+    const bad = await request(buildApp())
+      .post('/clinics/register')
+      .send({ ...VALID, departments: [{ name: 'General', code: 'G' }] });
+    expect(bad.status).toBe(400);
+    expect(mockRegisterClinic).not.toHaveBeenCalled();
   });
 });

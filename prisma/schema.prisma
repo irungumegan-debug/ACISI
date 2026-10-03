@@ -146,26 +146,51 @@ model Clinic {
   @@map("clinics")
 }
 
-/// A clinical department at a clinic (e.g. "General", "Dental"). A doctor is
-/// assigned to exactly one; a CheckIn is routed to exactly one at check-in
-/// time. Every new clinic gets a default "General" department at
-/// registration (clinicService.registerClinic) so there's always somewhere
-/// for a check-in to route to.
+/// A clinical department at a clinic (e.g. "General", "Braces"), defined by
+/// the clinic itself at registration and in Settings. A CheckIn is routed to
+/// exactly one at check-in time; a doctor can work in several (see
+/// StaffDepartment). Departments with history are deactivated, never
+/// deleted, so past visits keep pointing at them.
 model Department {
-  id        String   @id @default(cuid())
-  clinicId  String
-  clinic    Clinic   @relation(fields: [clinicId], references: [id])
-  name      String
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
+  id                 String   @id @default(cuid())
+  clinicId           String
+  clinic             Clinic   @relation(fields: [clinicId], references: [id])
+  name               String
+  /// Lower-cased, trimmed name — enforces "no duplicate names" case-insensitively.
+  nameKey            String
+  /// Short code, unique within the clinic (e.g. "GEN", "BRC"); 2–6 upper-case
+  /// letters/digits. Stored for future USSD use.
+  code               String
+  /// Optional consultation fee for this department; null means "use the
+  /// clinic's default" (ClinicPaymentSettings.defaultConsultationFeeKes).
+  consultationFeeKes Int?
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @default(now()) @updatedAt
 
   staff        Staff[]
+  doctors      StaffDepartment[]
   checkIns     CheckIn[]
   appointments Appointment[]
 
-  @@unique([clinicId, name])
+  @@unique([clinicId, nameKey])
+  @@unique([clinicId, code])
   @@index([clinicId])
   @@map("departments")
+}
+
+/// Which departments a doctor works in (one or more). A doctor's queue,
+/// patient access, appointments and automatic assignment all go by these.
+model StaffDepartment {
+  staffId      String
+  staff        Staff      @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  createdAt    DateTime   @default(now())
+
+  @@id([staffId, departmentId])
+  @@index([departmentId])
+  @@map("staff_departments")
 }
 
 model Staff {
@@ -183,10 +208,13 @@ model Staff {
   /// bcrypt hash of a staff-chosen numeric PIN. Never store or log the raw PIN.
   pinHash            String
   role               StaffRole              @default(RECEPTIONIST)
-  /// The one department this staff member (a doctor, typically) works in —
-  /// null for roles that aren't department-scoped (front desk, admin).
+  /// A doctor's "home" department (the one they signed up to), kept in sync
+  /// as their first department for display. Scoping and assignment use
+  /// `departments` (StaffDepartment), which can hold several. Null for roles
+  /// that aren't department-scoped (front desk, admin).
   departmentId       String?
   department         Department?            @relation(fields: [departmentId], references: [id])
+  departments        StaffDepartment[]
   isActive           Boolean                @default(true)
   /// Set on every successful login (DOCTOR role only) — the automatic
   /// "in today" signal. Compared against presenceOverrideAt (whichever is

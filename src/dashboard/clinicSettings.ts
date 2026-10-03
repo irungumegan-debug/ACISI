@@ -2,6 +2,16 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db/prisma';
 import { requireStaffSession, requireAdmin, AuthenticatedRequest } from './auth';
+import {
+  createDepartment,
+  deleteDepartment,
+  DepartmentError,
+  listDepartmentsForAdmin,
+  MAX_DEPARTMENT_FEE_KES,
+  setDoctorDepartments,
+  suggestDepartmentCode,
+  updateDepartment,
+} from '../services/departmentService';
 import { regenerateInviteCode } from '../services/clinicService';
 import { recordAuditEvent } from '../services/auditService';
 import { getPaymentSettings } from '../services/billingService';
@@ -186,4 +196,110 @@ clinicSettingsRouter.put('/payment-settings', async (req, res) => {
     metadata: { ...data, updatedByStaffId: undefined },
   });
   res.json({ ok: true });
+});
+
+// --- Departments (admin) ------------------------------------------------------
+
+function sendDepartmentError(res: import('express').Response, err: unknown): void {
+  if (err instanceof DepartmentError) {
+    res.status(err.status).json({ error: err.message });
+    return;
+  }
+  throw err;
+}
+
+const feeSchema = z
+  .number({ invalid_type_error: 'The fee must be a number' })
+  .int('The fee must be a whole number of KES')
+  .min(0, "The fee can't be negative")
+  .max(MAX_DEPARTMENT_FEE_KES, 'That fee is too large')
+  .nullable();
+
+clinicSettingsRouter.get('/departments', async (req, res) => {
+  const { clinicId } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  res.json({ departments: await listDepartmentsForAdmin(clinicId) });
+});
+
+/** A suggested short code for a name, avoiding codes this clinic already uses. */
+clinicSettingsRouter.get('/departments/suggest-code', async (req, res) => {
+  const { clinicId } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  const name = typeof req.query.name === 'string' ? req.query.name : '';
+  const taken = (await listDepartmentsForAdmin(clinicId)).map((d) => d.code);
+  try {
+    res.json({ code: suggestDepartmentCode(name, taken) });
+  } catch (err) {
+    sendDepartmentError(res, err);
+  }
+});
+
+const createDepartmentSchema = z.object({
+  name: z.string().max(100),
+  code: z.string().max(10).nullish(),
+  consultationFeeKes: feeSchema.optional(),
+});
+
+clinicSettingsRouter.post('/departments', async (req, res) => {
+  const parsed = createDepartmentSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid department' });
+    return;
+  }
+  const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  try {
+    res.status(201).json(await createDepartment({ ...parsed.data, clinicId, staffId }));
+  } catch (err) {
+    sendDepartmentError(res, err);
+  }
+});
+
+const updateDepartmentSchema = z
+  .object({
+    name: z.string().max(100).optional(),
+    code: z.string().max(10).optional(),
+    consultationFeeKes: feeSchema.optional(),
+    isActive: z.boolean().optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, 'Nothing to change');
+
+clinicSettingsRouter.patch('/departments/:id', async (req, res) => {
+  const parsed = updateDepartmentSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid change' });
+    return;
+  }
+  const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  try {
+    res.json(await updateDepartment({ departmentId: req.params.id as string, clinicId, staffId, patch: parsed.data }));
+  } catch (err) {
+    sendDepartmentError(res, err);
+  }
+});
+
+/** Only for a department that has never been used; anything with history is deactivated instead. */
+clinicSettingsRouter.delete('/departments/:id', async (req, res) => {
+  const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  try {
+    await deleteDepartment({ departmentId: req.params.id as string, clinicId, staffId });
+    res.status(204).end();
+  } catch (err) {
+    sendDepartmentError(res, err);
+  }
+});
+
+const doctorDepartmentsSchema = z.object({ departmentIds: z.array(z.string().min(1)).min(1, 'A doctor needs at least one department').max(50) });
+
+/** Which departments a doctor works in. Applies immediately — doctors' departments are read on every request. */
+clinicSettingsRouter.put('/staff/:id/departments', async (req, res) => {
+  const parsed = doctorDepartmentsSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid departments' });
+    return;
+  }
+  const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  try {
+    const departments = await setDoctorDepartments({ doctorId: req.params.id as string, clinicId, departmentIds: parsed.data.departmentIds, staffId });
+    res.json({ departments });
+  } catch (err) {
+    sendDepartmentError(res, err);
+  }
 });

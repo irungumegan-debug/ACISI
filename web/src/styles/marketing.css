@@ -2108,3 +2108,157 @@ a.contact-card:hover {
     transform: none;
   }
 }
+
+/* ---------- clinic registration: departments step ---------- */
+.step-pill {
+  display: inline-block;
+  margin: 0 0 10px;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  border: 1px solid rgba(230, 192, 104, 0.4);
+  color: var(--gold-300);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.field-label-dark {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--on-navy);
+}
+.dept-count {
+  padding: 1px 9px;
+  border-radius: var(--radius-pill);
+  background: rgba(230, 192, 104, 0.15);
+  color: var(--gold-300);
+  font-size: 12.5px;
+}
+.dept-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 22px;
+}
+.dept-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 42px;
+  padding: 8px 14px;
+  border-radius: var(--radius-pill);
+  border: 1px solid rgba(173, 186, 222, 0.28);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--on-navy);
+  font: 500 14px var(--font-body);
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast),
+    background-color var(--duration-fast);
+}
+.dept-chip:hover {
+  border-color: var(--gold-400);
+}
+.dept-chip.is-on {
+  border-color: var(--gold-400);
+  background: rgba(230, 192, 104, 0.14);
+  color: var(--gold-300);
+}
+.dept-add-row {
+  display: flex;
+  gap: 8px;
+}
+.dept-add-row input {
+  flex: 1;
+  min-width: 0;
+}
+.dept-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 48px;
+  padding: 0 16px;
+  border: 1px solid var(--gold-400);
+  border-radius: var(--radius-md);
+  background: rgba(230, 192, 104, 0.12);
+  color: var(--gold-300);
+  font: 600 14px var(--font-body);
+  cursor: pointer;
+}
+.dept-hint-error {
+  color: #fecaca;
+}
+.dept-empty {
+  margin: 0 0 16px;
+  padding: 14px;
+  border-radius: var(--radius-md);
+  border: 1px dashed rgba(173, 186, 222, 0.3);
+  color: var(--on-navy-muted);
+  font-size: 14px;
+  text-align: center;
+}
+.dept-list {
+  list-style: none;
+  margin: 0 0 18px;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.dept-row {
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--navy-line);
+  background: rgba(7, 11, 28, 0.4);
+}
+.dept-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.dept-row-name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: #fff;
+}
+.dept-remove {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--on-navy-muted);
+  cursor: pointer;
+}
+.dept-remove:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #fecaca;
+}
+.dept-row-fields {
+  display: grid;
+  grid-template-columns: 7rem 1fr;
+  gap: 10px;
+}
+.auth-form .dept-row-fields label {
+  margin: 0;
+  font-size: 12.5px;
+}
+.dept-row-fields label span {
+  display: block;
+  margin-bottom: 4px;
+}
+.auth-form .dept-row-fields input {
+  min-height: 42px;
+  padding: 8px 10px;
+  font-size: 15px;
+}
+.dept-row-fields label:first-child input {
+  font-family: var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}

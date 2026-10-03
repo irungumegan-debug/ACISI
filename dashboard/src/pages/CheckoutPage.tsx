@@ -80,12 +80,21 @@ function toDraft(items: BillItem[]): DraftLine[] {
 
 // --- Bill editor ---------------------------------------------------------------
 
+/** A new bill starts with the department's own consultation fee, else the clinic default — always editable. */
+function startingConsultationLine(view: CheckoutView): DraftLine {
+  const deptFee = view.department.consultationFeeKes;
+  return deptFee !== null
+    ? { kind: 'CONSULTATION', description: `Consultation · ${view.department.name}`, amount: String(deptFee) }
+    : { kind: 'CONSULTATION', description: 'Consultation', amount: String(view.settings.defaultConsultationFeeKes || '') };
+}
+
 function BillEditor({ view, onSaved, onCancel }: { view: CheckoutView; onSaved: (v: CheckoutView) => void; onCancel?: () => void }) {
-  const [lines, setLines] = useState<DraftLine[]>(() =>
-    view.bill
-      ? toDraft(view.bill.items)
-      : [{ kind: 'CONSULTATION', description: 'Consultation', amount: String(view.settings.defaultConsultationFeeKes || '') }],
-  );
+  const [lines, setLines] = useState<DraftLine[]>(() => (view.bill ? toDraft(view.bill.items) : [startingConsultationLine(view)]));
+  const feeSource = view.bill
+    ? null
+    : view.department.consultationFeeKes !== null
+      ? `Consultation fee for ${view.department.name}. You can change it for this visit.`
+      : 'Clinic default consultation fee. You can change it for this visit.';
   const [discount, setDiscount] = useState(view.bill?.discountKes ? String(view.bill.discountKes) : '');
   const [discountReason, setDiscountReason] = useState(view.bill?.discountReason ?? '');
   const [saving, setSaving] = useState(false);
@@ -127,6 +136,7 @@ function BillEditor({ view, onSaved, onCancel }: { view: CheckoutView; onSaved: 
 
   return (
     <form onSubmit={(e) => void save(e)} className="space-y-4">
+      {feeSource && <p className="text-xs text-ink-500">{feeSource}</p>}
       <ul className="space-y-3">
         {lines.map((line, i) => (
           <li key={i} className="grid grid-cols-[1fr_auto] gap-2 rounded-2xl border border-slate-200 bg-cream-50 p-3 sm:grid-cols-[10rem_1fr_8.5rem_auto] sm:items-center">

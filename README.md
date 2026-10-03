@@ -139,6 +139,25 @@ Staff can instead tick "Patient does not want SMS": that is saved on the
 patient (also switchable on the patient page) and blocks the receipt and
 visit-summary SMS.
 
+### Departments
+
+Each clinic defines its own departments. The clinic admin picks them while
+registering (common ones to tick, or their own; at least one, no duplicate
+names). Each department has a name, a short code (2–6 capital letters or
+digits, unique in the clinic, kept for future USSD check-in), an
+active/inactive state, and an optional consultation fee. Under **Settings →
+Departments** the admin can add, rename, change the code or fee, and
+deactivate or reactivate. A department that has visits can only be
+deactivated, never deleted. Inactive departments disappear from patient
+check-in and walk-in, but past visits keep them.
+
+Doctors work in one or more departments (set under **Settings → Staff &
+doctors**) and only see those departments' patients, everywhere in the
+console. The queue can be filtered and grouped by department. Checkout
+pre-fills the department's fee, falling back to the clinic default. When a
+clinic has more than one department, the daily summary totals money by
+department. Logic: `src/services/departmentService.ts`.
+
 ### Doctor assignment and "Change doctor"
 
 When a patient checks in, ACISI picks a doctor automatically: only doctors in

@@ -20,7 +20,7 @@ import { getDoctorPresenceStatus } from './staffService';
  */
 export async function assignDoctorForCheckIn(clinicId: string, departmentId: string): Promise<string | null> {
   const allDoctors = await prisma.staff.findMany({
-    where: { clinicId, departmentId, role: 'DOCTOR', isActive: true },
+    where: { clinicId, role: 'DOCTOR', isActive: true, departments: { some: { departmentId } } },
     orderBy: { staffCode: 'asc' },
     select: { id: true, lastLoginAt: true, presenceOverride: true, presenceOverrideAt: true },
   });

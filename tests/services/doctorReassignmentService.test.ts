@@ -23,7 +23,7 @@ const YESTERDAY = new Date(Date.now() - 36 * 60 * 60 * 1000);
 const doctor = (id: string, name: string, overrides: Record<string, unknown> = {}) => ({
   id,
   name,
-  departmentId: 'dept-general',
+  departments: [{ departmentId: 'dept-general' }],
   lastLoginAt: TODAY,
   presenceOverride: null,
   presenceOverrideAt: null,
@@ -55,7 +55,7 @@ describe('listDoctorOptions', () => {
     const res = await listDoctorOptions('ci-1', 'clinic-A');
 
     expect(p.staff.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { clinicId: 'clinic-A', departmentId: 'dept-general', role: 'DOCTOR', isActive: true } }),
+      expect.objectContaining({ where: { clinicId: 'clinic-A', role: 'DOCTOR', isActive: true, departments: { some: { departmentId: 'dept-general' } } } }),
     );
     expect(res).toEqual({
       currentDoctorId: 'doc-a',
@@ -98,8 +98,8 @@ describe('changeDoctor', () => {
     expect(recordAuditEvent).not.toHaveBeenCalled();
   });
 
-  it('refuses a doctor from another department, or not found in this clinic', async () => {
-    p.staff.findFirst.mockResolvedValueOnce(doctor('doc-b', 'Dr. Lisa', { departmentId: 'dept-dental' }));
+  it("refuses a doctor who doesn't work in the patient's department, or isn't at this clinic", async () => {
+    p.staff.findFirst.mockResolvedValueOnce(doctor('doc-b', 'Dr. Lisa', { departments: [{ departmentId: 'dept-dental' }] }));
     await expect(changeDoctor(input)).rejects.toMatchObject({ status: 409, message: expect.stringContaining('department') });
     p.staff.findFirst.mockResolvedValueOnce(null);
     await expect(changeDoctor(input)).rejects.toMatchObject({ status: 409 });
@@ -127,5 +127,12 @@ describe('changeDoctor', () => {
     await expect(changeDoctor(input)).rejects.toMatchObject({ status: 409, message: expect.stringContaining('just gone in') });
     expect(recordAuditEvent).not.toHaveBeenCalled();
     expect(publishQueueChanged).not.toHaveBeenCalled();
+  });
+});
+
+describe('doctors in several departments', () => {
+  it('can take a patient from any of their departments', async () => {
+    p.staff.findFirst.mockResolvedValue(doctor('doc-b', 'Dr. Lisa', { departments: [{ departmentId: 'dept-braces' }, { departmentId: 'dept-general' }] }));
+    await expect(changeDoctor(input)).resolves.toEqual({ changed: true, doctorName: 'Dr. Lisa' });
   });
 });

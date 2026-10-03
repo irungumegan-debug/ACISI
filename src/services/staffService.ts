@@ -84,6 +84,8 @@ export async function registerStaffViaInviteCode(input: RegisterStaffInput): Pro
       pinHash,
       role: input.role,
       departmentId: input.role === 'DOCTOR' ? input.departmentId : undefined,
+      // A doctor starts in the department they signed up to; the admin can add more in Settings.
+      departments: input.role === 'DOCTOR' && input.departmentId ? { create: [{ departmentId: input.departmentId }] } : undefined,
     },
   });
 
@@ -272,6 +274,8 @@ export interface ClinicStaffListItem {
   name: string;
   role: StaffRole;
   departmentName: string | null;
+  /** Every department a doctor works in (empty for other roles). */
+  departments: { id: string; name: string }[];
   isActive: boolean;
   /** null for non-doctor roles — presence is a doctor-only concept. */
   presence: DoctorPresenceStatus | null;
@@ -282,7 +286,10 @@ export async function listClinicStaff(clinicId: string): Promise<ClinicStaffList
   const staff = await prisma.staff.findMany({
     where: { clinicId },
     orderBy: { name: 'asc' },
-    include: { department: { select: { name: true } } },
+    include: {
+      department: { select: { name: true } },
+      departments: { select: { department: { select: { id: true, name: true } } }, orderBy: { department: { name: 'asc' } } },
+    },
   });
 
   return staff.map((s) => ({
@@ -290,7 +297,8 @@ export async function listClinicStaff(clinicId: string): Promise<ClinicStaffList
     staffCode: s.staffCode,
     name: s.name,
     role: s.role,
-    departmentName: s.department?.name ?? null,
+    departmentName: s.departments.length ? s.departments.map((d) => d.department.name).join(', ') : (s.department?.name ?? null),
+    departments: s.departments.map((d) => d.department),
     isActive: s.isActive,
     presence: s.role === 'DOCTOR' ? getDoctorPresenceStatus(s) : null,
   }));

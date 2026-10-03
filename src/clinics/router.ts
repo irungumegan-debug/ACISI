@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { InvalidPhoneNumberError, toE164 } from '../utils/phone';
 import { pinPolicyError } from '../utils/pinPolicy';
 import { findClinicByInviteCode, listActiveClinics, registerClinic } from '../services/clinicService';
-import { listActiveDepartments } from '../services/departmentService';
+import { DepartmentError, listActiveDepartments, prepareDepartmentList } from '../services/departmentService';
 
 export const clinicsRouter = Router();
 
@@ -42,6 +42,17 @@ const registerSchema = z.object({
   adminName: z.string().min(1),
   adminPhoneNumber: z.string().min(1),
   adminPin: z.string().min(1),
+  /** The clinic's own departments — at least one (see departmentService.prepareDepartmentList). */
+  departments: z
+    .array(
+      z.object({
+        name: z.string().max(100),
+        code: z.string().max(10).nullish(),
+        consultationFeeKes: z.number().int().min(0).nullish(),
+      }),
+    )
+    .min(1, 'Add at least one department')
+    .max(50),
 });
 
 /**
@@ -52,7 +63,8 @@ const registerSchema = z.object({
 clinicsRouter.post('/register', async (req, res) => {
   const parsed = registerSchema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: 'Please fill in all required fields with a valid PIN' });
+    const departmentsMissing = parsed.error.issues.some((i) => i.path[0] === 'departments');
+    res.status(400).json({ error: departmentsMissing ? 'Add at least one department' : 'Please fill in all required fields with a valid PIN' });
     return;
   }
 
@@ -73,7 +85,19 @@ clinicsRouter.post('/register', async (req, res) => {
     return;
   }
 
+  let departments;
+  try {
+    departments = prepareDepartmentList(parsed.data.departments);
+  } catch (err) {
+    if (err instanceof DepartmentError) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
+
   const result = await registerClinic({
+    departments,
     name: parsed.data.name,
     county: parsed.data.county,
     adminName: parsed.data.adminName,

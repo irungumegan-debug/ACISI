@@ -61,7 +61,14 @@ export const api = {
     return request<{ clinics: ClinicListItem[] }>('/clinics');
   },
 
-  registerClinic(input: { name: string; county?: string; adminName: string; adminPhoneNumber: string; adminPin: string }) {
+  registerClinic(input: {
+    name: string;
+    county?: string;
+    adminName: string;
+    adminPhoneNumber: string;
+    adminPin: string;
+    departments: { name: string; code: string; consultationFeeKes: number | null }[];
+  }) {
     return request<{ clinicName: string; inviteCode: string; staffCode: string }>('/clinics/register', {
       method: 'POST',
       body: JSON.stringify(input),

@@ -3,7 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 import { usePatientAuth } from '../context/PatientAuthContext';
 import { AuthShell, RoleCard } from '../components/AuthShell';
-import { Check } from 'lucide-react';
+import { Check, Plus, X } from 'lucide-react';
+import { CODE_PATTERN, cleanName, nameKey, SUGGESTED_DEPARTMENTS, suggestCode } from '../lib/departments';
 
 type Step =
   | { kind: 'picker' }
@@ -283,21 +284,46 @@ function StaffSignupForm({
   );
 }
 
+interface DraftDepartment {
+  name: string;
+  code: string;
+  fee: string;
+}
+
 function ClinicSignupForm({ onBack, onDone }: { onBack: () => void; onDone: (inviteCode: string, staffCode: string) => void }) {
+  const [step, setStep] = useState<'details' | 'departments'>('details');
   const [name, setName] = useState('');
   const [county, setCounty] = useState('');
   const [adminName, setAdminName] = useState('');
   const [adminPhoneNumber, setAdminPhoneNumber] = useState('');
   const [adminPin, setAdminPin] = useState('');
+  const [departments, setDepartments] = useState<DraftDepartment[]>([{ name: 'General', code: 'GEN', fee: '' }]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: FormEvent): Promise<void> {
     e.preventDefault();
+    if (step === 'details') {
+      setError(null);
+      setStep('departments');
+      return;
+    }
+    const problem = departmentsProblem(departments);
+    if (problem) {
+      setError(problem);
+      return;
+    }
     setError(null);
     setSubmitting(true);
     try {
-      const res = await api.registerClinic({ name, county: county || undefined, adminName, adminPhoneNumber, adminPin });
+      const res = await api.registerClinic({
+        name,
+        county: county || undefined,
+        adminName,
+        adminPhoneNumber,
+        adminPin,
+        departments: departments.map((d) => ({ name: cleanName(d.name), code: d.code.trim().toUpperCase(), consultationFeeKes: d.fee.trim() ? Number(d.fee.trim()) : null })),
+      });
       onDone(res.inviteCode, res.staffCode);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.');
@@ -308,42 +334,184 @@ function ClinicSignupForm({ onBack, onDone }: { onBack: () => void; onDone: (inv
 
   return (
     <form className="auth-form" onSubmit={(e) => void handleSubmit(e)}>
-      <button type="button" className="auth-back" onClick={onBack}>
+      <button
+        type="button"
+        className="auth-back"
+        onClick={() => {
+          setError(null);
+          if (step === 'departments') setStep('details');
+          else onBack();
+        }}
+      >
         &larr; Back
       </button>
-      <h1 className="auth-h1">Register your clinic</h1>
-      <p className="auth-sub">
-        You&apos;ll become this clinic&apos;s admin on ACISI, and can invite your doctors and front-desk staff right
-        after.
-      </p>
+      <p className="step-pill">Step {step === 'details' ? 1 : 2} of 2</p>
+      {step === 'details' ? (
+        <>
+          <h1 className="auth-h1">Register your clinic</h1>
+          <p className="auth-sub">
+            You&apos;ll become this clinic&apos;s admin on ACISI, and can invite your doctors and front-desk staff right
+            after.
+          </p>
 
-      <div className="field">
-        <label>Clinic name</label>
-        <input type="text" required placeholder="Sunrise Family Clinic" value={name} onChange={(e) => setName(e.target.value)} />
-      </div>
-      <div className="field">
-        <label>Clinic location</label>
-        <input type="text" placeholder="Kenyatta Market, Nairobi" value={county} onChange={(e) => setCounty(e.target.value)} />
-      </div>
-      <div className="field">
-        <label>Your full name</label>
-        <input type="text" required placeholder="You'll be the clinic admin" value={adminName} onChange={(e) => setAdminName(e.target.value)} />
-      </div>
-      <div className="field">
-        <label>Phone number</label>
-        <input type="tel" required placeholder="07XX XXX XXX" value={adminPhoneNumber} onChange={(e) => setAdminPhoneNumber(e.target.value)} />
-      </div>
-      <div className="field">
-        <label>Create a PIN</label>
-        <input type="password" inputMode="numeric" required minLength={6} maxLength={6} pattern="\d{6}" placeholder="6-digit PIN" value={adminPin} onChange={(e) => setAdminPin(e.target.value)} />
-        <p className="field-hint">6 digits. Avoid birthdays, your phone number, and easy patterns like 123456 or 111111.</p>
-      </div>
+          <div className="field">
+            <label>Clinic name</label>
+            <input type="text" required placeholder="Sunrise Family Clinic" value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="field">
+            <label>Clinic location</label>
+            <input type="text" placeholder="Kenyatta Market, Nairobi" value={county} onChange={(e) => setCounty(e.target.value)} />
+          </div>
+          <div className="field">
+            <label>Your full name</label>
+            <input type="text" required placeholder="You'll be the clinic admin" value={adminName} onChange={(e) => setAdminName(e.target.value)} />
+          </div>
+          <div className="field">
+            <label>Phone number</label>
+            <input type="tel" required placeholder="07XX XXX XXX" value={adminPhoneNumber} onChange={(e) => setAdminPhoneNumber(e.target.value)} />
+          </div>
+          <div className="field">
+            <label>Create a PIN</label>
+            <input type="password" inputMode="numeric" required minLength={6} maxLength={6} pattern="\d{6}" placeholder="6-digit PIN" value={adminPin} onChange={(e) => setAdminPin(e.target.value)} />
+            <p className="field-hint">6 digits. Avoid birthdays, your phone number, and easy patterns like 123456 or 111111.</p>
+          </div>
 
-      {error && <p className="auth-error">{error}</p>}
-      <button className="auth-submit" type="submit" disabled={submitting}>
-        {submitting ? 'Registering…' : 'Register clinic'}
-      </button>
+          {error && <p className="auth-error">{error}</p>}
+          <button className="auth-submit" type="submit">
+            Continue to departments
+          </button>
+        </>
+      ) : (
+        <>
+          <h1 className="auth-h1">Your departments</h1>
+          <p className="auth-sub">
+            Patients pick one when they check in, and doctors only see their own departments&apos; patients. You can change
+            these any time in Settings.
+          </p>
+          <DepartmentPicker departments={departments} onChange={setDepartments} />
+          {error && <p className="auth-error">{error}</p>}
+          <button className="auth-submit" type="submit" disabled={submitting}>
+            {submitting ? 'Registering…' : 'Register clinic'}
+          </button>
+        </>
+      )}
     </form>
+  );
+}
+
+/** What's wrong with the department list, if anything (the server checks the same rules). */
+function departmentsProblem(list: DraftDepartment[]): string | null {
+  if (list.length === 0) return 'Add at least one department.';
+  const names = new Set<string>();
+  const codes = new Set<string>();
+  for (const d of list) {
+    const n = cleanName(d.name);
+    if (n.length < 2) return 'Each department needs a name of at least 2 characters.';
+    if (names.has(nameKey(n))) return `"${n}" is listed twice.`;
+    names.add(nameKey(n));
+    const code = d.code.trim().toUpperCase();
+    if (!CODE_PATTERN.test(code)) return `The short code for ${n} must be 2–6 capital letters or numbers, e.g. GEN.`;
+    if (codes.has(code)) return `The short code ${code} is used twice.`;
+    codes.add(code);
+    if (d.fee.trim() && !/^\d{1,7}$/.test(d.fee.trim())) return `The fee for ${n} must be a whole number of KES.`;
+  }
+  return null;
+}
+
+function DepartmentPicker({ departments, onChange }: { departments: DraftDepartment[]; onChange: (next: DraftDepartment[]) => void }) {
+  const [custom, setCustom] = useState('');
+  const [customError, setCustomError] = useState<string | null>(null);
+  const has = (n: string) => departments.some((d) => nameKey(d.name) === nameKey(n));
+
+  function add(rawName: string): boolean {
+    const n = cleanName(rawName);
+    if (n.length < 2) {
+      setCustomError('Type a department name (at least 2 characters).');
+      return false;
+    }
+    if (has(n)) {
+      setCustomError(`"${n}" is already in your list.`);
+      return false;
+    }
+    setCustomError(null);
+    onChange([...departments, { name: n, code: suggestCode(n, departments.map((d) => d.code.toUpperCase())), fee: '' }]);
+    return true;
+  }
+
+  function toggle(n: string) {
+    if (has(n)) onChange(departments.filter((d) => nameKey(d.name) !== nameKey(n)));
+    else add(n);
+  }
+
+  function update(i: number, patch: Partial<DraftDepartment>) {
+    onChange(departments.map((d, j) => (j === i ? { ...d, ...patch } : d)));
+  }
+
+  return (
+    <div className="dept-picker">
+      <p className="field-label-dark">Tap to add common departments</p>
+      <div className="dept-suggestions" role="group" aria-label="Suggested departments">
+        {SUGGESTED_DEPARTMENTS.map((n) => (
+          <button key={n} type="button" className={`dept-chip${has(n) ? ' is-on' : ''}`} aria-pressed={has(n)} onClick={() => toggle(n)}>
+            {has(n) ? <Check size={15} aria-hidden /> : <Plus size={15} aria-hidden />} {n}
+          </button>
+        ))}
+      </div>
+
+      <div className="field dept-add">
+        <label htmlFor="dept-custom">Add your own department</label>
+        <div className="dept-add-row">
+          <input
+            id="dept-custom"
+            type="text"
+            maxLength={60}
+            placeholder="e.g. Braces, Invisalign, Oral Surgery"
+            value={custom}
+            onChange={(e) => setCustom(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                if (add(custom)) setCustom('');
+              }
+            }}
+          />
+          <button type="button" className="dept-add-btn" onClick={() => add(custom) && setCustom('')}>
+            <Plus size={16} aria-hidden /> Add
+          </button>
+        </div>
+        {customError && <p className="field-hint dept-hint-error">{customError}</p>}
+      </div>
+
+      <p className="field-label-dark">
+        Your departments <span className="dept-count">{departments.length}</span>
+      </p>
+      {departments.length === 0 ? (
+        <p className="dept-empty">Add at least one department.</p>
+      ) : (
+        <ul className="dept-list">
+          {departments.map((d, i) => (
+            <li key={`${nameKey(d.name)}-${i}`} className="dept-row">
+              <div className="dept-row-head">
+                <span className="dept-row-name">{d.name}</span>
+                <button type="button" className="dept-remove" aria-label={`Remove ${d.name}`} onClick={() => onChange(departments.filter((_, j) => j !== i))}>
+                  <X size={16} aria-hidden />
+                </button>
+              </div>
+              <div className="dept-row-fields">
+                <label>
+                  <span>Short code</span>
+                  <input value={d.code} maxLength={6} onChange={(e) => update(i, { code: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '') })} />
+                </label>
+                <label>
+                  <span>Consultation fee (KES, optional)</span>
+                  <input inputMode="numeric" placeholder="Clinic default" value={d.fee} onChange={(e) => update(i, { fee: e.target.value.replace(/[^\d]/g, '') })} />
+                </label>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 

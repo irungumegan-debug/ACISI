@@ -55,17 +55,27 @@ describe('getDoctorQueue', () => {
   it('queries scoped to the given clinic and department, only WAITING/IN_CONSULTATION, and only this doctor\'s own or unassigned encounters', async () => {
     mockFindMany.mockResolvedValue([]);
 
-    await getDoctorQueue('clinic-A', 'dept-1', 'staff-1');
+    await getDoctorQueue('clinic-A', ['dept-1'], 'staff-1');
 
     expect(mockFindMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
           clinicId: 'clinic-A',
           status: { in: ['WAITING', 'IN_CONSULTATION'] },
-          checkIn: { departmentId: 'dept-1' },
+          checkIn: { departmentId: { in: ['dept-1'] } },
           OR: [{ assignedDoctorId: 'staff-1' }, { assignedDoctorId: null }],
         },
       }),
+    );
+  });
+});
+
+describe('doctors in several departments', () => {
+  it("covers every department the doctor works in, and only those", async () => {
+    mockFindMany.mockResolvedValue([]);
+    await getDoctorQueue('clinic-A', ['dept-general', 'dept-braces'], 'staff-1');
+    expect(mockFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ checkIn: { departmentId: { in: ['dept-general', 'dept-braces'] } } }) }),
     );
   });
 });
@@ -74,7 +84,7 @@ describe('getEncounterForDoctor (queue-scoping guarantee)', () => {
   it('throws EncounterNotAccessibleError when the encounter does not match this clinic+department — never a generic lookup', async () => {
     mockFindFirst.mockResolvedValue(null); // simulates a real encounter that belongs to a different clinic/department
 
-    await expect(getEncounterForDoctor('enc-other-clinic', 'clinic-A', 'dept-1', 'staff-1')).rejects.toThrow(
+    await expect(getEncounterForDoctor('enc-other-clinic', 'clinic-A', ['dept-1'], 'staff-1')).rejects.toThrow(
       EncounterNotAccessibleError,
     );
     expect(mockRecordAudit).not.toHaveBeenCalled();
@@ -91,7 +101,7 @@ describe('getEncounterForDoctor (queue-scoping guarantee)', () => {
     });
     mockGetScopedHistory.mockResolvedValue({ history: [], hasHiddenHistoryElsewhere: true });
 
-    const detail = await getEncounterForDoctor('enc-1', 'clinic-A', 'dept-1', 'staff-1');
+    const detail = await getEncounterForDoctor('enc-1', 'clinic-A', ['dept-1'], 'staff-1');
 
     expect(mockUpdate).toHaveBeenCalledWith({ where: { id: 'enc-1' }, data: { status: 'IN_CONSULTATION' } });
     expect(mockRecordAudit).toHaveBeenCalledWith(
@@ -107,7 +117,7 @@ describe('getEncounterForDoctor (queue-scoping guarantee)', () => {
     mockFindPatient.mockResolvedValue({ id: 'patient-1', patientCode: 'ACI-1042', firstName: 'Jane', lastName: 'W', phoneNumber: '+254712345678' });
     mockGetScopedHistory.mockResolvedValue({ history: [], hasHiddenHistoryElsewhere: false });
 
-    await getEncounterForDoctor('enc-1', 'clinic-A', 'dept-1', 'staff-1');
+    await getEncounterForDoctor('enc-1', 'clinic-A', ['dept-1'], 'staff-1');
 
     expect(mockUpdate).not.toHaveBeenCalled();
   });
@@ -121,7 +131,7 @@ describe('submitConsultation', () => {
       submitConsultation({
         encounterId: 'enc-1',
         clinicId: 'clinic-A',
-        departmentId: 'dept-1',
+        departmentIds: ['dept-1'],
         staffId: 'staff-1',
         diagnosis: 'Flu',
         prescription: 'Paracetamol',
@@ -138,7 +148,7 @@ describe('submitConsultation', () => {
       submitConsultation({
         encounterId: 'enc-1',
         clinicId: 'clinic-A',
-        departmentId: 'dept-1',
+        departmentIds: ['dept-1'],
         staffId: 'staff-1',
         diagnosis: 'Flu',
         prescription: 'Paracetamol',
@@ -157,7 +167,7 @@ describe('submitConsultation', () => {
       submitConsultation({
         encounterId: 'enc-1',
         clinicId: 'clinic-A',
-        departmentId: 'dept-1',
+        departmentIds: ['dept-1'],
         staffId: 'staff-1',
         diagnosis: 'Flu',
         prescription: 'Paracetamol',
@@ -179,7 +189,7 @@ describe('submitConsultation', () => {
       submitConsultation({
         encounterId: 'enc-1',
         clinicId: 'clinic-A',
-        departmentId: 'dept-1',
+        departmentIds: ['dept-1'],
         staffId: 'staff-1',
         diagnosis: 'Flu',
         prescription: 'Paracetamol',
@@ -199,7 +209,7 @@ describe('submitConsultation', () => {
     await submitConsultation({
       encounterId: 'enc-1',
       clinicId: 'clinic-A',
-      departmentId: 'dept-1',
+      departmentIds: ['dept-1'],
       staffId: 'staff-1',
       diagnosis: 'Flu',
       prescription: 'Paracetamol',

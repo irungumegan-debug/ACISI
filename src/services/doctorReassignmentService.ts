@@ -48,7 +48,7 @@ export async function listDoctorOptions(
 ): Promise<{ currentDoctorId: string | null; doctors: DoctorOption[] }> {
   const encounter = await findWaitingVisit(checkInId, clinicId);
   const staff = await prisma.staff.findMany({
-    where: { clinicId, departmentId: encounter.checkIn.departmentId, role: 'DOCTOR', isActive: true },
+    where: { clinicId, role: 'DOCTOR', isActive: true, departments: { some: { departmentId: encounter.checkIn.departmentId } } },
     orderBy: { name: 'asc' },
     select: { id: true, name: true, lastLoginAt: true, presenceOverride: true, presenceOverrideAt: true },
   });
@@ -82,9 +82,16 @@ export async function changeDoctor(input: {
 
   const doctor = await prisma.staff.findFirst({
     where: { id: input.doctorId, clinicId: input.clinicId, role: 'DOCTOR', isActive: true },
-    select: { id: true, name: true, departmentId: true, lastLoginAt: true, presenceOverride: true, presenceOverrideAt: true },
+    select: {
+      id: true,
+      name: true,
+      lastLoginAt: true,
+      presenceOverride: true,
+      presenceOverrideAt: true,
+      departments: { select: { departmentId: true } },
+    },
   });
-  if (!doctor || doctor.departmentId !== encounter.checkIn.departmentId) {
+  if (!doctor || !doctor.departments.some((d) => d.departmentId === encounter.checkIn.departmentId)) {
     throw new ReassignError('That doctor is not in this patient’s department.', 409);
   }
   if (getDoctorPresenceStatus(doctor) !== 'IN') {

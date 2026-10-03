@@ -3,7 +3,7 @@ import { DepartmentListItem, listActiveDepartments } from '../../services/depart
 import { proceedToPatientLookup } from './patientCheckIn';
 
 /** Renders the department list as a full "CON ..." USSD response. Small lists (a handful per clinic), so no pagination needed unlike clinic selection. */
-export function buildDepartmentSelectionPrompt(departments: DepartmentListItem[]): string {
+export function buildDepartmentSelectionPrompt(departments: Pick<DepartmentListItem, 'name'>[]): string {
   const lines = departments.map((d, i) => `${i + 1}. ${d.name}`);
   return `CON Select department:\n${lines.join('\n')}`;
 }

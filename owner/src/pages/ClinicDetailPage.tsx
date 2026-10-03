@@ -105,7 +105,7 @@ export function ClinicDetailPage() {
               <dd className="mt-1 flex flex-wrap gap-1.5">
                 {clinic.departments.map((d) => (
                   <Badge key={d.id} tone={d.isActive ? 'stone' : 'red'}>
-                    {d.name}
+                    <span className="font-mono text-[10px] tracking-wider opacity-70">{d.code}</span> {d.name}
                     {!d.isActive && ' (inactive)'}
                   </Badge>
                 ))}

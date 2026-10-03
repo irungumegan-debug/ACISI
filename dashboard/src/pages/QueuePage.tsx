@@ -76,6 +76,14 @@ export function QueuePage() {
   const [now, setNow] = useState(() => Date.now());
   const [changingDoctor, setChangingDoctor] = useState<QueueItem | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [deptFilter, setDeptFilter] = useState<string>('all');
+  const [groupBy, setGroupBy] = useState<'status' | 'department'>(() => {
+    try {
+      return window.localStorage.getItem('acisi.queue.groupBy') === 'department' ? 'department' : 'status';
+    } catch {
+      return 'status';
+    }
+  });
   const isFrontDesk = session?.role !== 'DOCTOR';
 
   const refresh = useCallback(() => {
@@ -136,13 +144,59 @@ export function QueuePage() {
     }
   }
 
+  /** Departments present in today's queue, with how many patients each has. */
+  const departmentsInQueue = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; code: string | null; count: number }>();
+    for (const item of items) {
+      const entry = map.get(item.departmentId) ?? { id: item.departmentId, name: item.departmentName, code: item.departmentCode, count: 0 };
+      entry.count += 1;
+      map.set(item.departmentId, entry);
+    }
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [items]);
+  // A filter for a department that has left the queue falls back to everyone.
+  const activeFilter = deptFilter !== 'all' && departmentsInQueue.some((d) => d.id === deptFilter) ? deptFilter : 'all';
+  const visible = useMemo(() => (activeFilter === 'all' ? items : items.filter((i) => i.departmentId === activeFilter)), [items, activeFilter]);
+  const showDepartmentTools = departmentsInQueue.length > 1;
+
   const grouped = useMemo(() => {
     const map = new Map<GroupKey, QueueItem[]>(GROUPS.map((g) => [g.key, []]));
-    for (const item of items) map.get(groupOf(item))?.push(item);
+    for (const item of visible) map.get(groupOf(item))?.push(item);
     return map;
-  }, [items]);
+  }, [visible]);
   const count = (key: GroupKey) => grouped.get(key)?.length ?? 0;
-  const paidToday = items.filter((i) => i.billStatus === 'PAID').length;
+  const paidToday = visible.filter((i) => i.billStatus === 'PAID').length;
+  const statusOrder = (item: QueueItem) => GROUPS.findIndex((g) => g.key === groupOf(item));
+
+  function chooseGroupBy(value: 'status' | 'department') {
+    setGroupBy(value);
+    try {
+      window.localStorage.setItem('acisi.queue.groupBy', value);
+    } catch {
+      // Storage blocked — the choice just isn't remembered.
+    }
+  }
+
+  function renderCard(item: QueueItem) {
+    return (
+      <QueueCard
+        key={item.checkInId}
+        item={item}
+        now={now}
+        isFrontDesk={isFrontDesk}
+        busy={busyId === item.checkInId}
+        emailDeliveryAvailable={emailDeliveryAvailable}
+        delivery={deliveryChoice[item.checkInId] ?? 'sms'}
+        onDelivery={(value) => setDeliveryChoice((prev) => ({ ...prev, [item.checkInId]: value }))}
+        onConfirmPayment={() => void handleConfirmPayment(item.checkInId)}
+        onCheckout={() => void handleCheckout(item.checkInId)}
+        onChangeDoctor={() => {
+          setNotice(null);
+          setChangingDoctor(item);
+        }}
+      />
+    );
+  }
 
   return (
     <div>
@@ -183,7 +237,7 @@ export function QueuePage() {
         <nav aria-label="Admin shortcuts" className="mb-6 flex flex-wrap gap-2">
           {[
             { to: '/reports/daily', label: 'Daily summary', icon: BarChart3 },
-            { to: '/settings', label: 'Payment settings', icon: Settings },
+            { to: '/settings', label: 'Departments & payments', icon: Settings },
             { to: '/settings', label: 'Staff & doctors', icon: UsersRound },
           ].map((l) => (
             <Link
@@ -220,6 +274,43 @@ export function QueuePage() {
         />
       )}
 
+      {!loading && showDepartmentTools && (
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          <div role="group" aria-label="Filter by department" className="flex flex-wrap gap-2">
+            {[{ id: 'all', name: 'All departments', code: null, count: items.length }, ...departmentsInQueue].map((d) => {
+              const on = activeFilter === d.id;
+              return (
+                <button
+                  key={d.id}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => setDeptFilter(d.id)}
+                  className={`inline-flex min-h-9 items-center gap-2 rounded-full border px-3.5 py-1.5 text-sm font-medium transition ${
+                    on ? 'border-navy-900 bg-navy-900 text-white' : 'border-slate-200 bg-white text-navy-900 hover:border-gold-500'
+                  }`}
+                >
+                  {d.name}
+                  <span className={`rounded-full px-1.5 text-xs font-semibold ${on ? 'bg-white/15 text-gold-300' : 'bg-cream-100 text-ink-500'}`}>{d.count}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div role="group" aria-label="Group cards by" className="inline-flex rounded-full border border-slate-200 bg-white p-1 text-sm">
+            {(['status', 'department'] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={groupBy === value}
+                onClick={() => chooseGroupBy(value)}
+                className={`min-h-8 rounded-full px-3.5 font-medium transition ${groupBy === value ? 'bg-gold-500 text-navy-900' : 'text-ink-500 hover:text-navy-900'}`}
+              >
+                {value === 'status' ? 'By status' : 'By department'}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <SkeletonList rows={5} label="Loading the queue" />
       ) : items.length === 0 ? (
@@ -228,6 +319,24 @@ export function QueuePage() {
             Patients who check in online, and walk-ins you add, will appear here.
           </EmptyState>
         </Card>
+      ) : groupBy === 'department' && showDepartmentTools ? (
+        <div className="space-y-8">
+          {departmentsInQueue
+            .filter((d) => activeFilter === 'all' || d.id === activeFilter)
+            .map((d) => {
+              const list = visible.filter((i) => i.departmentId === d.id).sort((a, b) => statusOrder(a) - statusOrder(b));
+              return (
+                <section key={d.id} aria-labelledby={`dept-${d.id}`}>
+                  <h2 id={`dept-${d.id}`} className="mb-3 flex items-center gap-2.5 text-sm font-semibold uppercase tracking-wider text-ink-700">
+                    {d.code && <span className="rounded-md bg-navy-900 px-1.5 py-0.5 font-mono text-[11px] tracking-wider text-gold-300">{d.code}</span>}
+                    {d.name}
+                    <span className="rounded-full bg-white px-2 py-0.5 text-xs text-ink-500 ring-1 ring-slate-200">{list.length}</span>
+                  </h2>
+                  <ul className="grid gap-3 xl:grid-cols-2">{list.map(renderCard)}</ul>
+                </section>
+              );
+            })}
+        </div>
       ) : (
         <div className="space-y-8">
           {GROUPS.map((group) => {
@@ -243,26 +352,7 @@ export function QueuePage() {
                 {list.length === 0 ? (
                   <p className="rounded-2xl border border-dashed border-slate-300 px-4 py-4 text-sm text-ink-500">{group.empty}</p>
                 ) : (
-                  <ul className="grid gap-3 xl:grid-cols-2">
-                    {list.map((item) => (
-                      <QueueCard
-                        key={item.checkInId}
-                        item={item}
-                        now={now}
-                        isFrontDesk={isFrontDesk}
-                        busy={busyId === item.checkInId}
-                        emailDeliveryAvailable={emailDeliveryAvailable}
-                        delivery={deliveryChoice[item.checkInId] ?? 'sms'}
-                        onDelivery={(value) => setDeliveryChoice((prev) => ({ ...prev, [item.checkInId]: value }))}
-                        onConfirmPayment={() => void handleConfirmPayment(item.checkInId)}
-                        onCheckout={() => void handleCheckout(item.checkInId)}
-                        onChangeDoctor={() => {
-                          setNotice(null);
-                          setChangingDoctor(item);
-                        }}
-                      />
-                    ))}
-                  </ul>
+                  <ul className="grid gap-3 xl:grid-cols-2">{list.map(renderCard)}</ul>
                 )}
               </section>
             );

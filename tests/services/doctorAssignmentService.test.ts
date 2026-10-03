@@ -57,13 +57,13 @@ describe('assignDoctorForCheckIn', () => {
     expect(mockFindManyEncounters).not.toHaveBeenCalled();
   });
 
-  it('only considers active DOCTOR staff in the given clinic and department', async () => {
+  it('only considers active DOCTOR staff in the given clinic who work in the department', async () => {
     mockFindManyStaff.mockResolvedValue([inToday('doc-1')]);
 
     await assignDoctorForCheckIn('clinic-A', 'dept-1');
 
     expect(mockFindManyStaff).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { clinicId: 'clinic-A', departmentId: 'dept-1', role: 'DOCTOR', isActive: true } }),
+      expect.objectContaining({ where: { clinicId: 'clinic-A', role: 'DOCTOR', isActive: true, departments: { some: { departmentId: 'dept-1' } } } }),
     );
   });
 

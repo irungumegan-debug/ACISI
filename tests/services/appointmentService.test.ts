@@ -210,11 +210,11 @@ describe('listDepartmentAppointmentsToday', () => {
       { id: 'appt-1', scheduledFor: FUTURE, patient: { firstName: 'Jane', lastName: 'Wanjiru', patientCode: 'ACI-1042' } },
     ]);
 
-    const result = await listDepartmentAppointmentsToday('clinic-A', 'dept-1');
+    const result = await listDepartmentAppointmentsToday('clinic-A', ['dept-1']);
 
     expect(mockFindMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ clinicId: 'clinic-A', departmentId: 'dept-1', status: 'CONFIRMED' }),
+        where: expect.objectContaining({ clinicId: 'clinic-A', departmentId: { in: ['dept-1'] }, status: 'CONFIRMED' }),
       }),
     );
     expect(result).toEqual([{ id: 'appt-1', patientName: 'Jane Wanjiru', patientCode: 'ACI-1042', scheduledFor: FUTURE }]);

@@ -92,6 +92,8 @@ export interface CheckoutView {
   visitStatus: string;
   patient: { id: string; name: string; patientCode: string; phoneNumber: string; smsOptOut: boolean };
   departmentName: string;
+  /** The visit's department, with its own consultation fee if it has one (null: use the clinic default). */
+  department: { id: string; name: string; consultationFeeKes: number | null };
   settings: {
     acceptsCash: boolean;
     acceptsCard: boolean;
@@ -142,7 +144,7 @@ export async function getCheckoutView(encounterId: string, clinicId: string): Pr
     where: { id: encounterId, clinicId },
     include: {
       patient: true,
-      checkIn: { select: { department: { select: { name: true } } } },
+      checkIn: { select: { department: { select: { id: true, name: true, consultationFeeKes: true } } } },
       bill: {
         include: {
           items: { orderBy: { position: 'asc' } },
@@ -171,6 +173,7 @@ export async function getCheckoutView(encounterId: string, clinicId: string): Pr
       smsOptOut: encounter.patient.smsOptOut,
     },
     departmentName: encounter.checkIn.department.name,
+    department: encounter.checkIn.department,
     settings: {
       acceptsCash: settings.acceptsCash,
       acceptsCard: settings.acceptsCard,

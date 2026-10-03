@@ -9,12 +9,33 @@ export interface StaffSession {
 
 export type DoctorPresenceStatus = 'IN' | 'OUT' | 'NOT_IN_YET';
 
+export interface AdminDepartment {
+  id: string;
+  name: string;
+  code: string;
+  consultationFeeKes: number | null;
+  isActive: boolean;
+  visitCount: number;
+  doctorCount: number;
+  upcomingAppointmentCount: number;
+  canDelete: boolean;
+}
+
+export interface DepartmentChange {
+  name?: string;
+  code?: string;
+  consultationFeeKes?: number | null;
+  isActive?: boolean;
+}
+
 export interface ClinicStaffListItem {
   id: string;
   staffCode: string;
   name: string;
   role: string;
   departmentName: string | null;
+  /** Every department a doctor works in (empty for other roles). */
+  departments: { id: string; name: string }[];
   isActive: boolean;
   presence: DoctorPresenceStatus | null;
 }
@@ -59,6 +80,8 @@ export interface QueueItem {
   patientCode: string;
   phoneNumber: string;
   patientEmail: string | null;
+  departmentId: string;
+  departmentCode: string;
   departmentName: string;
   amountKes: number;
   checkInStatus: CheckInStatus;
@@ -207,6 +230,8 @@ export interface CheckoutView {
   visitStatus: EncounterStatus;
   patient: { id: string; name: string; patientCode: string; phoneNumber: string; smsOptOut: boolean };
   departmentName: string;
+  /** The visit's department; its own fee (if set) pre-fills the consultation line. */
+  department: { id: string; name: string; consultationFeeKes: number | null };
   settings: {
     acceptsCash: boolean;
     acceptsCard: boolean;
@@ -255,6 +280,8 @@ export interface DailySummary {
   paymentCount: number;
   voidedCount: number;
   paidVisitCount: number;
+  byDepartment: { departmentId: string; name: string; code: string; totalKes: number; paymentCount: number }[];
+  departmentCount: number;
   outstanding: {
     encounterId: string;
     checkInId: string;
@@ -328,6 +355,33 @@ export const api = {
   getDailySummary(date: string) {
     return request<DailySummary>(`/billing/reports/daily?date=${encodeURIComponent(date)}`);
   },
+  getAdminDepartments() {
+    return request<{ departments: AdminDepartment[] }>('/clinic/departments');
+  },
+
+  suggestDepartmentCode(name: string) {
+    return request<{ code: string }>(`/clinic/departments/suggest-code?name=${encodeURIComponent(name)}`);
+  },
+
+  createDepartment(body: { name: string; code?: string; consultationFeeKes?: number | null }) {
+    return request<{ id: string }>('/clinic/departments', { method: 'POST', body: JSON.stringify(body) });
+  },
+
+  updateDepartment(id: string, change: DepartmentChange) {
+    return request<{ id: string }>(`/clinic/departments/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(change) });
+  },
+
+  deleteDepartment(id: string) {
+    return request<null>(`/clinic/departments/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  },
+
+  setDoctorDepartments(staffId: string, departmentIds: string[]) {
+    return request<{ departments: { id: string; name: string }[] }>(`/clinic/staff/${encodeURIComponent(staffId)}/departments`, {
+      method: 'PUT',
+      body: JSON.stringify({ departmentIds }),
+    });
+  },
+
   getPaymentSettings() {
     return request<PaymentSettings & { stkConfigured: boolean; stkMode: string }>('/clinic/payment-settings');
   },

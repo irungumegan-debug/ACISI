@@ -7,6 +7,7 @@ import { CheckInNotPendingError, confirmCheckInPaidManually } from '../services/
 import { CheckoutDeliveryMethod, EncounterNotReadyForCheckoutError, checkoutEncounter } from '../services/encounterService';
 import { emailConfigured } from '../config/email';
 import { changeDoctor, listDoctorOptions, ReassignError } from '../services/doctorReassignmentService';
+import { getDoctorDepartmentIds } from '../services/departmentService';
 
 export const checkinsRouter = Router();
 
@@ -21,15 +22,22 @@ checkinsRouter.use(requireStaffSession);
  * are still left out.
  */
 checkinsRouter.get('/today', async (req, res) => {
-  const { clinicId } = (req as AuthenticatedRequest).dashboardSession;
+  const { clinicId, role, staffId } = (req as AuthenticatedRequest).dashboardSession;
   const startOfToday = dayjs().startOf('day').toDate();
+  // Doctors only ever see patients in their own departments (read fresh each request).
+  const departmentScope = role === 'DOCTOR' ? { departmentId: { in: await getDoctorDepartmentIds(staffId) } } : {};
 
   const checkIns = await prisma.checkIn.findMany({
-    where: { clinicId, createdAt: { gte: startOfToday }, status: { in: ['PENDING_PAYMENT', 'PAID', 'FAILED', 'NO_FEE'] } },
+    where: {
+      clinicId,
+      createdAt: { gte: startOfToday },
+      status: { in: ['PENDING_PAYMENT', 'PAID', 'FAILED', 'NO_FEE'] },
+      ...departmentScope,
+    },
     orderBy: { createdAt: 'desc' },
     include: {
       patient: { select: { firstName: true, lastName: true, patientCode: true, phoneNumber: true, email: true } },
-      department: { select: { name: true } },
+      department: { select: { id: true, name: true, code: true } },
       staff: { select: { name: true } },
       encounter: {
         select: {
@@ -57,7 +65,9 @@ checkinsRouter.get('/today', async (req, res) => {
       patientCode: c.patient.patientCode,
       phoneNumber: c.patient.phoneNumber,
       patientEmail: c.patient.email,
+      departmentId: c.department.id,
       departmentName: c.department.name,
+      departmentCode: c.department.code,
       amountKes: Number(c.amountKes),
       checkInStatus: c.status,
       source: c.source,
