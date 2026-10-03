@@ -218,6 +218,7 @@ export function StatCard({
   tone = 'gold',
   hint,
   hero = false,
+  accent,
 }: {
   label: string;
   value: ReactNode;
@@ -225,6 +226,8 @@ export function StatCard({
   tone?: StatTone;
   hint?: ReactNode;
   hero?: boolean;
+  /** Optional exact strip colour (e.g. to match a chart series). */
+  accent?: string;
 }) {
   if (hero) {
     return (
@@ -245,7 +248,7 @@ export function StatCard({
   const t = STAT_TONES[tone];
   return (
     <div className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card">
-      <div aria-hidden className={`absolute inset-x-0 top-0 h-1 ${t.strip}`} />
+      <div aria-hidden className={`absolute inset-x-0 top-0 h-1 ${accent ? '' : t.strip}`} style={accent ? { background: accent } : undefined} />
       <div className="flex items-start justify-between gap-3">
         <p className="text-sm font-medium text-ink-500">{label}</p>
         <span className={`flex h-10 w-10 items-center justify-center rounded-full ${t.circle}`}>

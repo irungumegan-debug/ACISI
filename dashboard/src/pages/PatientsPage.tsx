@@ -1,6 +1,8 @@
 import { FormEvent, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, PatientListItem } from '../lib/api';
+import { ChevronRight, Search, SearchX, UserRound } from 'lucide-react';
+import { Avatar, btn, Card, EmptyState, field, SkeletonList } from '../components/ui';
 
 export function PatientsPage() {
   const [query, setQuery] = useState('');
@@ -23,35 +25,52 @@ export function PatientsPage() {
 
   return (
     <div>
-      <h1 className="mb-4 text-lg font-semibold text-slate-900">Patients</h1>
-      <form onSubmit={(e) => void handleSubmit(e)} className="mb-4 flex gap-2">
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search by phone or name"
-          className="flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-        />
-        <button
-          type="submit"
-          className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
-        >
+      <h1 className="font-display text-2xl font-bold tracking-tight text-navy-900 sm:text-[28px]">Patients</h1>
+      <p className="mb-5 mt-1 text-sm text-ink-500">Find a patient at your clinic by phone number or name.</p>
+      <form onSubmit={(e) => void handleSubmit(e)} className="mb-6 flex gap-2">
+        <label className="relative flex-1">
+          <span className="sr-only">Search by phone or name</span>
+          <Search size={18} aria-hidden className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-400" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search by phone or name"
+            className={`${field.input} pl-10 text-base sm:text-[15px]`}
+          />
+        </label>
+        <button type="submit" className={btn.gold}>
           Search
         </button>
       </form>
 
-      {loading && <p className="text-sm text-slate-500">Searching…</p>}
-      {!loading && searched && results.length === 0 && (
-        <p className="text-sm text-slate-500">No patients found at your clinic matching &quot;{query}&quot;.</p>
+      {loading && <SkeletonList rows={3} label="Searching" />}
+      {!loading && !searched && results.length === 0 && (
+        <Card>
+          <EmptyState icon={UserRound} tone="gold" title="Search for a patient">
+            Type at least two letters of a name, or part of a phone number.
+          </EmptyState>
+        </Card>
       )}
-      {results.length > 0 && (
-        <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
+      {!loading && searched && results.length === 0 && (
+        <Card>
+          <EmptyState icon={SearchX} title="No patients found">
+            No patients found at your clinic matching &quot;{query}&quot;.
+          </EmptyState>
+        </Card>
+      )}
+      {!loading && results.length > 0 && (
+        <ul className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-card">
           {results.map((patient) => (
             <li key={patient.id}>
-              <Link to={`/patients/${patient.id}`} className="block px-4 py-3 hover:bg-slate-50">
-                <p className="font-medium text-slate-900">
-                  {patient.firstName} {patient.lastName}
-                </p>
-                <p className="text-sm text-slate-500">{patient.phoneNumber}</p>
+              <Link to={`/patients/${patient.id}`} className="flex items-center gap-3 px-4 py-3.5 transition hover:bg-cream-50">
+                <Avatar name={`${patient.firstName} ${patient.lastName}`} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium text-navy-900">
+                    {patient.firstName} {patient.lastName}
+                  </span>
+                  <span className="block text-sm text-ink-500">{patient.phoneNumber}</span>
+                </span>
+                <ChevronRight size={18} aria-hidden className="text-ink-400" />
               </Link>
             </li>
           ))}
