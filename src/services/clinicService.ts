@@ -48,6 +48,8 @@ async function generateUniqueUssdCode(): Promise<string> {
 
 interface RegisterClinicInput {
   name: string;
+  /** Already validated by departmentService.prepareDepartmentList. Defaults to a single "General". */
+  departments?: { name: string; nameKey: string; code: string; consultationFeeKes: number | null }[];
   county?: string;
   adminName: string;
   adminPhoneNumberE164: string;
@@ -79,10 +81,11 @@ export async function registerClinic(input: RegisterClinicInput): Promise<Regist
       data: { name: input.name, county: input.county, ussdCode, inviteCode },
     });
 
-    // Every clinic needs at least one department for check-ins to route to —
-    // a brand-new clinic has no way to configure one before its first
-    // check-in, so seed a sensible default. The admin can add more later.
-    await tx.department.create({ data: { clinicId: clinic.id, name: 'General' } });
+    // Every clinic needs at least one department for check-ins to route to.
+    const departments = input.departments?.length
+      ? input.departments
+      : [{ name: 'General', nameKey: 'general', code: 'GEN', consultationFeeKes: null }];
+    await tx.department.createMany({ data: departments.map((d) => ({ ...d, clinicId: clinic.id })) });
 
     const adminStaff = await tx.staff.create({
       data: {
@@ -105,6 +108,7 @@ export async function registerClinic(input: RegisterClinicInput): Promise<Regist
     action: 'CLINIC_REGISTERED',
     entityType: 'Clinic',
     entityId: clinic.id,
+    metadata: { departments: (input.departments ?? []).map((d) => d.name) },
   });
 
   return { clinic, adminStaffId: adminStaff.id, adminStaffCode: adminStaff.staffCode };

@@ -34,12 +34,12 @@ export interface DoctorQueueItem {
  * check-in time) still show up for every doctor in the department, same as
  * behavior before assignment existed.
  */
-export async function getDoctorQueue(clinicId: string, departmentId: string, staffId: string): Promise<DoctorQueueItem[]> {
+export async function getDoctorQueue(clinicId: string, departmentIds: string[], staffId: string): Promise<DoctorQueueItem[]> {
   const encounters = await prisma.encounter.findMany({
     where: {
       clinicId,
       status: { in: ['WAITING', 'IN_CONSULTATION'] },
-      checkIn: { departmentId },
+      checkIn: { departmentId: { in: departmentIds } },
       OR: [{ assignedDoctorId: staffId }, { assignedDoctorId: null }],
     },
     include: { patient: true },
@@ -77,12 +77,12 @@ export interface EncounterDetail {
   hasHiddenHistoryElsewhere: boolean;
 }
 
-async function assertEncounterInDoctorQueue(encounterId: string, clinicId: string, departmentId: string, staffId: string): Promise<Encounter> {
+async function assertEncounterInDoctorQueue(encounterId: string, clinicId: string, departmentIds: string[], staffId: string): Promise<Encounter> {
   const encounter = await prisma.encounter.findFirst({
     where: {
       id: encounterId,
       clinicId,
-      checkIn: { departmentId },
+      checkIn: { departmentId: { in: departmentIds } },
       OR: [{ assignedDoctorId: staffId }, { assignedDoctorId: null }],
     },
   });
@@ -103,10 +103,10 @@ async function assertEncounterInDoctorQueue(encounterId: string, clinicId: strin
 export async function getEncounterForDoctor(
   encounterId: string,
   clinicId: string,
-  departmentId: string,
+  departmentIds: string[],
   viewingStaffId: string,
 ): Promise<EncounterDetail> {
-  const encounter = await assertEncounterInDoctorQueue(encounterId, clinicId, departmentId, viewingStaffId);
+  const encounter = await assertEncounterInDoctorQueue(encounterId, clinicId, departmentIds, viewingStaffId);
 
   const currentStatus: EncounterStatus = encounter.status === 'WAITING' ? 'IN_CONSULTATION' : encounter.status;
   if (encounter.status === 'WAITING') {
@@ -156,7 +156,8 @@ export class InvalidPinError extends Error {
 interface SubmitConsultationInput {
   encounterId: string;
   clinicId: string;
-  departmentId: string;
+  /** The departments the signing doctor works in. */
+  departmentIds: string[];
   staffId: string;
   diagnosis: string;
   prescription: string;
@@ -178,7 +179,7 @@ interface SubmitConsultationInput {
  * action (encounterService.checkoutEncounter).
  */
 export async function submitConsultation(input: SubmitConsultationInput): Promise<Encounter> {
-  const encounter = await assertEncounterInDoctorQueue(input.encounterId, input.clinicId, input.departmentId, input.staffId);
+  const encounter = await assertEncounterInDoctorQueue(input.encounterId, input.clinicId, input.departmentIds, input.staffId);
 
   if (encounter.status !== 'WAITING' && encounter.status !== 'IN_CONSULTATION') {
     throw new EncounterNotConsultableError();

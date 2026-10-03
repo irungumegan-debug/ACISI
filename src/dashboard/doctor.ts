@@ -11,27 +11,39 @@ import {
 } from '../services/encounterService';
 import { findActiveStaffById, getDoctorPresenceStatus, setDoctorPresenceBySelf } from '../services/staffService';
 import { listDepartmentAppointmentsToday } from '../services/appointmentService';
+import { getDoctorDepartmentIds } from '../services/departmentService';
 
 export const doctorRouter = Router();
 
 doctorRouter.use(requireStaffSession);
 
-/** A doctor is always department-scoped; a session with no departmentId (front desk, admin) can't reach any of these routes. */
-function requireDoctor(req: Request, res: Response, next: NextFunction): void {
-  const { role, departmentId } = (req as AuthenticatedRequest).dashboardSession;
-  if (role !== 'DOCTOR' || !departmentId) {
+/**
+ * A doctor is always department-scoped. Their departments are read fresh on
+ * every request (an admin can change them any time) and kept on
+ * res.locals.departmentIds; a doctor with none — or any other role — can't
+ * reach these routes.
+ */
+async function requireDoctor(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const { role, staffId } = (req as AuthenticatedRequest).dashboardSession;
+  const departmentIds = role === 'DOCTOR' ? await getDoctorDepartmentIds(staffId) : [];
+  if (departmentIds.length === 0) {
     res.status(403).json({ error: 'Doctor access required' });
     return;
   }
+  res.locals.departmentIds = departmentIds;
   next();
 }
 
-doctorRouter.use(requireDoctor);
+const departmentsOf = (res: Response): string[] => res.locals.departmentIds as string[];
+
+doctorRouter.use((req, res, next) => {
+  requireDoctor(req, res, next).catch(next);
+});
 
 doctorRouter.get('/queue', async (req, res) => {
-  const { clinicId, departmentId, staffId } = (req as AuthenticatedRequest).dashboardSession;
+  const { clinicId, staffId } = (req as AuthenticatedRequest).dashboardSession;
   const [queue, staff] = await Promise.all([
-    getDoctorQueue(clinicId, departmentId as string, staffId),
+    getDoctorQueue(clinicId, departmentsOf(res), staffId),
     findActiveStaffById(staffId),
   ]);
   res.json({ queue, presence: staff ? getDoctorPresenceStatus(staff) : 'NOT_IN_YET' });
@@ -54,16 +66,16 @@ doctorRouter.post('/presence', async (req, res) => {
 
 /** Read-only: today's CONFIRMED appointments in the doctor's own department — separate from their live WAITING/IN_CONSULTATION queue. */
 doctorRouter.get('/appointments/today', async (req, res) => {
-  const { clinicId, departmentId } = (req as AuthenticatedRequest).dashboardSession;
-  const appointments = await listDepartmentAppointmentsToday(clinicId, departmentId as string);
+  const { clinicId } = (req as AuthenticatedRequest).dashboardSession;
+  const appointments = await listDepartmentAppointmentsToday(clinicId, departmentsOf(res));
   res.json({ appointments });
 });
 
 doctorRouter.get('/encounters/:id', async (req, res) => {
-  const { clinicId, departmentId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
 
   try {
-    const detail = await getEncounterForDoctor(req.params.id as string, clinicId, departmentId as string, staffId);
+    const detail = await getEncounterForDoctor(req.params.id as string, clinicId, departmentsOf(res), staffId);
     res.json(detail);
   } catch (err) {
     if (err instanceof EncounterNotAccessibleError) {
@@ -89,13 +101,13 @@ doctorRouter.post('/encounters/:id/consult', async (req, res) => {
     return;
   }
 
-  const { clinicId, departmentId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
 
   try {
     const encounter = await submitConsultation({
       encounterId: req.params.id as string,
       clinicId,
-      departmentId: departmentId as string,
+      departmentIds: departmentsOf(res),
       staffId,
       diagnosis: parsed.data.diagnosis,
       prescription: parsed.data.prescription,

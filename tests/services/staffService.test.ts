@@ -136,6 +136,7 @@ describe('listClinicStaff', () => {
         role: 'DOCTOR',
         isActive: true,
         department: { name: 'General' },
+        departments: [{ department: { id: 'd-gen', name: 'General' } }, { department: { id: 'd-brc', name: 'Braces' } }],
         lastLoginAt: today,
         presenceOverride: null,
         presenceOverrideAt: null,
@@ -147,6 +148,7 @@ describe('listClinicStaff', () => {
         role: 'RECEPTIONIST',
         isActive: true,
         department: null,
+        departments: [],
         lastLoginAt: null,
         presenceOverride: null,
         presenceOverrideAt: null,
@@ -157,8 +159,20 @@ describe('listClinicStaff', () => {
 
     expect(mockFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: { clinicId: 'clinic-A' } }));
     expect(result).toEqual([
-      { id: 's1', staffCode: 'ACI-STF-A', name: 'Dr. A', role: 'DOCTOR', departmentName: 'General', isActive: true, presence: 'IN' },
-      { id: 's2', staffCode: 'ACI-STF-B', name: 'B', role: 'RECEPTIONIST', departmentName: null, isActive: true, presence: null },
+      {
+        id: 's1',
+        staffCode: 'ACI-STF-A',
+        name: 'Dr. A',
+        role: 'DOCTOR',
+        departmentName: 'General, Braces',
+        departments: [
+          { id: 'd-gen', name: 'General' },
+          { id: 'd-brc', name: 'Braces' },
+        ],
+        isActive: true,
+        presence: 'IN',
+      },
+      { id: 's2', staffCode: 'ACI-STF-B', name: 'B', role: 'RECEPTIONIST', departmentName: null, departments: [], isActive: true, presence: null },
     ]);
   });
 });

@@ -125,7 +125,7 @@ ownerClinicsRouter.get('/:id', async (req, res) => {
     upcomingAppointments,
     revenueKes: Number(revenueAll._sum.amountKes ?? 0),
     revenueLast30DaysKes: Number(revenue30._sum.amountKes ?? 0),
-    departments: clinic.departments.map((d) => ({ id: d.id, name: d.name, isActive: d.isActive })),
+    departments: clinic.departments.map((d) => ({ id: d.id, name: d.name, code: d.code, isActive: d.isActive })),
     staff: clinic.staff.map((s) => ({
       id: s.id,
       staffCode: s.staffCode,

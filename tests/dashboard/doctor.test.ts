@@ -14,6 +14,7 @@ jest.mock('../../src/services/staffService', () => ({
 }));
 
 jest.mock('../../src/services/appointmentService', () => ({ listDepartmentAppointmentsToday: jest.fn() }));
+jest.mock('../../src/services/departmentService', () => ({ getDoctorDepartmentIds: jest.fn() }));
 
 jest.mock('../../src/services/encounterService', () => ({
   getDoctorQueue: jest.fn(),
@@ -50,6 +51,9 @@ import {
 import { findActiveStaffById, setDoctorPresenceBySelf } from '../../src/services/staffService';
 import { listDepartmentAppointmentsToday } from '../../src/services/appointmentService';
 import { doctorRouter } from '../../src/dashboard/doctor';
+import { getDoctorDepartmentIds } from '../../src/services/departmentService';
+
+const mockDoctorDepartments = getDoctorDepartmentIds as jest.Mock;
 
 const mockLoadSession = loadDashboardSession as jest.Mock;
 const mockGetQueue = getDoctorQueue as jest.Mock;
@@ -87,6 +91,7 @@ function withCookie(req: request.Test) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockDoctorDepartments.mockResolvedValue(['dept-1']);
 });
 
 describe('requireDoctor gating', () => {
@@ -97,8 +102,9 @@ describe('requireDoctor gating', () => {
     expect(mockGetQueue).not.toHaveBeenCalled();
   });
 
-  it('rejects a doctor session with no department assigned', async () => {
+  it('rejects a doctor who has no departments', async () => {
     mockLoadSession.mockResolvedValue({ ...DOCTOR_SESSION, departmentId: null });
+    mockDoctorDepartments.mockResolvedValue([]);
     const res = await withCookie(request(buildApp()).get('/doctor/queue'));
     expect(res.status).toBe(403);
   });
@@ -113,7 +119,7 @@ describe('GET /doctor/queue', () => {
     const res = await withCookie(request(buildApp()).get('/doctor/queue'));
 
     expect(res.status).toBe(200);
-    expect(mockGetQueue).toHaveBeenCalledWith('clinic-1', 'dept-1', 'staff-1');
+    expect(mockGetQueue).toHaveBeenCalledWith('clinic-1', ['dept-1'], 'staff-1');
     expect(res.body.queue).toHaveLength(1);
     expect(res.body.presence).toBe('IN');
   });
@@ -164,7 +170,7 @@ describe('GET /doctor/appointments/today', () => {
     const res = await withCookie(request(buildApp()).get('/doctor/appointments/today'));
 
     expect(res.status).toBe(200);
-    expect(mockListAppointmentsToday).toHaveBeenCalledWith('clinic-1', 'dept-1');
+    expect(mockListAppointmentsToday).toHaveBeenCalledWith('clinic-1', ['dept-1']);
     expect(res.body.appointments).toHaveLength(1);
   });
 
@@ -193,7 +199,7 @@ describe('GET /doctor/encounters/:id', () => {
     const res = await withCookie(request(buildApp()).get('/doctor/encounters/enc-1'));
 
     expect(res.status).toBe(200);
-    expect(mockGetEncounter).toHaveBeenCalledWith('enc-1', 'clinic-1', 'dept-1', 'staff-1');
+    expect(mockGetEncounter).toHaveBeenCalledWith('enc-1', 'clinic-1', ['dept-1'], 'staff-1');
   });
 });
 
@@ -230,7 +236,7 @@ describe('POST /doctor/encounters/:id/consult', () => {
       expect.objectContaining({
         encounterId: 'enc-1',
         clinicId: 'clinic-1',
-        departmentId: 'dept-1',
+        departmentIds: ['dept-1'],
         staffId: 'staff-1',
         pin: '1234',
       }),
@@ -249,5 +255,18 @@ describe('POST /doctor/encounters/:id/consult', () => {
 
     expect(res.status).toBe(401);
     expect(res.body.error).toBe('Incorrect PIN. Please try again.');
+  });
+});
+
+describe('doctors in several departments', () => {
+  it('reads departments fresh and passes them all to the queue', async () => {
+    mockLoadSession.mockResolvedValue(DOCTOR_SESSION);
+    mockDoctorDepartments.mockResolvedValue(['dept-general', 'dept-braces']);
+    mockGetQueue.mockResolvedValue([]);
+    mockFindStaffById.mockResolvedValue({ id: 'staff-1', lastLoginAt: new Date(), presenceOverride: null, presenceOverrideAt: null });
+    const res = await withCookie(request(buildApp()).get('/doctor/queue'));
+    expect(res.status).toBe(200);
+    expect(mockDoctorDepartments).toHaveBeenCalledWith('staff-1');
+    expect(mockGetQueue).toHaveBeenCalledWith('clinic-1', ['dept-general', 'dept-braces'], 'staff-1');
   });
 });

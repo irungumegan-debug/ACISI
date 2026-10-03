@@ -34,13 +34,18 @@ async function main() {
   const primaryClinic = clinics[0]!;
   const pinHash = await bcrypt.hash('730194', 10);
 
-  const DEPARTMENT_NAMES = ['General', 'Gynecology', 'Dental', 'Pediatrics'];
+  const DEPARTMENTS = [
+    { name: 'General', code: 'GEN' },
+    { name: 'Gynecology', code: 'GYN' },
+    { name: 'Dental', code: 'DEN' },
+    { name: 'Pediatrics', code: 'PED' },
+  ];
   const departments = await Promise.all(
-    DEPARTMENT_NAMES.map((name) =>
+    DEPARTMENTS.map(({ name, code }) =>
       prisma.department.upsert({
-        where: { clinicId_name: { clinicId: primaryClinic.id, name } },
+        where: { clinicId_nameKey: { clinicId: primaryClinic.id, nameKey: name.toLowerCase() } },
         update: {},
-        create: { clinicId: primaryClinic.id, name },
+        create: { clinicId: primaryClinic.id, name, nameKey: name.toLowerCase(), code },
       }),
     ),
   );
@@ -77,6 +82,7 @@ async function main() {
           pinHash,
           role: staff.role,
           departmentId: staff.departmentId,
+          departments: staff.departmentId ? { create: [{ departmentId: staff.departmentId }] } : undefined,
         },
       }),
     ),
