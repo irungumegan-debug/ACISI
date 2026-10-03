@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, ApiError, DoctorPresenceStatus, DoctorQueueItem } from '../lib/api';
+import { api, ApiError, DoctorPresenceStatus, DoctorQueueItem, subscribeToQueue } from '../lib/api';
 import { ArrowRight, Clock, Coffee, Hourglass, Stethoscope, UserRoundCheck } from 'lucide-react';
 import { Avatar, Card, EmptyState, SkeletonList, StatusBadge } from '../components/ui';
 
@@ -26,19 +26,21 @@ export function DoctorQueuePage() {
 
   useEffect(() => {
     let cancelled = false;
-    api
-      .getDoctorQueue()
-      .then((res) => {
+    const load = () =>
+      api.getDoctorQueue().then((res) => {
         if (!cancelled) {
           setItems(res.queue);
           setPresence(res.presence);
         }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
       });
+    load().finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+    // Live: new check-ins, and patients the front desk moves to or from this doctor.
+    const unsubscribe = subscribeToQueue(() => void load().catch(() => undefined));
     return () => {
       cancelled = true;
+      unsubscribe();
     };
   }, []);
 

@@ -27,6 +27,12 @@ jest.mock('../../src/services/encounterService', () => ({
   },
 }));
 
+jest.mock('../../src/services/doctorReassignmentService', () => ({
+  ...jest.requireActual('../../src/services/doctorReassignmentService'),
+  listDoctorOptions: jest.fn(),
+  changeDoctor: jest.fn(),
+}));
+
 jest.mock('../../src/db/prisma', () => ({
   prisma: {
     checkIn: { findMany: jest.fn() },
@@ -39,6 +45,7 @@ import { confirmCheckInPaidManually, CheckInNotPendingError } from '../../src/se
 import { checkoutEncounter, EncounterNotReadyForCheckoutError } from '../../src/services/encounterService';
 import { prisma } from '../../src/db/prisma';
 import { checkinsRouter } from '../../src/dashboard/checkins';
+import { changeDoctor, listDoctorOptions, ReassignError } from '../../src/services/doctorReassignmentService';
 
 const mockLoadSession = loadDashboardSession as jest.Mock;
 const mockConfirmPaid = confirmCheckInPaidManually as jest.Mock;
@@ -259,5 +266,45 @@ describe('POST /checkins/:id/checkout', () => {
     const res = await withCookie(request(buildApp()).post('/checkins/ci-1/checkout'));
 
     expect(res.status).toBe(409);
+  });
+});
+
+describe('change doctor', () => {
+  const mockList = listDoctorOptions as jest.Mock;
+  const mockChange = changeDoctor as jest.Mock;
+
+  it('lists doctor options for front desk', async () => {
+    mockList.mockResolvedValue({ currentDoctorId: 'doc-a', doctors: [] });
+    const res = await withCookie(request(buildApp()).get('/checkins/ci-1/doctor-options'));
+    expect(res.status).toBe(200);
+    expect(mockList).toHaveBeenCalledWith('ci-1', 'clinic-1');
+  });
+
+  it('moves a patient and passes who did it', async () => {
+    mockChange.mockResolvedValue({ changed: true, doctorName: 'Dr. Lisa' });
+    const res = await withCookie(request(buildApp()).post('/checkins/ci-1/doctor').send({ doctorId: 'doc-b' }));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ changed: true, doctorName: 'Dr. Lisa' });
+    expect(mockChange).toHaveBeenCalledWith({ checkInId: 'ci-1', clinicId: 'clinic-1', doctorId: 'doc-b', staffId: 'staff-1' });
+  });
+
+  it('refuses doctors on the server', async () => {
+    mockLoadSession.mockResolvedValue({ ...SESSION, role: 'DOCTOR', departmentId: 'dept-1' });
+    expect((await withCookie(request(buildApp()).get('/checkins/ci-1/doctor-options'))).status).toBe(403);
+    expect((await withCookie(request(buildApp()).post('/checkins/ci-1/doctor').send({ doctorId: 'doc-b' }))).status).toBe(403);
+    expect(mockList).not.toHaveBeenCalled();
+    expect(mockChange).not.toHaveBeenCalled();
+  });
+
+  it('requires a doctor', async () => {
+    expect((await withCookie(request(buildApp()).post('/checkins/ci-1/doctor').send({}))).status).toBe(400);
+    expect(mockChange).not.toHaveBeenCalled();
+  });
+
+  it('turns rule errors into their status and message', async () => {
+    mockChange.mockRejectedValue(new ReassignError('Only a patient who is still waiting can be moved to another doctor.', 409));
+    const res = await withCookie(request(buildApp()).post('/checkins/ci-1/doctor').send({ doctorId: 'doc-b' }));
+    expect(res.status).toBe(409);
+    expect(res.body.error).toContain('still waiting');
   });
 });

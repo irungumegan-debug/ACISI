@@ -11,6 +11,7 @@ import {
   Globe,
   Hourglass,
   Plus,
+  Repeat2,
   ReceiptText,
   Settings,
   Stethoscope,
@@ -20,6 +21,7 @@ import {
 import { api, ApiError, CheckoutDeliveryMethod, QueueItem, subscribeToQueue } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { Avatar, Badge, btn, Card, EmptyState, SkeletonList, StatCard, StatusBadge, WalkInBadge } from '../components/ui';
+import { ChangeDoctorDialog } from '../components/ChangeDoctorDialog';
 
 /** Payment isn't resolved (still pending, or failed and awaiting a manual rescue) — the encounter, if any, hasn't started yet. */
 function isUnresolvedPayment(item: QueueItem): boolean {
@@ -72,6 +74,8 @@ export function QueuePage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [changingDoctor, setChangingDoctor] = useState<QueueItem | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const isFrontDesk = session?.role !== 'DOCTOR';
 
   const refresh = useCallback(() => {
@@ -198,6 +202,23 @@ export function QueuePage() {
           {error}
         </p>
       )}
+      {notice && (
+        <p role="status" className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900">
+          {notice}
+        </p>
+      )}
+      {changingDoctor && (
+        <ChangeDoctorDialog
+          checkInId={changingDoctor.checkInId}
+          patientName={changingDoctor.patientName}
+          onClose={() => setChangingDoctor(null)}
+          onChanged={(doctorName) => {
+            setNotice(`${changingDoctor.patientName} moved to ${doctorName}.`);
+            setChangingDoctor(null);
+            void refresh();
+          }}
+        />
+      )}
 
       {loading ? (
         <SkeletonList rows={5} label="Loading the queue" />
@@ -235,6 +256,10 @@ export function QueuePage() {
                         onDelivery={(value) => setDeliveryChoice((prev) => ({ ...prev, [item.checkInId]: value }))}
                         onConfirmPayment={() => void handleConfirmPayment(item.checkInId)}
                         onCheckout={() => void handleCheckout(item.checkInId)}
+                        onChangeDoctor={() => {
+                          setNotice(null);
+                          setChangingDoctor(item);
+                        }}
                       />
                     ))}
                   </ul>
@@ -266,6 +291,7 @@ function QueueCard({
   onDelivery,
   onConfirmPayment,
   onCheckout,
+  onChangeDoctor,
 }: {
   item: QueueItem;
   now: number;
@@ -276,11 +302,13 @@ function QueueCard({
   onDelivery: (value: CheckoutDeliveryMethod) => void;
   onConfirmPayment: () => void;
   onCheckout: () => void;
+  onChangeDoctor: () => void;
 }) {
   const status = displayStatus(item);
   const group = groupOf(item);
   const atCheckout = item.encounterStatus === 'READY_FOR_CHECKOUT' || item.encounterStatus === 'DONE';
   const stillWaiting = group === 'WAITING' || group === 'ATTENTION';
+  const canChangeDoctor = isFrontDesk && group === 'WAITING' && item.encounterStatus === 'WAITING';
 
   return (
     <li
@@ -322,6 +350,15 @@ function QueueCard({
           )}
         </span>
         <span>{item.checkInStatus === 'NO_FEE' ? 'No fee' : `KES ${item.amountKes}`}</span>
+        {canChangeDoctor && (
+          <button
+            type="button"
+            onClick={onChangeDoctor}
+            className="ml-auto inline-flex min-h-9 items-center gap-1.5 rounded-full border border-slate-300 bg-white px-3.5 py-1 text-[13px] font-semibold text-navy-900 transition hover:border-gold-500"
+          >
+            <Repeat2 size={14} aria-hidden /> Change doctor
+          </button>
+        )}
       </div>
 
       {(atCheckout || isUnresolvedPayment(item) || item.encounterStatus === 'READY_FOR_CHECKOUT') && (
