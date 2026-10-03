@@ -15,8 +15,8 @@
   --teal: #2b6f86;
   --teal-tint: #e0edf1;
   --gold-tint: #f5ecd8;
-  --serif: 'Fraunces', Georgia, serif;
-  --sans: 'IBM Plex Sans', -apple-system, 'Segoe UI', sans-serif;
+  --serif: var(--font-display);
+  --sans: var(--font-body);
 
   min-height: 100svh;
   background: var(--paper);

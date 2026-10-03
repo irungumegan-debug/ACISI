@@ -2,6 +2,7 @@ import { FormEvent, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 import { usePatientAuth } from '../context/PatientAuthContext';
+import { AuthShell, RoleCard } from '../components/AuthShell';
 
 type Role = 'patient' | 'doctor' | 'staff';
 
@@ -24,11 +25,7 @@ export function LoginPage() {
   const [step, setStep] = useState<Step>(initialStep);
 
   return (
-    <div className="auth-page">
-      <div className="auth-wrap">
-        <Link className="nav-brand" to="/" style={{ display: 'block', marginBottom: 36 }}>
-          ACISI
-        </Link>
+    <AuthShell>
 
         {step.kind === 'picker' && <RolePicker onPick={(kind) => setStep({ kind } as Step)} />}
         {step.kind === 'patient' && (
@@ -59,8 +56,7 @@ export function LoginPage() {
             New here? <Link to="/signup">Sign up</Link>
           </p>
         )}
-      </div>
-    </div>
+    </AuthShell>
   );
 }
 
@@ -87,18 +83,9 @@ function RolePicker({ onPick }: { onPick: (kind: Role) => void }) {
       <h1 className="auth-h1">Log in</h1>
       <p className="auth-sub">Who&apos;s logging in?</p>
       <div className="role-cards">
-        <button className="role-card" onClick={() => onPick('patient')}>
-          <span className="role-card-title">Patient</span>
-          <span className="role-card-sub">Phone number or patient ID, plus PIN</span>
-        </button>
-        <button className="role-card" onClick={() => onPick('doctor')}>
-          <span className="role-card-title">Doctor</span>
-          <span className="role-card-sub">Staff ID and PIN</span>
-        </button>
-        <button className="role-card" onClick={() => onPick('staff')}>
-          <span className="role-card-title">Front desk staff</span>
-          <span className="role-card-sub">Staff ID and PIN</span>
-        </button>
+        <RoleCard role="patient" title="Patient" sub="Phone number or patient ID, plus PIN" onPick={() => onPick('patient')} />
+        <RoleCard role="doctor" title="Doctor" sub="Staff ID and PIN" onPick={() => onPick('doctor')} />
+        <RoleCard role="staff" title="Front desk staff" sub="Staff ID and PIN" onPick={() => onPick('staff')} />
       </div>
     </>
   );

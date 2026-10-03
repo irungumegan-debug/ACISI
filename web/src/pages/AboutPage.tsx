@@ -1,49 +1,84 @@
+import { Link } from 'react-router-dom';
+import { ArrowRight, Compass, Telescope } from 'lucide-react';
+import { ValuesGrid } from '../components/Values';
+import { Watermark } from '../components/Watermark';
+
 export function AboutPage() {
   return (
     <div>
-      <section className="mission-band">
-        <div className="mission-inner">
-          <p className="section-label">Our mission</p>
-          <p className="mission-text">
-            To bring patients and healthcare providers together in one seamless system, giving every person access
-            to quality healthcare, and every provider the tools to deliver it.
-          </p>
-          <p className="section-label">Our vision</p>
-          <p className="vision-text">
-            To become the connective infrastructure healthcare runs on, the trusted bridge between patients and
-            providers, wherever they are.
-          </p>
+      <section className="page-hero" aria-labelledby="about-title">
+        <Watermark className="page-hero-watermark" />
+        <div className="container page-hero-inner">
+          <p className="eyebrow">About ACISI</p>
+          <h1 id="about-title" className="page-title">
+            The bridge between <span className="gold-text">patients and clinics.</span>
+          </h1>
+          <p className="page-lede">Healthcare, within reach.</p>
         </div>
       </section>
 
-      <section className="section">
-        <p className="section-label">What we&apos;re building toward</p>
-        <h2>Five goals behind everything we build.</h2>
-        <div className="goals">
-          <div className="goal">
-            <p className="goal-letter">A</p>
-            <p className="goal-word">Accessible</p>
-            <p>Reachable on any phone, no smartphone required, ever.</p>
+      <section className="band band-light" aria-label="Mission and vision">
+        <div className="container mv-grid">
+          <article className="mv-card" data-reveal>
+            <span className="icon-circle tone-gold">
+              <Compass size={22} aria-hidden />
+            </span>
+            <p className="eyebrow">Our mission</p>
+            <p className="mv-text">
+              To bring patients and healthcare providers together in one seamless system, giving every person access to
+              quality healthcare, and every provider the tools to deliver it.
+            </p>
+          </article>
+          <article className="mv-card is-navy" data-reveal style={{ transitionDelay: '100ms' }}>
+            <span className="icon-circle tone-gold-dark">
+              <Telescope size={22} aria-hidden />
+            </span>
+            <p className="eyebrow">Our vision</p>
+            <p className="mv-text">
+              To become the connective infrastructure healthcare runs on, the trusted bridge between patients and
+              providers, wherever they are.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section className="band band-light band-tight" aria-labelledby="story-title">
+        <div className="container story" data-reveal>
+          <p className="eyebrow">Why ACISI exists</p>
+          <h2 id="story-title" className="section-title">
+            A visit shouldn&apos;t depend on a paper file.
+          </h2>
+          <div className="story-body">
+            <p>
+              In many small clinics, a visit still runs on paper: a card at reception, a folder that may or may not turn
+              up, and a prescription the patient has to keep safe until next time.
+            </p>
+            <p>
+              ACISI puts that whole visit on one shared record. The patient checks in, the front desk sees them in the
+              queue, the doctor writes notes and the prescription, and checkout records the payment and sends a short
+              summary.
+            </p>
+            <p>
+              We&apos;re a records and admin system, not a healthcare provider. Our job is to make the clinic&apos;s
+              work easier, so its time goes to patients.
+            </p>
           </div>
-          <div className="goal">
-            <p className="goal-letter">C</p>
-            <p className="goal-word">Comprehensive</p>
-            <p>Check-in, consultation, prescription, and payment, one system.</p>
+        </div>
+      </section>
+
+      <section className="band band-navy" aria-labelledby="values-title">
+        <div className="container">
+          <div className="section-head" data-reveal>
+            <p className="eyebrow">What ACISI stands for</p>
+            <h2 id="values-title" className="section-title">
+              Accessible. Comprehensive. Inclusive. Secure. Integrated.
+            </h2>
           </div>
-          <div className="goal">
-            <p className="goal-letter">I</p>
-            <p className="goal-word">Inclusive</p>
-            <p>Built for patients and providers equally, not one at the other&apos;s expense.</p>
-          </div>
-          <div className="goal">
-            <p className="goal-letter">S</p>
-            <p className="goal-word">Secure</p>
-            <p>Access scoped to who needs it, every view logged, sharing by consent.</p>
-          </div>
-          <div className="goal">
-            <p className="goal-letter">I</p>
-            <p className="goal-word">Integrated</p>
-            <p>One shared record connecting USSD, web, staff, and doctors.</p>
+          <ValuesGrid />
+          <div className="center-actions">
+            <Link className="btn btn-gold btn-lg" to="/contact">
+              Book a demo <ArrowRight size={18} aria-hidden />
+            </Link>
           </div>
         </div>
       </section>

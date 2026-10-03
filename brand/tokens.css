@@ -1,0 +1,110 @@
+/*
+ * ACISI design tokens — the one place colours, type, spacing, radius,
+ * shadows and motion are defined. Imported by all three frontends:
+ *   web/        (public site + patient portal, plain CSS)
+ *   dashboard/  (staff console, Tailwind — mapped in its index.css @theme)
+ *   owner/      (owner site, Tailwind — mapped in its index.css @theme)
+ * Contrast notes (WCAG): gold-400 on navy-950 10.9:1; navy-950 on the
+ * button foil >= 7:1; gold-700 text on cream 4.9:1; every status text
+ * colour on its tint >= 4.8:1.
+ */
+:root {
+  /* Navy — the base */
+  --navy-950: #070b1c;
+  --navy-900: #0a0f24;
+  --navy-850: #0e1530;
+  --navy-800: #111a3a;
+  --navy-700: #1b2752;
+  --navy-600: #26345f;
+  --navy-500: #3a4a7a;
+  --navy-line: rgba(173, 186, 222, 0.16);
+
+  /* On-navy text */
+  --on-navy: #f4f1ea;
+  --on-navy-muted: #b8c2d9;
+  --on-navy-faint: #8e9ab8;
+
+  /* Gold — metallic accent */
+  --gold-200: #fff0bf;
+  --gold-300: #f3d67e;
+  --gold-400: #e6c068;
+  --gold-500: #d4a83f;
+  --gold-600: #b8862a;
+  --gold-700: #8a6414; /* gold text on light backgrounds */
+  --gold-tint: #fbf3df;
+  --gold-foil: linear-gradient(135deg, #c9982e 0%, #f3d67e 28%, #fff0bf 46%, #e6c068 64%, #d4a83f 100%);
+  --gold-foil-text: linear-gradient(100deg, #d4a83f 0%, #f3d67e 30%, #fff0bf 48%, #e6c068 66%, #c9982e 100%);
+  --gold-foil-line: linear-gradient(90deg, transparent, #e6c068 20%, #fff0bf 50%, #e6c068 80%, transparent);
+
+  /* Light surfaces */
+  --cream-50: #fcfaf6;
+  --cream-100: #f8f5ef; /* dashboard background */
+  --cream-200: #efe9dd;
+  --surface: #ffffff;
+  --line: #e7e1d4;
+  --line-strong: #d6cdbb;
+
+  /* Text on light */
+  --ink-900: #0f1530;
+  --ink-700: #2e3650;
+  --ink-500: #5b6478;
+  --ink-400: #7a8296;
+
+  /* Status: text / tint / solid */
+  --success: #047857;
+  --success-tint: #ecfdf5;
+  --success-solid: #10b981;
+  --warning: #b45309;
+  --warning-tint: #fffbeb;
+  --warning-solid: #f59e0b;
+  --danger: #b91c1c;
+  --danger-tint: #fef2f2;
+  --danger-solid: #ef4444;
+  --info: #0f766e;
+  --info-tint: #f0fdfa;
+  --info-solid: #14b8a6;
+  --blue: #1d4ed8;
+  --blue-tint: #eff6ff;
+  --blue-solid: #3b82f6;
+
+  /* Type */
+  --font-display: 'Sora', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-body: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  --tracking-tight: -0.03em;
+  --tracking-display: -0.045em;
+
+  /* Spacing scale (4px base) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+  --space-24: 96px;
+
+  /* Radius */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-pill: 999px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(15, 21, 48, 0.06), 0 1px 3px rgba(15, 21, 48, 0.05);
+  --shadow-md: 0 4px 12px -2px rgba(15, 21, 48, 0.08), 0 2px 4px rgba(15, 21, 48, 0.04);
+  --shadow-lg: 0 18px 40px -12px rgba(15, 21, 48, 0.22), 0 4px 10px rgba(15, 21, 48, 0.06);
+  --shadow-gold: 0 10px 30px -10px rgba(212, 168, 63, 0.55);
+  --ring-gold: 0 0 0 3px rgba(230, 192, 104, 0.45);
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration-fast: 150ms;
+  --duration-base: 250ms;
+  --duration-slow: 600ms;
+}
