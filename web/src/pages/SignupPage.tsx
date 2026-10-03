@@ -2,6 +2,8 @@ import { FormEvent, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 import { usePatientAuth } from '../context/PatientAuthContext';
+import { AuthShell, RoleCard } from '../components/AuthShell';
+import { Check } from 'lucide-react';
 
 type Step =
   | { kind: 'picker' }
@@ -16,11 +18,7 @@ export function SignupPage() {
   const [step, setStep] = useState<Step>({ kind: 'picker' });
 
   return (
-    <div className="auth-page">
-      <div className="auth-wrap">
-        <Link className="nav-brand" to="/" style={{ display: 'block', marginBottom: 36 }}>
-          ACISI
-        </Link>
+    <AuthShell>
 
         {step.kind === 'picker' && <RolePicker onPick={(kind) => setStep({ kind } as Step)} />}
         {step.kind === 'patient' && <PatientSignupForm onBack={() => setStep({ kind: 'picker' })} />}
@@ -44,8 +42,7 @@ export function SignupPage() {
             Already have an account? <Link to="/login">Log in</Link>
           </p>
         )}
-      </div>
-    </div>
+    </AuthShell>
   );
 }
 
@@ -55,22 +52,10 @@ function RolePicker({ onPick }: { onPick: (kind: 'patient' | 'doctor' | 'staff' 
       <h1 className="auth-h1">Create your account</h1>
       <p className="auth-sub">Start by telling us who you are.</p>
       <div className="role-cards">
-        <button className="role-card" onClick={() => onPick('patient')}>
-          <span className="role-card-title">Patient</span>
-          <span className="role-card-sub">Check in and view your records</span>
-        </button>
-        <button className="role-card" onClick={() => onPick('doctor')}>
-          <span className="role-card-title">Doctor</span>
-          <span className="role-card-sub">Consult and manage prescriptions</span>
-        </button>
-        <button className="role-card" onClick={() => onPick('staff')}>
-          <span className="role-card-title">Front desk staff</span>
-          <span className="role-card-sub">Manage the queue and checkout</span>
-        </button>
-        <button className="role-card" onClick={() => onPick('clinic')}>
-          <span className="role-card-title">Register your clinic</span>
-          <span className="role-card-sub">First time on ACISI? Start here as clinic admin</span>
-        </button>
+        <RoleCard role="patient" title="Patient" sub="Check in and view your records" onPick={() => onPick('patient')} />
+        <RoleCard role="doctor" title="Doctor" sub="Consult and manage prescriptions" onPick={() => onPick('doctor')} />
+        <RoleCard role="staff" title="Front desk staff" sub="Manage the queue and checkout" onPick={() => onPick('staff')} />
+        <RoleCard role="clinic" title="Register your clinic" sub="First time on ACISI? Start here as clinic admin" onPick={() => onPick('clinic')} />
       </div>
     </>
   );
@@ -365,7 +350,9 @@ function ClinicSignupForm({ onBack, onDone }: { onBack: () => void; onDone: (inv
 function StaffConfirm({ staffCode }: { staffCode: string }) {
   return (
     <div style={{ textAlign: 'center' }}>
-      <div className="confirm-badge">&#10003;</div>
+      <div className="confirm-badge">
+        <Check size={26} aria-hidden />
+      </div>
       <h1 className="auth-h1">You&apos;re set up</h1>
       <p className="auth-sub">Your clinic&apos;s invite code was recognized. Here&apos;s your own ACISI staff ID.</p>
       <div className="confirm-code-box">
@@ -383,7 +370,9 @@ function StaffConfirm({ staffCode }: { staffCode: string }) {
 function ClinicConfirm({ inviteCode, staffCode }: { inviteCode: string; staffCode: string }) {
   return (
     <div style={{ textAlign: 'center' }}>
-      <div className="confirm-badge">&#10003;</div>
+      <div className="confirm-badge">
+        <Check size={26} aria-hidden />
+      </div>
       <h1 className="auth-h1">Your clinic is registered</h1>
       <p className="auth-sub">
         You&apos;re now the clinic admin. Share this invite code with your doctors and front-desk staff so they can

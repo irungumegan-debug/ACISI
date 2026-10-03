@@ -1,5 +1,174 @@
 @import "tailwindcss";
+@import "../../brand/tokens.css";
 
-body {
-  @apply bg-slate-50 text-slate-900;
+/*
+ * Brand tokens (brand/tokens.css) exposed to Tailwind, so classes like
+ * bg-navy-900, text-gold-700, bg-cream-100 and font-display all come from
+ * the one shared definition.
+ *
+ * The neutral "slate" scale the pages already use is re-tuned here to the
+ * brand's warm, navy-tinted neutrals, so every existing slate-* class picks
+ * up the new look without changing any page logic.
+ */
+@theme {
+  --font-sans: var(--font-body);
+  --font-display: 'Sora', 'Segoe UI', system-ui, -apple-system, sans-serif;
+
+  --color-navy-950: #070b1c;
+  --color-navy-900: #0a0f24;
+  --color-navy-850: #0e1530;
+  --color-navy-800: #111a3a;
+  --color-navy-700: #1b2752;
+  --color-navy-600: #26345f;
+  --color-navy-500: #3a4a7a;
+
+  --color-gold-200: #fff0bf;
+  --color-gold-300: #f3d67e;
+  --color-gold-400: #e6c068;
+  --color-gold-500: #d4a83f;
+  --color-gold-600: #b8862a;
+  --color-gold-700: #8a6414;
+  --color-gold-tint: #fbf3df;
+
+  --color-cream-50: #fcfaf6;
+  --color-cream-100: #f8f5ef;
+  --color-cream-200: #efe9dd;
+
+  --color-ink-900: #0f1530;
+  --color-ink-700: #2e3650;
+  --color-ink-500: #5b6478;
+  --color-ink-400: #7a8296;
+
+  --color-slate-50: #faf8f3;
+  --color-slate-100: #f3efe6;
+  --color-slate-200: #e7e1d4;
+  --color-slate-300: #d6cdbb;
+  --color-slate-400: #8f96a8;
+  --color-slate-500: #5b6478;
+  --color-slate-600: #454e66;
+  --color-slate-700: #2e3650;
+  --color-slate-800: #1b2340;
+  --color-slate-900: #0f1530;
+  --color-slate-950: #0a0f24;
+
+  --shadow-card: 0 1px 2px rgba(15, 21, 48, 0.05), 0 4px 14px -6px rgba(15, 21, 48, 0.1);
+  --shadow-raised: 0 18px 40px -12px rgba(15, 21, 48, 0.22), 0 4px 10px rgba(15, 21, 48, 0.06);
+  --shadow-gold: 0 10px 26px -10px rgba(212, 168, 63, 0.6);
+
+  --animate-shimmer: shimmer 1.4s ease-in-out infinite;
+  @keyframes shimmer {
+    0% {
+      background-position: -400px 0;
+    }
+    100% {
+      background-position: 400px 0;
+    }
+  }
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    background: var(--cream-100);
+    color: var(--ink-900);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+  }
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    letter-spacing: -0.02em;
+  }
+  ::selection {
+    background: var(--gold-300);
+    color: var(--navy-900);
+  }
+  :focus-visible {
+    outline: 2px solid var(--gold-500);
+    outline-offset: 2px;
+  }
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: none;
+    box-shadow: var(--ring-gold);
+  }
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']) {
+    cursor: pointer;
+  }
+}
+
+@layer components {
+  /* Gold foil — primary buttons, active marks, accents */
+  .bg-foil {
+    background: var(--gold-foil);
+  }
+  .text-foil {
+    background: var(--gold-foil-text);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .btn-gold {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 999px;
+    background: var(--gold-foil);
+    background-size: 160% 160%;
+    color: var(--navy-900);
+    font-weight: 600;
+    box-shadow: var(--shadow-gold), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+    transition:
+      background-position 500ms,
+      transform 150ms,
+      box-shadow 250ms;
+  }
+  .btn-gold:hover:not(:disabled) {
+    background-position: 100% 50%;
+    transform: translateY(-1px);
+  }
+  .btn-gold:disabled {
+    opacity: 0.55;
+  }
+  .paid-celebrate {
+    animation: paid-in 600ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  @keyframes paid-in {
+    from {
+      opacity: 0;
+      transform: scale(0.96) translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .skeleton {
+    background: linear-gradient(90deg, #efe9dd 0px, #f8f5ef 160px, #efe9dd 320px);
+    background-size: 800px 100%;
+    animation: var(--animate-shimmer);
+    border-radius: 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media print {
+  body {
+    background: #fff;
+  }
 }

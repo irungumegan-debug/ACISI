@@ -1,5 +1,124 @@
 @import "tailwindcss";
+@import "../../brand/tokens.css";
 
-body {
-  @apply bg-stone-50 text-stone-900;
+/*
+ * Brand tokens (brand/tokens.css) exposed to Tailwind — the same mapping as
+ * the staff console. The "stone" neutrals the owner pages already use are
+ * re-tuned to the brand's warm, navy-tinted neutrals.
+ */
+@theme {
+  --font-sans: var(--font-body);
+  --font-display: 'Sora', 'Segoe UI', system-ui, -apple-system, sans-serif;
+
+  --color-navy-950: #070b1c;
+  --color-navy-900: #0a0f24;
+  --color-navy-850: #0e1530;
+  --color-navy-800: #111a3a;
+  --color-navy-700: #1b2752;
+  --color-navy-600: #26345f;
+
+  --color-gold-300: #f3d67e;
+  --color-gold-400: #e6c068;
+  --color-gold-500: #d4a83f;
+  --color-gold-700: #8a6414;
+  --color-gold-tint: #fbf3df;
+
+  --color-cream-50: #fcfaf6;
+  --color-cream-100: #f8f5ef;
+
+  --color-ink-900: #0f1530;
+  --color-ink-700: #2e3650;
+  --color-ink-500: #5b6478;
+
+  --color-stone-50: #faf8f3;
+  --color-stone-100: #f3efe6;
+  --color-stone-200: #e7e1d4;
+  --color-stone-300: #d6cdbb;
+  --color-stone-400: #8f96a8;
+  --color-stone-500: #5b6478;
+  --color-stone-600: #454e66;
+  --color-stone-700: #2e3650;
+  --color-stone-800: #1b2340;
+  --color-stone-900: #0f1530;
+
+  --shadow-card: 0 1px 2px rgba(15, 21, 48, 0.05), 0 4px 14px -6px rgba(15, 21, 48, 0.1);
+  --shadow-raised: 0 18px 40px -12px rgba(15, 21, 48, 0.22), 0 4px 10px rgba(15, 21, 48, 0.06);
+  --shadow-gold: 0 10px 26px -10px rgba(212, 168, 63, 0.6);
+}
+
+@layer base {
+  body {
+    background: var(--cream-100);
+    color: var(--ink-900);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+  }
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    letter-spacing: -0.02em;
+  }
+  :focus-visible {
+    outline: 2px solid var(--gold-500);
+    outline-offset: 2px;
+  }
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: none;
+    box-shadow: var(--ring-gold);
+  }
+}
+
+@layer components {
+  .bg-foil {
+    background: var(--gold-foil);
+  }
+  .btn-gold {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 999px;
+    background: var(--gold-foil);
+    background-size: 160% 160%;
+    color: var(--navy-900);
+    font-weight: 600;
+    box-shadow: var(--shadow-gold), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+    transition:
+      background-position 500ms,
+      transform 150ms;
+  }
+  .btn-gold:hover:not(:disabled) {
+    background-position: 100% 50%;
+    transform: translateY(-1px);
+  }
+  .btn-gold:disabled {
+    opacity: 0.55;
+  }
+  .skeleton {
+    background: linear-gradient(90deg, #efe9dd 0px, #f8f5ef 160px, #efe9dd 320px);
+    background-size: 800px 100%;
+    animation: owner-shimmer 1.4s ease-in-out infinite;
+    border-radius: 12px;
+  }
+  @keyframes owner-shimmer {
+    from {
+      background-position: -400px 0;
+    }
+    to {
+      background-position: 400px 0;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
