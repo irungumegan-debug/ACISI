@@ -120,18 +120,24 @@ client-side routing within whichever of the SPAs is active.
 
 ### 10. The owner site (`/owner`)
 
-A separate site for the company owner, with platform-wide access: every
-clinic, staff member and patient record, across all clinics. From it the
-owner can:
+A separate site for the company owner, focused on the business rather than
+individual patients:
 
-- see every patient's full record (visits, diagnoses, prescriptions,
-  payments, appointments, consent history) — **every view is written to the
-  audit log**, and each record shows who has accessed it;
-- delete a patient account (see below);
-- deactivate/reactivate a clinic or staff member, which logs them out
-  immediately (staff are never erased — their names stay on the visits they
-  handled);
-- browse the full audit log.
+- **Overview** — platform totals: clinics, doctors, registered patients
+  (a count only), visits and revenue.
+- **Clinics** — every registered clinic with its revenue (total and last
+  30 days), recent visits, and number of doctors and staff, sortable by
+  revenue. Opening a clinic shows its numbers, its **doctors** (department,
+  visits handled, last login) and its **front-desk & admin staff**, each of
+  whom can be deactivated/reactivated (logs them out immediately; staff are
+  never erased, since their names stay on the visits they handled). The
+  clinic itself can be deactivated too.
+- **Activity log** — the full audit trail, read-only.
+- **Delete a patient** — deletes an account by its patient ID (see below),
+  for a patient who asks but can't do it from the portal.
+
+The owner site never displays patient names, contact details or medical
+records — there is no patient list or patient record view at all.
 
 There is no signup form for it. The owner account is created privately, in
 one of two ways — either way only a bcrypt hash of the password is stored,
@@ -171,8 +177,9 @@ any "too many attempts" lockout and logs out their other sessions. (Without
 a reset, the lockout still lifts by itself after 15 minutes.) This relies on
 SMS delivery being live.
 
-**Deleting a patient account** — by the owner, or by patients themselves
-from the portal's *Account* tab (they re-enter their PIN) — erases
+**Deleting a patient account** — by the owner (by patient ID), or by
+patients themselves from the portal's *Account* tab (they re-enter their
+PIN) — erases
 everything that identifies them: name, phone number, email, date of birth,
 county, PIN, and the phone number on their M-Pesa records. Their visits and
 payments are kept with no name attached, so clinics keep their medical and

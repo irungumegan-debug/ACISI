@@ -7,6 +7,7 @@ export interface OwnerSession {
 export interface Overview {
   clinics: { active: number; total: number };
   staff: { active: number; total: number };
+  doctors: { active: number };
   patients: { active: number; deleted: number };
   visits: { total: number; last30Days: number };
   upcomingAppointments: number;
@@ -20,8 +21,13 @@ export interface ClinicListItem {
   ussdCode: string;
   isActive: boolean;
   createdAt: string;
+  doctorCount: number;
+  /** Active non-doctor staff (front desk, clinicians, admins). */
   staffCount: number;
   visitCount: number;
+  visitsLast30Days: number;
+  revenueKes: number;
+  revenueLast30DaysKes: number;
 }
 
 export interface StaffListItem {
@@ -30,15 +36,13 @@ export interface StaffListItem {
   name: string;
   role: string;
   phoneNumber: string;
-  clinicId?: string;
-  clinicName?: string;
   departmentName: string | null;
   isActive: boolean;
   lastLoginAt: string | null;
   createdAt: string;
+  /** Visits this person consulted on, as a doctor. */
+  consultationCount: number;
 }
-
-export type EncounterStatus = 'WAITING' | 'IN_CONSULTATION' | 'READY_FOR_CHECKOUT' | 'DONE';
 
 export interface ClinicDetail {
   id: string;
@@ -49,33 +53,12 @@ export interface ClinicDetail {
   isActive: boolean;
   createdAt: string;
   visitCount: number;
-  appointmentCount: number;
+  visitsLast30Days: number;
+  upcomingAppointments: number;
   revenueKes: number;
+  revenueLast30DaysKes: number;
   departments: { id: string; name: string; isActive: boolean }[];
   staff: StaffListItem[];
-  recentVisits: {
-    encounterId: string;
-    patientId: string;
-    patientName: string;
-    patientCode: string;
-    patientDeleted: boolean;
-    departmentName: string;
-    status: EncounterStatus;
-    visitedAt: string;
-  }[];
-}
-
-export type PatientStatusFilter = 'active' | 'deleted' | 'all';
-
-export interface PatientListItem {
-  id: string;
-  patientCode: string;
-  firstName: string;
-  lastName: string;
-  phoneNumber: string | null;
-  createdAt: string;
-  deletedAt: string | null;
-  visitCount: number;
 }
 
 export interface ActivityEntry {
@@ -88,50 +71,6 @@ export interface ActivityEntry {
   entityId: string | null;
   metadata: unknown;
   createdAt: string;
-}
-
-export interface PatientDetail {
-  id: string;
-  patientCode: string;
-  firstName: string;
-  lastName: string;
-  phoneNumber: string | null;
-  email: string | null;
-  dateOfBirth: string | null;
-  sex: string;
-  county: string | null;
-  hasPin: boolean;
-  createdAt: string;
-  deletedAt: string | null;
-  deletedByType: 'PATIENT' | 'OWNER' | null;
-  crossClinicSharing: boolean;
-  consents: { id: string; type: string; granted: boolean; channel: string; version: string; createdAt: string }[];
-  visits: {
-    encounterId: string;
-    clinicId: string;
-    clinicName: string;
-    departmentName: string;
-    status: EncounterStatus;
-    assignedDoctorName: string | null;
-    consultedByName: string | null;
-    visitReason: string | null;
-    diagnosis: string | null;
-    prescription: string | null;
-    amountKes: number;
-    paymentStatus: string;
-    mpesaReceiptNumber: string | null;
-    visitedAt: string;
-    checkedOutAt: string | null;
-  }[];
-  appointments: {
-    id: string;
-    clinicName: string;
-    departmentName: string;
-    scheduledFor: string;
-    status: string;
-    createdAt: string;
-  }[];
-  accessLog: ActivityEntry[];
 }
 
 export class ApiError extends Error {
@@ -193,26 +132,15 @@ export const api = {
       { method: 'POST' },
     );
   },
-  staff(q?: string) {
-    return request<{ staff: StaffListItem[] }>(`/staff${qs({ q })}`);
-  },
   setStaffActive(id: string, active: boolean) {
     return request<{ id: string; isActive: boolean }>(
       `/staff/${encodeURIComponent(id)}/${active ? 'reactivate' : 'deactivate'}`,
       { method: 'POST' },
     );
   },
-  patients(q: string, status: PatientStatusFilter) {
-    return request<{ patients: PatientListItem[] }>(`/patients${qs({ q, status })}`);
-  },
-  patient(id: string) {
-    return request<PatientDetail>(`/patients/${encodeURIComponent(id)}`);
-  },
-  deletePatient(id: string, confirmPatientCode: string) {
-    return request<void>(`/patients/${encodeURIComponent(id)}/delete`, {
-      method: 'POST',
-      body: JSON.stringify({ confirmPatientCode }),
-    });
+  /** Deletes a patient account by its patient ID. Returns nothing about the patient. */
+  deletePatient(patientCode: string) {
+    return request<void>('/patients/delete', { method: 'POST', body: JSON.stringify({ patientCode }) });
   },
   activity(params: { actorType?: string; before?: string }) {
     return request<{ entries: ActivityEntry[]; hasMore: boolean }>(`/activity${qs(params)}`);

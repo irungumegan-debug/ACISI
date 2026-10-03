@@ -92,14 +92,14 @@ describe('POST /owner/auth/login', () => {
 
 describe('owner-only routes', () => {
   it('refuse requests without an owner session', async () => {
-    for (const path of ['/owner/overview', '/owner/patients', '/owner/clinics', '/owner/staff', '/owner/activity']) {
+    for (const path of ['/owner/overview', '/owner/clinics', '/owner/clinics/c-1', '/owner/activity']) {
       const res = await request(buildApp()).get(path);
       expect(res.status).toBe(401);
     }
   });
 
   it('refuse a staff or patient session cookie', async () => {
-    const res = await request(buildApp()).get('/owner/patients').set('Cookie', 'acisi_staff_session=abc; acisi_patient_session=def');
+    const res = await request(buildApp()).get('/owner/clinics').set('Cookie', 'acisi_staff_session=abc; acisi_patient_session=def');
     expect(res.status).toBe(401);
   });
 
