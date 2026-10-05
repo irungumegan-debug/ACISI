@@ -1,4 +1,4 @@
-import { buildPaymentReceiptSms, buildWalkInInviteSms, formatKes, SINGLE_SMS_MAX_CHARS } from '../../src/services/smsTemplates';
+import { buildPaymentReceiptSms, buildVisitSummarySms, buildWalkInInviteSms, formatKes, SINGLE_SMS_MAX_CHARS } from '../../src/services/smsTemplates';
 
 describe('buildWalkInInviteSms', () => {
   it('uses the agreed wording and the patient check-in page', () => {
@@ -54,5 +54,28 @@ describe('buildPaymentReceiptSms', () => {
     expect(message.length).toBeLessThanOrEqual(SINGLE_SMS_MAX_CHARS);
     expect(message).toContain('KES 1,234,567');
     expect(message).toContain('M-Pesa');
+  });
+});
+
+describe('buildVisitSummarySms', () => {
+  it('has the clinic name, date and medicines with how to take them', () => {
+    expect(
+      buildVisitSummarySms({
+        clinicName: 'Sunrise Family Clinic',
+        date: '05/10/2026',
+        prescription: 'Amoxicillin 500mg, 1 capsule 3 times a day for 5 days',
+      }),
+    ).toBe(
+      'Sunrise Family Clinic\nVisit: 05/10/2026\nMedicines: Amoxicillin 500mg, 1 capsule 3 times a day for 5 days\nThank you for visiting.',
+    );
+  });
+
+  it('says "None" when nothing was prescribed', () => {
+    expect(buildVisitSummarySms({ clinicName: 'Sunrise', date: '05/10/2026', prescription: '  ' })).toContain('Medicines: None');
+  });
+
+  it('keeps the prescription exactly as written, even if it runs past one SMS', () => {
+    const prescription = 'Levothyroxine 50µg once daily before breakfast. '.repeat(4).trim();
+    expect(buildVisitSummarySms({ clinicName: 'Sunrise', date: '05/10/2026', prescription })).toContain(prescription);
   });
 });

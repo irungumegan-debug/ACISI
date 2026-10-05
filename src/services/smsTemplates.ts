@@ -101,3 +101,25 @@ export function buildPaymentReceiptSms(input: {
   }
   return build(name, methodText);
 }
+
+/**
+ * The visit summary SMS sent at front-desk checkout: clinic name, visit
+ * date, and the prescription (medicines and how to take them) — nothing
+ * else. The diagnosis and the department are deliberately left out: our
+ * privacy notice promises the diagnosis never goes out by SMS, and a
+ * department name (e.g. "Gynecology") can reveal much the same thing.
+ *
+ * The prescription is sent as the doctor wrote it — not passed through
+ * toSmsSafe, which would strip characters like "µ" from a dose — and is
+ * never shortened, since a cut-off dosage is worse than a two-part SMS.
+ */
+export function buildVisitSummarySms(input: {
+  clinicName: string;
+  /** Already formatted DD/MM/YYYY. */
+  date: string;
+  prescription: string | null;
+}): string {
+  const clinic = toSmsSafe(input.clinicName) || 'Clinic';
+  const medicines = input.prescription?.trim() || 'None';
+  return `${clinic}\nVisit: ${input.date}\nMedicines: ${medicines}\nThank you for visiting.`;
+}

@@ -196,7 +196,7 @@ export function DoctorEncounterPage() {
                   required
                   value={prescription}
                   onChange={(e) => setPrescription(e.target.value)}
-                  placeholder="Medication, dosage, duration"
+                  placeholder="Medication, dosage, duration (sent to the patient by SMS, so no diagnosis here)"
                   className={textarea}
                 />
               </div>

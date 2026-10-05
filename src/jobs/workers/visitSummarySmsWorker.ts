@@ -3,6 +3,8 @@ import { redisQueueConnection } from '../../config/redis';
 import { prisma } from '../../db/prisma';
 import { smsClient } from '../../config/africastalking';
 import { logger } from '../../utils/logger';
+import { formatKenyaDate } from '../../utils/kenyaTime';
+import { buildVisitSummarySms } from '../../services/smsTemplates';
 import { VisitSummarySmsJobData } from '../queue';
 
 export function startVisitSummarySmsWorker(): Worker<VisitSummarySmsJobData> {
@@ -11,11 +13,7 @@ export function startVisitSummarySmsWorker(): Worker<VisitSummarySmsJobData> {
     async (job) => {
       const encounter = await prisma.encounter.findUnique({
         where: { id: job.data.encounterId },
-        include: {
-          patient: true,
-          clinic: true,
-          checkIn: { include: { department: true } },
-        },
+        include: { patient: true, clinic: true },
       });
 
       if (!encounter) {
@@ -34,11 +32,12 @@ export function startVisitSummarySmsWorker(): Worker<VisitSummarySmsJobData> {
         return;
       }
 
-      const message =
-        `ACISI — ${encounter.clinic.name}\n` +
-        `Visit: ${encounter.checkIn.department.name}\n` +
-        `Prescription: ${encounter.prescription || 'None'}\n` +
-        `Thank you for visiting.`;
+      // Never includes the diagnosis — see buildVisitSummarySms.
+      const message = buildVisitSummarySms({
+        clinicName: encounter.clinic.name,
+        date: formatKenyaDate(encounter.createdAt),
+        prescription: encounter.prescription,
+      });
 
       await smsClient.send({ to: [encounter.patient.phoneNumber], message });
     },
