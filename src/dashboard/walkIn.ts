@@ -2,6 +2,7 @@ import { NextFunction, Request, Response, Router } from 'express';
 import { z } from 'zod';
 import { requireStaffSession, AuthenticatedRequest } from './auth';
 import { checkInWalkIn, getTodayCheckInCounts, lookupWalkInPatient, WalkInError } from '../services/walkInService';
+import { patientIdentityInputSchema } from '../services/patientIdentity';
 
 export const walkInRouter = Router();
 
@@ -62,6 +63,8 @@ const checkInSchema = z.object({
   smsOptOut: z.boolean().default(false),
   /** "Patient has been told how their data is used and where to read the Privacy Notice." */
   privacyNoticeExplained: z.boolean().default(false),
+  /** Optional ID document and next of kin; empty fields leave what's on file alone. */
+  identity: patientIdentityInputSchema.optional(),
 });
 
 /** Step 2: add the patient (found or newly registered) to today's queue. No fee, no payment prompt. */

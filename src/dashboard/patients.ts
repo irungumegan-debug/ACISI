@@ -4,6 +4,7 @@ import { requireStaffSession, AuthenticatedRequest } from './auth';
 import { getScopedHistory } from '../services/patientService';
 import { recordAuditEvent } from '../services/auditService';
 import { z } from 'zod';
+import { identityView, patientIdentityInputSchema, PatientIdentityError, preparePatientIdentity } from '../services/patientIdentity';
 
 export const patientsRouter = Router();
 
@@ -88,6 +89,7 @@ patientsRouter.get('/:id', async (req, res) => {
     dateOfBirth: patient.dateOfBirth,
     sex: patient.sex,
     smsOptOut: patient.smsOptOut,
+    ...identityView(patient),
     history,
     hasHiddenHistoryElsewhere,
   });
@@ -133,4 +135,53 @@ patientsRouter.patch('/:id/sms-preference', async (req, res) => {
     entityId: patient.id,
   });
   res.json({ smsOptOut: parsed.data.smsOptOut });
+});
+
+/**
+ * ID document and next of kin on the patient's page. Front-desk roles only;
+ * scoped to patients this clinic has seen. Fields sent empty are cleared.
+ * The audit row names which fields changed, never their values.
+ */
+patientsRouter.patch('/:id/details', async (req, res) => {
+  const { clinicId, staffId, role } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  if (role === 'DOCTOR') {
+    res.status(403).json({ error: 'Only front-desk staff can change patient details' });
+    return;
+  }
+  const parsed = patientIdentityInputSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Check the ID and next of kin details' });
+    return;
+  }
+
+  let update;
+  try {
+    update = preparePatientIdentity(parsed.data, 'replace');
+  } catch (err) {
+    if (err instanceof PatientIdentityError) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
+
+  const patient = await prisma.patient.findFirst({
+    where: { id: req.params.id, deletedAt: null, OR: [{ checkIns: { some: { clinicId } } }, { encounters: { some: { clinicId } } }] },
+  });
+  if (!patient) {
+    res.status(404).json({ error: 'Patient not found' });
+    return;
+  }
+
+  const updated = await prisma.patient.update({ where: { id: patient.id }, data: update });
+  await recordAuditEvent({
+    actorType: 'STAFF',
+    actorId: staffId,
+    staffId,
+    action: 'PATIENT_DETAILS_UPDATED',
+    entityType: 'Patient',
+    entityId: patient.id,
+    metadata: { fields: Object.keys(update), clinicId },
+  });
+  res.json(identityView(updated));
 });

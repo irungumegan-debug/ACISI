@@ -2,6 +2,8 @@ import { FormEvent, useEffect, useState } from 'react';
 import { api, ApiError, ClinicListItem, DepartmentListItem, OwnAppointment, VisitHistoryEntry } from '../lib/api';
 import { usePatientAuth } from '../context/PatientAuthContext';
 import { legalBoxSatisfied, PRIVACY_PATH, TERMS_PATH } from '../lib/legal';
+import { EMPTY_IDENTITY, IdentityFields } from '../components/IdentityFields';
+import type { PatientIdentity } from '../lib/api';
 import type { LucideIcon } from 'lucide-react';
 import {
   Building2,
@@ -76,6 +78,19 @@ function CheckInPanel({ patientCode }: { patientCode: string }) {
   const [privacyAckRequired, setPrivacyAckRequired] = useState<boolean | null>(null);
   const [privacyClinicName, setPrivacyClinicName] = useState('');
   const [privacyAcknowledged, setPrivacyAcknowledged] = useState(false);
+  // Optional ID and next of kin, pre-filled from the patient's record.
+  const [identity, setIdentity] = useState<PatientIdentity>(EMPTY_IDENTITY);
+  const [identityOnFile, setIdentityOnFile] = useState(false);
+
+  useEffect(() => {
+    api
+      .getPatientDetails()
+      .then((d) => {
+        setIdentity({ idType: d.idType ?? '', idNumber: d.idNumber ?? '', nextOfKinName: d.nextOfKinName ?? '', nextOfKinPhone: d.nextOfKinPhone ?? '' });
+        setIdentityOnFile(Boolean(d.idNumber || d.nextOfKinName || d.nextOfKinPhone));
+      })
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     api.listClinics().then((res) => {
@@ -128,7 +143,7 @@ function CheckInPanel({ patientCode }: { patientCode: string }) {
     setError(null);
     setSubmitting(true);
     try {
-      const res = await api.patientCheckIn(clinicId, departmentId, privacyAckRequired === true && privacyAcknowledged);
+      const res = await api.patientCheckIn(clinicId, departmentId, privacyAckRequired === true && privacyAcknowledged, identity);
       if (res.status === 'FAILED') {
         setError('We could not start the payment request. Please try again shortly.');
         return;
@@ -201,6 +216,13 @@ function CheckInPanel({ patientCode }: { patientCode: string }) {
             ))}
           </div>
         </div>
+        <details className="identity-details">
+          <summary>
+            {identityOnFile ? 'Your ID and next of kin' : 'Add your ID and next of kin'} <span className="optional">(optional)</span>
+          </summary>
+          <p className="identity-hint">Helps the clinic identify you correctly and reach someone on your behalf if needed.</p>
+          <IdentityFields value={identity} onChange={setIdentity} />
+        </details>
         {privacyAckRequired && (
           <label className="legal-check">
             <input type="checkbox" required checked={privacyAcknowledged} onChange={(e) => setPrivacyAcknowledged(e.target.checked)} />

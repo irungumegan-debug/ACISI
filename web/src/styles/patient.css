@@ -721,3 +721,37 @@
   font-weight: 500;
   color: var(--ink-500);
 }
+
+/* ---------- optional ID / next of kin at check-in ---------- */
+.patient-portal .identity-details {
+  margin: 0 0 18px;
+  padding: 0 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line-strong);
+  background: var(--cream-50);
+}
+.patient-portal .identity-details summary {
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--ink-700);
+  cursor: pointer;
+}
+.patient-portal .identity-details .optional {
+  font-weight: 400;
+  color: var(--ink-500);
+}
+.patient-portal .identity-details[open] {
+  padding-bottom: 4px;
+}
+.patient-portal .identity-hint {
+  margin: 0 0 14px;
+  font-size: 14px;
+  color: var(--ink-500);
+}
+.patient-portal .identity-fields .field input,
+.patient-portal .identity-fields .field select {
+  background: #fff;
+}

@@ -96,9 +96,17 @@ for third-party access logging doesn't strictly apply to self-access.
 
 See `prisma/schema.prisma` for full field-level comments. Key decisions:
 
-- **Minimal necessary data:** `Patient` collects only name, phone, DOB, sex,
-  county — no national ID or other sensitive identifiers at MVP. Add fields
-  later only behind an explicit, versioned consent capture, not by default.
+- **Minimal necessary data:** `Patient` collects name, phone, DOB, sex and
+  county, plus — optionally — an ID document (national ID, passport, birth
+  certificate or alien ID, with its type) and a next of kin, needed for
+  Digital Health Agency certification. The Privacy Notice gives their legal
+  basis (identifying the patient correctly, reaching someone on their
+  behalf); patients acknowledge it per clinic (see "Privacy Notice and Terms
+  of Service" below). Rules live in `src/services/patientIdentity.ts`: check-in
+  and walk-in only fill in what's entered (never wipe what's on file), the
+  staff patient page can also clear fields, walk-in lookup only says whether
+  details are on file, audit rows name the fields changed but never their
+  values, and account deletion wipes them.
 - **Consent is append-only:** `Consent` rows are never updated in place; a
   revocation is a new row with `granted: false`. `hasActiveDataSharingConsent()`
   always reads the *latest* row, so history is preserved but current status

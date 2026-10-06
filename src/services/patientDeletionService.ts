@@ -42,7 +42,8 @@ export function redactPhoneNumbers(value: unknown): unknown {
 
 /**
  * Deletes a patient's account: wipes everything that identifies them (name,
- * phone, email, date of birth, county, PIN, M-Pesa phone numbers), withdraws
+ * phone, email, date of birth, county, PIN, ID document, next of kin, M-Pesa
+ * phone numbers), withdraws
  * cross-clinic sharing consent, cancels open appointments, and logs them out
  * everywhere. Their visits, check-ins and payments are kept — now anonymous
  * — so clinics keep their medical and financial records.
@@ -73,6 +74,10 @@ export async function deletePatientAccount(patientId: string, actor: PatientDele
         sex: 'UNKNOWN',
         county: null,
         pinHash: null,
+        idType: null,
+        idNumber: null,
+        nextOfKinName: null,
+        nextOfKinPhone: null,
         deletedAt: now,
         deletedByType: actor.type,
       },

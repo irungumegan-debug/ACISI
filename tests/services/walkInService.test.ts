@@ -116,7 +116,14 @@ describe('lookupWalkInPatient', () => {
     const result = await lookupWalkInPatient('0712345678', 'clinic-A', 'staff-1');
     expect(result).toEqual({
       phoneNumber: '+254712345678',
-      patient: { id: 'p-1', name: 'Jane Wanjiru', patientCode: 'ACI-7F2K', lastVisitAt: new Date('2026-09-20T10:00:00Z') },
+      patient: {
+        id: 'p-1',
+        name: 'Jane Wanjiru',
+        patientCode: 'ACI-7F2K',
+        lastVisitAt: new Date('2026-09-20T10:00:00Z'),
+        hasIdOnFile: false,
+        hasNextOfKinOnFile: false,
+      },
       privacyNoticeAckRequired: false,
     });
     expect(prisma.encounter.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { patientId: 'p-1', clinicId: 'clinic-A' } }));
@@ -401,5 +408,38 @@ describe('Privacy Notice checkbox at walk-in check-in', () => {
     mockNeedsAck.mockResolvedValue(false);
     await expect(checkInWalkIn(input({ privacyNoticeExplained: false }))).resolves.toMatchObject({ checkInId: 'ci-1' });
     expect(mockRecordLegal).not.toHaveBeenCalled();
+  });
+});
+
+describe('ID document and next of kin at walk-in check-in', () => {
+  it('saves what was entered, in the same transaction as the check-in', async () => {
+    await checkInWalkIn(
+      input({ identity: { idType: 'NATIONAL_ID', idNumber: '1234 5678', nextOfKinName: 'Peter Otieno', nextOfKinPhone: '0722 000 111' } }),
+    );
+    expect(tx.patient!.update).toHaveBeenCalledWith({
+      where: { id: 'p-1' },
+      data: { idType: 'NATIONAL_ID', idNumber: '12345678', nextOfKinName: 'Peter Otieno', nextOfKinPhone: '+254722000111' },
+    });
+  });
+
+  it('never wipes details on file when the fields are left empty', async () => {
+    await checkInWalkIn(input({ identity: { idType: '', idNumber: '', nextOfKinName: '', nextOfKinPhone: '' } }));
+    expect(tx.patient!.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses a bad ID before registering anyone or checking them in', async () => {
+    mockFindPatient.mockResolvedValue(null);
+    await expect(
+      checkInWalkIn(input({ newPatient: { fullName: 'Amina Otieno', registrationConsent: true }, identity: { idType: 'NATIONAL_ID', idNumber: 'AB12' } })),
+    ).rejects.toMatchObject({ status: 400, message: 'A national ID number is 6 to 9 digits' });
+    expect(mockRegister).not.toHaveBeenCalled();
+    expect(tx.checkIn!.create).not.toHaveBeenCalled();
+  });
+
+  it('lookup only says whether details are on file, never what they are', async () => {
+    mockFindPatient.mockResolvedValue({ ...PATIENT, idType: 'PASSPORT', idNumber: 'AK123456', nextOfKinName: 'Peter', nextOfKinPhone: null });
+    const result = await lookupWalkInPatient('0712345678', 'clinic-A', 'staff-1');
+    expect(result.patient).toMatchObject({ hasIdOnFile: true, hasNextOfKinOnFile: true });
+    expect(JSON.stringify(result)).not.toContain('AK123456');
   });
 });

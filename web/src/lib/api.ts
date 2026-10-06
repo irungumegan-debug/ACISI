@@ -34,6 +34,16 @@ export interface DepartmentListItem {
   name: string;
 }
 
+export type PatientIdType = 'NATIONAL_ID' | 'PASSPORT' | 'BIRTH_CERTIFICATE' | 'ALIEN_ID';
+
+/** Optional ID document and next of kin, as edited in forms ('' = not entered). */
+export interface PatientIdentity {
+  idType: PatientIdType | '';
+  idNumber: string;
+  nextOfKinName: string;
+  nextOfKinPhone: string;
+}
+
 export interface PatientSession {
   patientCode: string;
   firstName: string;
@@ -175,11 +185,18 @@ export const api = {
     });
   },
 
-  patientCheckIn(clinicId: string, departmentId: string, privacyNoticeAcknowledged: boolean) {
+  patientCheckIn(clinicId: string, departmentId: string, privacyNoticeAcknowledged: boolean, identity?: PatientIdentity) {
     return request<{ checkInId: string; status: string }>('/patients/checkin', {
       method: 'POST',
-      body: JSON.stringify({ clinicId, departmentId, privacyNoticeAcknowledged }),
+      body: JSON.stringify({ clinicId, departmentId, privacyNoticeAcknowledged, identity }),
     });
+  },
+
+  /** The patient's own ID document and next of kin (null when not on file). */
+  getPatientDetails() {
+    return request<{ idType: PatientIdType | null; idNumber: string | null; nextOfKinName: string | null; nextOfKinPhone: string | null }>(
+      '/patients/details',
+    );
   },
 
   /** Whether checking in at this clinic needs the Privacy Notice checkbox (first check-in there, or a new notice version). */
