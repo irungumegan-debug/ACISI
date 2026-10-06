@@ -35,7 +35,7 @@ Patient data must be stored and processed only in Kenya.
 
 ```
 systemctl status acisi --no-pager | head -5        # should say "active (running)"
-journalctl -u acisi -n 50 --no-pager               # recent app logs
+sudo journalctl -u acisi -n 50 --no-pager               # recent app logs
 curl -s https://acisi.co.ke/healthz; echo          # {"status":"ok"}
 free -h; df -h /                                   # memory and disk
 systemctl list-timers acisi-backup.timer certbot.timer --no-pager
@@ -73,7 +73,7 @@ older backups become unreadable, but newer ones are fine.
 **Check backups:**
 ```
 ls -lh /var/backups/acisi
-journalctl -u acisi-backup -n 20 --no-pager
+sudo journalctl -u acisi-backup -n 20 --no-pager
 ```
 
 **Run a backup now:** `sudo systemctl start acisi-backup`

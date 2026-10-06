@@ -12,9 +12,12 @@ umask 077
 BACKUP_DIR=/var/backups/acisi
 TEST_DB=acisi_restore_test
 
-file=${1:-$(find "$BACKUP_DIR" -maxdepth 1 -name 'acisi-db-*.dump.age' | sort | tail -n 1)}
+file=${1:-}
+if [[ -z $file && -d $BACKUP_DIR ]]; then
+  file=$(find "$BACKUP_DIR" -maxdepth 1 -name 'acisi-db-*.dump.age' | sort | tail -n 1)
+fi
 if [[ -z $file || ! -f $file ]]; then
-  echo "No backup file found in $BACKUP_DIR." >&2
+  echo "No backup found in $BACKUP_DIR yet. Make one first: sudo systemctl start acisi-backup" >&2
   exit 1
 fi
 
@@ -30,8 +33,27 @@ trap cleanup EXIT
 echo "Testing: $(basename "$file")"
 read -rsp "Paste the backup private key (the AGE-SECRET-KEY-1... line), then press Enter: " secret
 echo
+secret=$(tr -d '[:space:]' <<<"$secret") # stray spaces/line endings from copy-paste
+if [[ $secret == age1* ]]; then
+  echo "That's the PUBLIC key (age1...). Paste the PRIVATE key: the line starting AGE-SECRET-KEY-1." >&2
+  exit 1
+elif [[ $secret != AGE-SECRET-KEY-1* ]]; then
+  echo "That isn't a backup private key: it should be one line starting AGE-SECRET-KEY-1 (${#secret} characters were pasted)." >&2
+  exit 1
+fi
 printf '%s\n' "$secret" >"$key"
 unset secret
+
+# Check the key belongs to these backups before restoring anything.
+if ! public=$(age-keygen -y "$key" 2>/dev/null); then
+  echo "That key is damaged (a character missing or changed). Copy the whole AGE-SECRET-KEY-1... line again." >&2
+  exit 1
+fi
+if [[ -f /etc/acisi/backup-recipients.txt ]] && ! grep -qxF "$public" /etc/acisi/backup-recipients.txt; then
+  echo "That key is valid but doesn't match this server's backups. Its public key is: $public" >&2
+  echo "The server encrypts backups to: $(grep -v '^#' /etc/acisi/backup-recipients.txt | head -n 1)" >&2
+  exit 1
+fi
 
 pg dropdb --if-exists "$TEST_DB"
 pg createdb "$TEST_DB"
