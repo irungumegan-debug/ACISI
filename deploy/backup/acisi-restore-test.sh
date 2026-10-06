@@ -34,6 +34,11 @@ echo "Testing: $(basename "$file")"
 read -rsp "Paste the backup private key (the AGE-SECRET-KEY-1... line), then press Enter: " secret
 echo
 secret=$(tr -d '[:space:]' <<<"$secret") # stray spaces/line endings from copy-paste
+# Double-clicking the key in a terminal selects only the part after the last
+# hyphen ("1" + 58 characters), dropping the fixed "AGE-SECRET-KEY-" label.
+if [[ $secret =~ ^1[02-9ACDEFGHJ-NP-Z]{58}$ ]]; then
+  secret="AGE-SECRET-KEY-$secret"
+fi
 if [[ $secret == age1* ]]; then
   echo "That's the PUBLIC key (age1...). Paste the PRIVATE key: the line starting AGE-SECRET-KEY-1." >&2
   exit 1
@@ -42,11 +47,12 @@ elif [[ $secret != AGE-SECRET-KEY-1* ]]; then
   exit 1
 fi
 printf '%s\n' "$secret" >"$key"
+pasted_len=${#secret}
 unset secret
 
 # Check the key belongs to these backups before restoring anything.
 if ! public=$(age-keygen -y "$key" 2>/dev/null); then
-  echo "That key is damaged (a character missing or changed). Copy the whole AGE-SECRET-KEY-1... line again." >&2
+  echo "That key is damaged: a key is 74 characters, ${pasted_len} were pasted. Paste the whole AGE-SECRET-KEY-1... line once." >&2
   exit 1
 fi
 if [[ -f /etc/acisi/backup-recipients.txt ]] && ! grep -qxF "$public" /etc/acisi/backup-recipients.txt; then
