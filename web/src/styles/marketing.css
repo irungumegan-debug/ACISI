@@ -1615,10 +1615,6 @@ a.contact-card:hover {
 .footer-cols a:hover {
   color: var(--gold-300);
 }
-.footer-soon {
-  font-size: 15px;
-  color: var(--on-navy-faint);
-}
 .footer-bottom {
   max-width: 1200px;
   margin: 0 auto;
@@ -2261,4 +2257,122 @@ a.contact-card:hover {
   font-family: var(--font-mono);
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+/* ---------- legal pages (/privacy, /terms) ---------- */
+.legal-hero {
+  padding-bottom: 64px;
+}
+.legal-title {
+  max-width: 20ch;
+  font-size: clamp(34px, 5.4vw, 60px);
+}
+.legal-band {
+  padding: var(--space-16) 0 var(--space-24);
+}
+.legal-doc {
+  max-width: 760px;
+  font-size: 17px;
+  line-height: 1.7;
+  color: var(--ink-700);
+  overflow-wrap: anywhere;
+}
+.legal-doc h2 {
+  margin: 56px 0 14px;
+  padding-top: 20px;
+  border-top: 1px solid var(--cream-200);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(22px, 3vw, 28px);
+  line-height: 1.2;
+  letter-spacing: var(--tracking-tight);
+  color: var(--ink-900);
+  scroll-margin-top: 96px;
+}
+.legal-doc h2:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+.legal-doc h3 {
+  margin: 36px 0 10px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 19px;
+  line-height: 1.3;
+  color: var(--ink-900);
+  scroll-margin-top: 96px;
+}
+.legal-doc p {
+  margin: 0 0 16px;
+}
+.legal-doc strong {
+  color: var(--ink-900);
+}
+.legal-doc a {
+  color: var(--gold-700);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.legal-doc a:hover {
+  color: var(--navy-900);
+}
+.legal-doc p:last-child {
+  margin-top: 40px;
+  padding-top: 20px;
+  border-top: 1px solid var(--cream-200);
+  font-size: 15px;
+  color: var(--ink-500);
+}
+@media (max-width: 600px) {
+  .legal-doc {
+    font-size: 16px;
+  }
+  .legal-doc h2 {
+    margin-top: 44px;
+  }
+}
+
+/* Small Privacy Notice / Terms links under the login and signup card. */
+.auth-legal {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin-top: 22px;
+  font-size: 13px;
+}
+.auth-legal a {
+  color: var(--on-navy-faint);
+  text-decoration: none;
+}
+.auth-legal a:hover {
+  color: var(--gold-300);
+  text-decoration: underline;
+}
+
+/* Terms / Privacy checkbox in forms on the navy auth card. */
+.legal-check,
+.auth-form .legal-check {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 4px 0 18px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--on-navy-muted);
+  cursor: pointer;
+}
+.legal-check input,
+.auth-form .legal-check input {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  min-height: 0;
+  padding: 0;
+  margin: 1px 0 0;
+  accent-color: var(--gold-400);
+}
+.legal-check a {
+  color: var(--gold-300);
 }

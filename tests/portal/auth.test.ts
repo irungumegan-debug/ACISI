@@ -101,6 +101,7 @@ describe('POST /patients/register', () => {
       phoneNumber: '0712345678',
       pin: '730194',
       crossClinicConsent: false,
+      acceptLegal: true,
     });
 
     expect(res.status).toBe(201);
@@ -118,6 +119,7 @@ describe('POST /patients/register', () => {
       lastName: 'Wanjiru',
       phoneNumber: '0712345678',
       pin: '730194',
+      acceptLegal: true,
     });
     expect(res.status).toBe(409);
   });
@@ -129,6 +131,7 @@ describe('POST /patients/register', () => {
       lastName: 'Wanjiru',
       phoneNumber: '0712345678',
       pin: '730194',
+      acceptLegal: true,
     });
 
     expect(res.status).toBe(201);
@@ -143,10 +146,31 @@ describe('POST /patients/register', () => {
       phoneNumber: '0712345678',
       pin: '730194',
       email: 'jane@example.com',
+      acceptLegal: true,
     });
 
     expect(res.status).toBe(201);
     expect(mockRegisterPatient).toHaveBeenCalledWith(expect.objectContaining({ email: 'jane@example.com' }));
+  });
+
+  it('cannot create an account without accepting the Terms of Service and Privacy Notice', async () => {
+    for (const extra of [{}, { acceptLegal: false }]) {
+      const res = await request(buildApp())
+        .post('/patients/register')
+        .send({ firstName: 'Jane', lastName: 'Wanjiru', phoneNumber: '0712345678', pin: '730194', ...extra });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('Terms of Service');
+    }
+    expect(mockRegisterPatient).not.toHaveBeenCalled();
+  });
+
+  it('records the acceptance with the new account when the box is ticked', async () => {
+    mockRegisterPatient.mockResolvedValue(PATIENT);
+    const res = await request(buildApp())
+      .post('/patients/register')
+      .send({ firstName: 'Jane', lastName: 'Wanjiru', phoneNumber: '0712345678', pin: '730194', acceptLegal: true });
+    expect(res.status).toBe(201);
+    expect(mockRegisterPatient).toHaveBeenCalledWith(expect.objectContaining({ acceptedTermsAndPrivacyNotice: true }));
   });
 
   it('rejects a malformed email', async () => {

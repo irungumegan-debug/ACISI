@@ -68,6 +68,8 @@ export const api = {
     adminPhoneNumber: string;
     adminPin: string;
     departments: { name: string; code: string; consultationFeeKes: number | null }[];
+    /** "I accept the Terms of Service and have read the Privacy Notice" — required by the server. */
+    acceptLegal: boolean;
   }) {
     return request<{ clinicName: string; inviteCode: string; staffCode: string }>('/clinics/register', {
       method: 'POST',
@@ -116,6 +118,8 @@ export const api = {
     pin: string;
     crossClinicConsent: boolean;
     email?: string;
+    /** "I accept the Terms of Service and have read the Privacy Notice" — required by the server. */
+    acceptLegal: boolean;
   }) {
     return request<PatientSession>('/patients/register', {
       method: 'POST',
@@ -171,11 +175,27 @@ export const api = {
     });
   },
 
-  patientCheckIn(clinicId: string, departmentId: string) {
+  patientCheckIn(clinicId: string, departmentId: string, privacyNoticeAcknowledged: boolean) {
     return request<{ checkInId: string; status: string }>('/patients/checkin', {
       method: 'POST',
-      body: JSON.stringify({ clinicId, departmentId }),
+      body: JSON.stringify({ clinicId, departmentId, privacyNoticeAcknowledged }),
     });
+  },
+
+  /** Whether checking in at this clinic needs the Privacy Notice checkbox (first check-in there, or a new notice version). */
+  getCheckInPrivacyNotice(clinicId: string) {
+    return request<{ acknowledgmentRequired: boolean; clinicName: string; version: string }>(
+      `/patients/checkin/privacy-notice?clinicId=${encodeURIComponent(clinicId)}`,
+    );
+  },
+
+  /** Whether the portal must ask the patient to accept the current Terms before anything else. */
+  getPatientLegalStatus() {
+    return request<{ termsAcceptanceRequired: boolean }>('/patients/legal');
+  },
+
+  acceptPatientTerms() {
+    return request<{ termsAcceptanceRequired: boolean }>('/patients/legal/accept', { method: 'POST', body: JSON.stringify({ accept: true }) });
   },
 
   getPatientRecords() {

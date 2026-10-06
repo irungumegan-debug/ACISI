@@ -95,6 +95,7 @@ describe('POST /clinics/register', () => {
       adminPhoneNumber: '0712345678',
       adminPin: '730194',
       departments: [{ name: 'General' }, { name: 'Braces', code: 'brc', consultationFeeKes: 2000 }, { name: 'Invisalign' }],
+      acceptLegal: true,
     });
 
     expect(res.status).toBe(201);
@@ -122,11 +123,31 @@ describe('POST /clinics/register', () => {
       adminPhoneNumber: '0712345678',
       adminPin: '730194',
       departments: [{ name: 'General' }],
+      acceptLegal: true,
     });
     expect(res.status).toBe(409);
   });
 
-  const VALID = { name: 'Bright Smile Dental', adminName: 'Lisa Jane', adminPhoneNumber: '0712345678', adminPin: '730194' };
+  it('cannot register a clinic without accepting the Terms of Service and Privacy Notice', async () => {
+    const base = { name: 'Sunrise', adminName: 'Lisa Jane', adminPhoneNumber: '0712345678', adminPin: '730194', departments: [{ name: 'General' }] };
+    for (const extra of [{}, { acceptLegal: false }]) {
+      const res = await request(buildApp()).post('/clinics/register').send({ ...base, ...extra });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('Terms of Service');
+    }
+    expect(mockRegisterClinic).not.toHaveBeenCalled();
+  });
+
+  it('passes the acceptance on to be recorded against the clinic and admin', async () => {
+    mockRegisterClinic.mockResolvedValue({ clinic: { name: 'Sunrise', inviteCode: 'SUN-1' }, adminStaffId: 's-1', adminStaffCode: 'ACI-STF-1' });
+    const res = await request(buildApp())
+      .post('/clinics/register')
+      .send({ name: 'Sunrise', adminName: 'Lisa Jane', adminPhoneNumber: '0712345678', adminPin: '730194', departments: [{ name: 'General' }], acceptLegal: true });
+    expect(res.status).toBe(201);
+    expect(mockRegisterClinic).toHaveBeenCalledWith(expect.objectContaining({ acceptedTermsAndPrivacyNotice: true }));
+  });
+
+  const VALID = { name: 'Bright Smile Dental', adminName: 'Lisa Jane', adminPhoneNumber: '0712345678', adminPin: '730194', acceptLegal: true };
 
   it('requires at least one department', async () => {
     for (const body of [VALID, { ...VALID, departments: [] }]) {

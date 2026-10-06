@@ -60,6 +60,8 @@ const checkInSchema = z.object({
   newPatient: newPatientSchema.optional(),
   smsConsent: z.boolean().default(false),
   smsOptOut: z.boolean().default(false),
+  /** "Patient has been told how their data is used and where to read the Privacy Notice." */
+  privacyNoticeExplained: z.boolean().default(false),
 });
 
 /** Step 2: add the patient (found or newly registered) to today's queue. No fee, no payment prompt. */

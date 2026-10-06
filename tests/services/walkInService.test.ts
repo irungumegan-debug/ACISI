@@ -23,6 +23,7 @@ jest.mock('../../src/services/departmentService', () => ({ findActiveDepartment:
 jest.mock('../../src/services/doctorAssignmentService', () => ({ assignDoctorForCheckIn: jest.fn() }));
 jest.mock('../../src/services/appointmentService', () => ({ findArrivalMatch: jest.fn(), markAppointmentCompleted: jest.fn() }));
 jest.mock('../../src/services/realtimeEvents', () => ({ publishWalkInCheckedIn: jest.fn() }));
+jest.mock('../../src/services/legalService', () => ({ walkInNeedsPrivacyAck: jest.fn(), recordLegalAcceptances: jest.fn() }));
 // The remote, fee-charging path — mocked only to prove walk-ins never touch it.
 jest.mock('../../src/mpesa/stkPush', () => ({ initiateStkPush: jest.fn() }));
 jest.mock('../../src/jobs/queue', () => ({ enqueueSmsReceipt: jest.fn(), scheduleStkStatusCheck: jest.fn() }));
@@ -34,6 +35,7 @@ import { findActiveDepartment } from '../../src/services/departmentService';
 import { assignDoctorForCheckIn } from '../../src/services/doctorAssignmentService';
 import { findArrivalMatch, markAppointmentCompleted } from '../../src/services/appointmentService';
 import { publishWalkInCheckedIn } from '../../src/services/realtimeEvents';
+import { recordLegalAcceptances, walkInNeedsPrivacyAck } from '../../src/services/legalService';
 import { initiateStkPush } from '../../src/mpesa/stkPush';
 import { enqueueSmsReceipt, scheduleStkStatusCheck } from '../../src/jobs/queue';
 import {
@@ -63,6 +65,7 @@ function input(overrides: Partial<WalkInCheckInInput> = {}): WalkInCheckInInput 
     departmentId: 'dept-general',
     reasonForVisit: 'Fever and headache',
     smsConsent: false,
+    privacyNoticeExplained: true,
     ...overrides,
   };
 }
@@ -75,6 +78,7 @@ beforeEach(() => {
   (findArrivalMatch as jest.Mock).mockResolvedValue(null);
   (prisma.encounter.count as jest.Mock).mockResolvedValue(3);
   mockFindPatient.mockResolvedValue(PATIENT);
+  (walkInNeedsPrivacyAck as jest.Mock).mockResolvedValue(false);
   tx.encounter!.findFirst!.mockResolvedValue(null);
   tx.checkIn!.findFirst!.mockResolvedValue(null);
   tx.checkIn!.create!.mockResolvedValue({ id: 'ci-1' });
@@ -113,13 +117,18 @@ describe('lookupWalkInPatient', () => {
     expect(result).toEqual({
       phoneNumber: '+254712345678',
       patient: { id: 'p-1', name: 'Jane Wanjiru', patientCode: 'ACI-7F2K', lastVisitAt: new Date('2026-09-20T10:00:00Z') },
+      privacyNoticeAckRequired: false,
     });
     expect(prisma.encounter.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { patientId: 'p-1', clinicId: 'clinic-A' } }));
   });
 
   it('returns no patient when the phone number is new', async () => {
     mockFindPatient.mockResolvedValue(null);
-    expect(await lookupWalkInPatient('0799000111', 'clinic-A', 'staff-1')).toEqual({ phoneNumber: '+254799000111', patient: null });
+    expect(await lookupWalkInPatient('0799000111', 'clinic-A', 'staff-1')).toEqual({
+      phoneNumber: '+254799000111',
+      patient: null,
+      privacyNoticeAckRequired: true,
+    });
   });
 });
 
@@ -332,5 +341,65 @@ describe('helpers', () => {
       { source: 'REMOTE', _count: { _all: 12 } },
     ]);
     expect(await getTodayCheckInCounts('clinic-A')).toEqual({ walkIn: 4, remote: 12 });
+  });
+});
+
+describe('Privacy Notice checkbox at walk-in check-in', () => {
+  const mockNeedsAck = walkInNeedsPrivacyAck as jest.Mock;
+  const mockRecordLegal = recordLegalAcceptances as jest.Mock;
+  const NEW_PATIENT = { fullName: 'Amina Otieno', registrationConsent: true };
+
+  it("tells the front desk to ask at the patient's first walk-in at this clinic", async () => {
+    mockNeedsAck.mockResolvedValue(true);
+    const result = await lookupWalkInPatient('0712345678', 'clinic-A', 'staff-1');
+    expect(result.privacyNoticeAckRequired).toBe(true);
+    expect(mockNeedsAck).toHaveBeenCalledWith('p-1', 'clinic-A');
+  });
+
+  it('refuses a new patient without the box ticked, before registering anyone', async () => {
+    mockFindPatient.mockResolvedValue(null);
+    await expect(checkInWalkIn(input({ newPatient: NEW_PATIENT, privacyNoticeExplained: false }))).rejects.toMatchObject({
+      status: 400,
+      message: expect.stringContaining('Privacy Notice'),
+    });
+    expect(mockRegister).not.toHaveBeenCalled();
+    expect(tx.checkIn!.create).not.toHaveBeenCalled();
+    expect(mockRecordLegal).not.toHaveBeenCalled();
+  });
+
+  it('refuses an existing patient who has not been told at this clinic yet', async () => {
+    mockNeedsAck.mockResolvedValue(true);
+    await expect(checkInWalkIn(input({ privacyNoticeExplained: false }))).rejects.toBeInstanceOf(WalkInError);
+    expect(tx.checkIn!.create).not.toHaveBeenCalled();
+    expect(mockRecordLegal).not.toHaveBeenCalled();
+  });
+
+  it('records the acknowledgment with the version, staff member, clinic and check-in', async () => {
+    mockNeedsAck.mockResolvedValue(true);
+    await checkInWalkIn(input({ privacyNoticeExplained: true }));
+    expect(mockRecordLegal).toHaveBeenCalledWith(
+      ['PRIVACY_NOTICE'],
+      'WALK_IN_CHECKIN',
+      { patientId: 'p-1', staffId: 'staff-1', clinicId: 'clinic-A', checkInId: 'ci-1' },
+      tx,
+    );
+  });
+
+  it('records it for a newly registered patient too', async () => {
+    mockFindPatient.mockResolvedValue(null);
+    mockRegister.mockResolvedValue({ ...PATIENT, id: 'p-new' });
+    await checkInWalkIn(input({ newPatient: NEW_PATIENT }));
+    expect(mockRecordLegal).toHaveBeenCalledWith(
+      ['PRIVACY_NOTICE'],
+      'WALK_IN_CHECKIN',
+      expect.objectContaining({ patientId: 'p-new', staffId: 'staff-1' }),
+      tx,
+    );
+  });
+
+  it('does not ask again once this clinic has recorded it for the current version', async () => {
+    mockNeedsAck.mockResolvedValue(false);
+    await expect(checkInWalkIn(input({ privacyNoticeExplained: false }))).resolves.toMatchObject({ checkInId: 'ci-1' });
+    expect(mockRecordLegal).not.toHaveBeenCalled();
   });
 });

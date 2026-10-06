@@ -7,6 +7,8 @@ import { initiateCheckIn } from '../services/checkInService';
 import { getOwnVisitHistory } from '../services/patientService';
 import { recordAuditEvent } from '../services/auditService';
 import { buildVisitRecordDataFromEncounter, renderVisitRecordPdf } from '../services/visitRecordDocument';
+import { patientNeedsWebCheckInPrivacyAck, recordLegalAcceptances } from '../services/legalService';
+import { PRIVACY_NOTICE_VERSION } from '../config/legal';
 
 export const portalCheckinRouter = Router();
 export const portalRecordsRouter = Router();
@@ -14,7 +16,32 @@ export const portalRecordsRouter = Router();
 portalCheckinRouter.use(requirePatientSession);
 portalRecordsRouter.use(requirePatientSession);
 
-const checkinSchema = z.object({ clinicId: z.string().min(1), departmentId: z.string().min(1) });
+const checkinSchema = z.object({
+  clinicId: z.string().min(1),
+  departmentId: z.string().min(1),
+  /** The Privacy Notice checkbox — required only when GET /privacy-notice says so. */
+  privacyNoticeAcknowledged: z.boolean().optional(),
+});
+
+/**
+ * Whether checking in at this clinic needs the Privacy Notice checkbox:
+ * once per patient per clinic, and again whenever the notice's version
+ * changes. Returns the clinic's name for the checkbox wording.
+ */
+portalCheckinRouter.get('/privacy-notice', async (req, res) => {
+  const clinicId = typeof req.query.clinicId === 'string' ? req.query.clinicId : '';
+  const clinic = clinicId ? await prisma.clinic.findUnique({ where: { id: clinicId } }) : null;
+  if (!clinic || !clinic.isActive) {
+    res.status(404).json({ error: 'Clinic not found' });
+    return;
+  }
+  const { patientId } = (req as AuthenticatedPatientRequest).patientSession;
+  res.json({
+    acknowledgmentRequired: await patientNeedsWebCheckInPrivacyAck(patientId, clinic.id),
+    clinicName: clinic.name,
+    version: PRIVACY_NOTICE_VERSION,
+  });
+});
 
 /**
  * Web equivalent of the USSD check-in flow — calls the exact same
@@ -49,6 +76,15 @@ portalCheckinRouter.post('/', async (req, res) => {
     return;
   }
 
+  const acknowledgmentRequired = await patientNeedsWebCheckInPrivacyAck(patient.id, clinic.id);
+  if (acknowledgmentRequired && parsed.data.privacyNoticeAcknowledged !== true) {
+    res.status(400).json({
+      error: `Please confirm you have read the ACISI Privacy Notice before checking in at ${clinic.name}`,
+      code: 'PRIVACY_NOTICE_ACK_REQUIRED',
+    });
+    return;
+  }
+
   const { checkIn } = await initiateCheckIn({
     ussdSessionId: `WEB-${crypto.randomUUID()}`,
     patientId: patient.id,
@@ -57,6 +93,14 @@ portalCheckinRouter.post('/', async (req, res) => {
     departmentId: department.id,
     phoneNumberE164: patient.phoneNumber,
   });
+
+  if (acknowledgmentRequired) {
+    await recordLegalAcceptances(['PRIVACY_NOTICE'], 'PATIENT_WEB_CHECKIN', {
+      patientId: patient.id,
+      clinicId: clinic.id,
+      checkInId: checkIn.id,
+    });
+  }
 
   if (checkIn.status === 'FAILED') {
     res.status(502).json({ error: 'Could not start the payment request. Please try again shortly.' });

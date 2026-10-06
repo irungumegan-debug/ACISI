@@ -53,6 +53,8 @@ const registerSchema = z.object({
     )
     .min(1, 'Add at least one department')
     .max(50),
+  /** "I accept the Terms of Service and have read the Privacy Notice" — required. */
+  acceptLegal: z.boolean().optional(),
 });
 
 /**
@@ -96,6 +98,11 @@ clinicsRouter.post('/register', async (req, res) => {
     throw err;
   }
 
+  if (parsed.data.acceptLegal !== true) {
+    res.status(400).json({ error: 'Please accept the Terms of Service and Privacy Notice to register your clinic' });
+    return;
+  }
+
   const result = await registerClinic({
     departments,
     name: parsed.data.name,
@@ -103,6 +110,7 @@ clinicsRouter.post('/register', async (req, res) => {
     adminName: parsed.data.adminName,
     adminPhoneNumberE164: adminPhoneE164,
     adminPin: parsed.data.adminPin,
+    acceptedTermsAndPrivacyNotice: true,
   }).catch((err) => {
     if (err?.code === 'P2002') return null;
     throw err;

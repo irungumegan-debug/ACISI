@@ -3,6 +3,7 @@ import { prisma } from '../db/prisma';
 import { generateClinicInviteCode, generateUssdCode } from '../utils/idCodes';
 import { generateUniqueStaffCode, hashPin } from './staffService';
 import { recordAuditEvent } from './auditService';
+import { recordLegalAcceptances } from './legalService';
 
 const MAX_CODE_GENERATION_ATTEMPTS = 10;
 
@@ -54,6 +55,12 @@ interface RegisterClinicInput {
   adminName: string;
   adminPhoneNumberE164: string;
   adminPin: string;
+  /**
+   * The admin ticked "I accept the Terms of Service and have read the
+   * Privacy Notice" — recorded in the same transaction, against the clinic
+   * and the admin, so a clinic never exists without it.
+   */
+  acceptedTermsAndPrivacyNotice?: boolean;
 }
 
 interface RegisterClinicResult {
@@ -97,6 +104,15 @@ export async function registerClinic(input: RegisterClinicInput): Promise<Regist
         role: 'ADMIN',
       },
     });
+
+    if (input.acceptedTermsAndPrivacyNotice) {
+      await recordLegalAcceptances(
+        ['TERMS_OF_SERVICE', 'PRIVACY_NOTICE'],
+        'CLINIC_REGISTRATION',
+        { clinicId: clinic.id, staffId: adminStaff.id },
+        tx,
+      );
+    }
 
     return { clinic, adminStaff };
   });

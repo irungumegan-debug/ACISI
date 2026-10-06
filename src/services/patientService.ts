@@ -6,6 +6,7 @@ import { generatePatientCode } from '../utils/idCodes';
 import { CONSENT_VERSION, HISTORY_ENCOUNTER_LIMIT } from '../config/constants';
 import { env } from '../config/env';
 import { InvalidPhoneNumberError, toE164 } from '../utils/phone';
+import { recordLegalAcceptances } from './legalService';
 
 const MAX_CODE_GENERATION_ATTEMPTS = 10;
 
@@ -70,6 +71,12 @@ interface RegisterPatientInput {
    * never for login, never for any other notification.
    */
   email?: string;
+  /**
+   * Portal signup only: the patient ticked "I accept the Terms of Service
+   * and have read the Privacy Notice". Recorded in the same transaction as
+   * the patient, so an account never exists without it.
+   */
+  acceptedTermsAndPrivacyNotice?: boolean;
 }
 
 /**
@@ -120,6 +127,10 @@ export async function registerPatient(input: RegisterPatientInput): Promise<Pati
         version: CONSENT_VERSION,
       },
     });
+
+    if (input.acceptedTermsAndPrivacyNotice) {
+      await recordLegalAcceptances(['TERMS_OF_SERVICE', 'PRIVACY_NOTICE'], 'PATIENT_SIGNUP', { patientId: created.id }, tx);
+    }
 
     return created;
   });

@@ -36,7 +36,7 @@ describe('visit summary SMS worker', () => {
     await capturedProcessor!({ data: { encounterId: 'enc-1' } });
     expect(smsClient.send).toHaveBeenCalledWith({
       to: ['+254712345678'],
-      message: 'Sunrise Family Clinic\nVisit: 05/10/2026\nMedicines: Paracetamol\nThank you for visiting.',
+      message: 'Sunrise Family Clinic\nVisit: 05/10/2026\nMedicines: Paracetamol\nThank you for visiting.\nPrivacy: acisi.co.ke/privacy',
     });
   });
 

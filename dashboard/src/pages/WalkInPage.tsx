@@ -2,8 +2,9 @@ import { FormEvent, useEffect, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { api, ApiError, DepartmentOption, Sex, WalkInLookup, WalkInResult } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeft, Check, CircleCheckBig, MessageSquareOff, MessageSquareText, Search, ShieldCheck, UserPlus, UserRoundCheck } from 'lucide-react';
+import { ArrowLeft, Check, CircleCheckBig, FileText, MessageSquareOff, MessageSquareText, Search, ShieldCheck, UserPlus, UserRoundCheck } from 'lucide-react';
 import { Avatar, btn, field } from '../components/ui';
+import { legalBoxSatisfied, PRIVACY_PATH } from '../lib/legal';
 
 const input = `${field.input} text-base sm:text-[15px]`;
 const label = field.label;
@@ -67,6 +68,7 @@ export function WalkInPage() {
   const [registrationConsent, setRegistrationConsent] = useState(false);
   const [smsConsent, setSmsConsent] = useState(false);
   const [smsOptOut, setSmsOptOut] = useState(false);
+  const [privacyNoticeExplained, setPrivacyNoticeExplained] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<WalkInResult | null>(null);
@@ -88,6 +90,9 @@ export function WalkInPage() {
   }
 
   const isNewPatient = lookup !== null && lookup.patient === null;
+  // Asked at a patient's first walk-in at this clinic (always for a new
+  // patient) and again when the Privacy Notice changes — not every visit.
+  const privacyNoticeAckRequired = lookup !== null && (isNewPatient || lookup.privacyNoticeAckRequired);
 
   function startOver(): void {
     setStep('search');
@@ -101,6 +106,7 @@ export function WalkInPage() {
     setRegistrationConsent(false);
     setSmsConsent(false);
     setSmsOptOut(false);
+    setPrivacyNoticeExplained(false);
     setError(null);
     setResult(null);
   }
@@ -134,6 +140,7 @@ export function WalkInPage() {
         reasonForVisit: reason,
         smsConsent,
         smsOptOut,
+        privacyNoticeExplained: privacyNoticeAckRequired && privacyNoticeExplained,
         newPatient: isNewPatient
           ? {
               fullName,
@@ -325,7 +332,7 @@ export function WalkInPage() {
           </div>
 
           <fieldset className="space-y-2.5 rounded-2xl bg-cream-100 p-4">
-            <legend className="sr-only">Consent and SMS</legend>
+            <legend className="sr-only">Consent, privacy and SMS</legend>
             {isNewPatient && (
               <label className="flex items-start gap-3 rounded-xl bg-white p-3 text-sm text-ink-700 ring-1 ring-slate-200">
                 <input
@@ -338,6 +345,27 @@ export function WalkInPage() {
                 <span className="flex items-start gap-2">
                   <ShieldCheck size={17} aria-hidden className="mt-0.5 flex-none text-gold-700" />
                   Patient agreed to ACISI creating a health record for them (required to register).
+                </span>
+              </label>
+            )}
+            {privacyNoticeAckRequired && (
+              <label className="flex items-start gap-3 rounded-xl bg-white p-3 text-sm text-ink-700 ring-1 ring-slate-200">
+                <input
+                  type="checkbox"
+                  required
+                  checked={privacyNoticeExplained}
+                  onChange={(e) => setPrivacyNoticeExplained(e.target.checked)}
+                  className="mt-0.5 h-5 w-5 shrink-0 accent-navy-900"
+                />
+                <span className="flex items-start gap-2">
+                  <FileText size={17} aria-hidden className="mt-0.5 flex-none text-gold-700" />
+                  <span>
+                    Patient has been told how their data is used and where to read the{' '}
+                    <a href={PRIVACY_PATH} target="_blank" rel="noopener noreferrer" className="font-semibold text-gold-700 underline">
+                      Privacy Notice
+                    </a>{' '}
+                    <span className="text-ink-500">(acisi.co.ke/privacy)</span>
+                  </span>
                 </span>
               </label>
             )}
@@ -388,7 +416,9 @@ export function WalkInPage() {
             </button>
             <button
               type="submit"
-              disabled={busy || !departmentId || (isNewPatient && !registrationConsent)}
+              disabled={
+                busy || !departmentId || (isNewPatient && !registrationConsent) || !legalBoxSatisfied(privacyNoticeAckRequired, privacyNoticeExplained)
+              }
               className={btn.gold}
             >
               {busy ? 'Adding to queue…' : 'Add to queue'}
