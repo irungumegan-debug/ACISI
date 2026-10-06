@@ -2,6 +2,7 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { PatientAuthProvider } from './context/PatientAuthContext';
 import { MarketingLayout, ContentLayout } from './layouts/MarketingLayout';
 import { PatientLayout } from './layouts/PatientLayout';
+import { RouteSeo } from './components/RouteSeo';
 import { HomePage } from './pages/HomePage';
 import { AboutPage } from './pages/AboutPage';
 import { ContactPage } from './pages/ContactPage';
@@ -12,6 +13,7 @@ import { PatientHomePage } from './pages/PatientHomePage';
 export function App() {
   return (
     <BrowserRouter>
+      <RouteSeo />
       <PatientAuthProvider>
         <Routes>
           <Route element={<MarketingLayout />}>

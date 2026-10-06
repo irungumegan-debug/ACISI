@@ -3,10 +3,31 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="theme-color" content="#0a0f24" />
-    <meta name="description" content="ACISI connects patients, doctors and clinic staff in one place: check-in, records, prescriptions and payments for small clinics in Kenya." />
+    <!--
+      Static tags describe the home page. Link-preview bots (WhatsApp, LinkedIn,
+      X) don't run JavaScript, so this is what they show for any acisi.co.ke
+      link. Per-page title/description/robots/canonical for Google are set at
+      runtime by src/components/RouteSeo.tsx from src/lib/seo.ts. No canonical
+      here: this same file is served for every route.
+    -->
+    <meta name="description" content="One system for patients, doctors and clinic staff: check-in, records, prescriptions and payments, without the paper files." />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="ACISI" />
+    <meta property="og:locale" content="en_KE" />
+    <meta property="og:title" content="ACISI – Clinic management for Kenya" />
+    <meta property="og:description" content="One system for patients, doctors and clinic staff: check-in, records, prescriptions and payments, without the paper files." />
+    <meta property="og:image" content="https://acisi.co.ke/og-image.jpg" />
+    <meta property="og:image:type" content="image/jpeg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="ACISI – Clinic management for Kenya" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="ACISI – Clinic management for Kenya" />
+    <meta name="twitter:description" content="One system for patients, doctors and clinic staff: check-in, records, prescriptions and payments, without the paper files." />
+    <meta name="twitter:image" content="https://acisi.co.ke/og-image.jpg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <link rel="icon" type="image/png" href="%BASE_URL%favicon.png" />
-    <title>ACISI | Healthcare, within reach</title>
+    <title>ACISI – Clinic management for Kenya</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link

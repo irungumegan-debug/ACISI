@@ -1,0 +1,12 @@
+# https://acisi.co.ke/robots.txt
+#
+# The logged-in areas (/console, /owner, /patient) are deliberately NOT
+# disallowed here: their pages carry <meta name="robots" content="noindex">,
+# and Google can only see that tag on pages it is allowed to fetch. A page
+# blocked here can still appear in results as a bare link; a noindex page
+# never does. They hold no data without a login either way.
+User-agent: *
+Allow: /
+Disallow: /api/
+
+Sitemap: https://acisi.co.ke/sitemap.xml
