@@ -125,6 +125,8 @@ age-keygen
 ```
 This prints the key pair to the screen only. It saves nothing.
 1. Save the `AGE-SECRET-KEY-1...` line in your password manager **and** a second safe place.
+   Select it by **dragging** from the first `A` to the end: double-clicking stops at the
+   hyphens and copies only the end part. A complete key is 74 characters on one line.
 2. Put the `age1...` public key in the server's recipients file:
    `echo 'age1...' | sudo tee /etc/acisi/backup-recipients.txt`
 3. Close the terminal window so the private key isn't left in the scrollback.
