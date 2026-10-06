@@ -12,9 +12,12 @@ umask 077
 BACKUP_DIR=/var/backups/acisi
 TEST_DB=acisi_restore_test
 
-file=${1:-$(find "$BACKUP_DIR" -maxdepth 1 -name 'acisi-db-*.dump.age' | sort | tail -n 1)}
+file=${1:-}
+if [[ -z $file && -d $BACKUP_DIR ]]; then
+  file=$(find "$BACKUP_DIR" -maxdepth 1 -name 'acisi-db-*.dump.age' | sort | tail -n 1)
+fi
 if [[ -z $file || ! -f $file ]]; then
-  echo "No backup file found in $BACKUP_DIR." >&2
+  echo "No backup found in $BACKUP_DIR yet. Make one first: sudo systemctl start acisi-backup" >&2
   exit 1
 fi
 
