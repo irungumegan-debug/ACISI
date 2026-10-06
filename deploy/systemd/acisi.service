@@ -1,0 +1,29 @@
+# Reference copy of /etc/systemd/system/acisi.service on the server.
+[Unit]
+Description=ACISI clinic platform
+After=network-online.target postgresql@18-main.service redis-server.service
+Wants=network-online.target postgresql@18-main.service redis-server.service
+
+[Service]
+Type=simple
+User=acisi
+Group=acisi
+WorkingDirectory=/opt/acisi/app
+EnvironmentFile=/etc/acisi/acisi.env
+Environment=NODE_OPTIONS=--max-old-space-size=300
+Environment=CHECKPOINT_DISABLE=1
+ExecStartPre=/opt/acisi/app/node_modules/.bin/prisma migrate deploy
+ExecStart=/usr/bin/node dist/index.js
+Restart=always
+RestartSec=5
+TimeoutStartSec=180
+MemoryHigh=400M
+MemoryMax=500M
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/acisi
+
+[Install]
+WantedBy=multi-user.target

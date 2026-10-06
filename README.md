@@ -273,6 +273,12 @@ consent is withdrawn, and they're logged out everywhere. Their phone number
 is freed, so they can register again later as a new patient. This can't be
 undone.
 
+## Production
+
+ACISI runs on a HostAfrica server in Kenya (patient data stays in Kenya).
+See [`deploy/RUNBOOK.md`](deploy/RUNBOOK.md) for how it's set up, how to
+update it, and backups.
+
 ## Tests
 
 ```bash
