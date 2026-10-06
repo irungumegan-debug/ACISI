@@ -8,7 +8,7 @@ jest.mock('../../src/portal/session', () => ({
 }));
 jest.mock('../../src/db/prisma', () => ({
   prisma: {
-    patient: { findUnique: jest.fn() },
+    patient: { findUnique: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
     clinic: { findUnique: jest.fn() },
     department: { findFirst: jest.fn() },
     legalAcceptance: { findFirst: jest.fn(), createMany: jest.fn() },
@@ -24,6 +24,7 @@ import { initiateCheckIn } from '../../src/services/checkInService';
 import { PRIVACY_NOTICE_VERSION, TERMS_OF_SERVICE_VERSION } from '../../src/config/legal';
 import { portalCheckinRouter } from '../../src/portal/checkin';
 import { portalLegalRouter } from '../../src/portal/legal';
+import { portalDetailsRouter } from '../../src/portal/details';
 
 const mockFindAcceptance = prisma.legalAcceptance.findFirst as jest.Mock;
 const mockCreateMany = prisma.legalAcceptance.createMany as jest.Mock;
@@ -38,6 +39,7 @@ function buildApp() {
   app.use(cookieParser());
   app.use('/checkin', portalCheckinRouter);
   app.use('/legal', portalLegalRouter);
+  app.use('/details', portalDetailsRouter);
   return app;
 }
 
@@ -144,5 +146,48 @@ describe('portal login: accept the current Terms once', () => {
   it('needs a logged-in patient', async () => {
     (loadPatientSession as jest.Mock).mockResolvedValue(null);
     expect((await withCookie(request(buildApp()).post('/legal/accept').send({ accept: true }))).status).toBe(401);
+  });
+});
+
+describe('web check-in: optional ID document and next of kin', () => {
+  const body = { clinicId: 'clinic-A', departmentId: 'dept-1' };
+  const mockUpdate = prisma.patient.update as jest.Mock;
+
+  beforeEach(() => mockFindAcceptance.mockResolvedValue({ id: 'la-1' }));
+
+  it("pre-fills from the patient's own record", async () => {
+    (prisma.patient.findFirst as jest.Mock).mockResolvedValue({
+      id: 'patient-1',
+      idType: 'PASSPORT',
+      idNumber: 'AK123456',
+      nextOfKinName: null,
+      nextOfKinPhone: null,
+    });
+    const res = await withCookie(request(buildApp()).get('/details'));
+    expect(res.body).toEqual({ idType: 'PASSPORT', idNumber: 'AK123456', nextOfKinName: null, nextOfKinPhone: null });
+    expect((prisma.patient.findFirst as jest.Mock).mock.calls[0][0].where).toMatchObject({ id: 'patient-1' });
+  });
+
+  it('saves what was entered with the check-in', async () => {
+    const res = await withCookie(
+      request(buildApp())
+        .post('/checkin')
+        .send({ ...body, identity: { idType: 'BIRTH_CERTIFICATE', idNumber: '123 4567', nextOfKinName: '', nextOfKinPhone: '' } }),
+    );
+    expect(res.status).toBe(201);
+    expect(mockUpdate).toHaveBeenCalledWith({ where: { id: 'patient-1' }, data: { idType: 'BIRTH_CERTIFICATE', idNumber: '1234567' } });
+  });
+
+  it('checks in normally when nothing is entered, without touching the record', async () => {
+    const res = await withCookie(request(buildApp()).post('/checkin').send({ ...body, identity: { idType: '', idNumber: '' } }));
+    expect(res.status).toBe(201);
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it('refuses invalid details before charging the check-in fee', async () => {
+    const res = await withCookie(request(buildApp()).post('/checkin').send({ ...body, identity: { nextOfKinPhone: '999' } }));
+    expect(res.status).toBe(400);
+    expect(mockInitiate).not.toHaveBeenCalled();
+    expect(mockUpdate).not.toHaveBeenCalled();
   });
 });

@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Link, useParams } from 'react-router-dom';
-import { api, ApiError, PatientDetail } from '../lib/api';
-import { ArrowLeft, Building2, CalendarDays, FileText, Lock, MessageSquareOff, Phone, Stethoscope } from 'lucide-react';
-import { Avatar, Card, EmptyState, SkeletonList } from '../components/ui';
+import { api, ApiError, PatientDetail, PatientIdentity, PatientIdentityRecord } from '../lib/api';
+import { ArrowLeft, Building2, CalendarDays, FileText, IdCard, Lock, MessageSquareOff, Phone, Stethoscope } from 'lucide-react';
+import { Avatar, btn, Card, EmptyState, SkeletonList } from '../components/ui';
+import { ID_TYPE_LABEL, IdentityFields } from '../components/IdentityFields';
 
 export function PatientDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -61,6 +62,8 @@ export function PatientDetailPage() {
       </div>
 
       <SmsPreference patientId={patient.id} initial={patient.smsOptOut} onChange={(smsOptOut) => setPatient({ ...patient, smsOptOut })} />
+
+      <IdentityCard patient={patient} onSaved={(saved) => setPatient({ ...patient, ...saved })} />
 
       <Card title="Visit history" icon={FileText}>
       {patient.history.length === 0 && !patient.hasHiddenHistoryElsewhere ? (
@@ -144,5 +147,88 @@ function SmsPreference({ patientId, initial, onChange }: { patientId: string; in
         </p>
       )}
     </div>
+  );
+}
+
+const toForm = (r: PatientIdentityRecord): PatientIdentity => ({
+  idType: r.idType ?? '',
+  idNumber: r.idNumber ?? '',
+  nextOfKinName: r.nextOfKinName ?? '',
+  nextOfKinPhone: r.nextOfKinPhone ?? '',
+});
+
+/** ID document and next of kin: everyone can see them; front desk can edit (emptying a field removes it). */
+function IdentityCard({ patient, onSaved }: { patient: PatientDetail; onSaved: (saved: PatientIdentityRecord) => void }) {
+  const { session } = useAuth();
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState<PatientIdentity>(toForm(patient));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const canEdit = session?.role !== 'DOCTOR';
+
+  async function save(e: FormEvent): Promise<void> {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const saved = await api.updatePatientDetails(patient.id, form);
+      onSaved(saved);
+      setEditing(false);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not save the details.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const row = (term: string, value: string | null) => (
+    <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-3">
+      <dt className="w-40 flex-none text-ink-500">{term}</dt>
+      <dd className="font-medium text-navy-900">{value || <span className="font-normal text-ink-400">Not recorded</span>}</dd>
+    </div>
+  );
+
+  return (
+    <Card title="ID and next of kin" icon={IdCard} className="mb-6">
+        {!editing ? (
+          <>
+            <dl className="space-y-2.5 text-sm">
+              {row('ID document', patient.idType ? `${ID_TYPE_LABEL[patient.idType]} ${patient.idNumber ?? ''}` : null)}
+              {row('Next of kin', patient.nextOfKinName)}
+              {row('Next of kin phone', patient.nextOfKinPhone)}
+            </dl>
+            {canEdit && (
+              <button
+                type="button"
+                className={`${btn.secondary} mt-4`}
+                onClick={() => {
+                  setForm(toForm(patient));
+                  setEditing(true);
+                }}
+              >
+                Edit
+              </button>
+            )}
+          </>
+        ) : (
+          <form onSubmit={(e) => void save(e)}>
+            <IdentityFields idPrefix="patient" value={form} onChange={setForm} />
+            <p className="mt-2 text-xs text-ink-500">Empty a field to remove it from the record.</p>
+            {error && (
+              <p role="alert" className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3.5 py-2.5 text-sm text-red-700">
+                {error}
+              </p>
+            )}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button type="submit" disabled={busy} className={btn.gold}>
+                {busy ? 'Saving…' : 'Save'}
+              </button>
+              <button type="button" disabled={busy} className={btn.secondary} onClick={() => setEditing(false)}>
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
+    </Card>
   );
 }

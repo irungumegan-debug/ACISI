@@ -1,8 +1,9 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
-import { api, ApiError, DepartmentOption, Sex, WalkInLookup, WalkInResult } from '../lib/api';
+import { api, ApiError, DepartmentOption, PatientIdentity, Sex, WalkInLookup, WalkInResult } from '../lib/api';
+import { EMPTY_IDENTITY, IdentityFields } from '../components/IdentityFields';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeft, Check, CircleCheckBig, FileText, MessageSquareOff, MessageSquareText, Search, ShieldCheck, UserPlus, UserRoundCheck } from 'lucide-react';
+import { ArrowLeft, Check, CircleCheckBig, FileText, IdCard, MessageSquareOff, MessageSquareText, Search, ShieldCheck, UserPlus, UserRoundCheck } from 'lucide-react';
 import { Avatar, btn, field } from '../components/ui';
 import { legalBoxSatisfied, PRIVACY_PATH } from '../lib/legal';
 
@@ -69,6 +70,7 @@ export function WalkInPage() {
   const [smsConsent, setSmsConsent] = useState(false);
   const [smsOptOut, setSmsOptOut] = useState(false);
   const [privacyNoticeExplained, setPrivacyNoticeExplained] = useState(false);
+  const [identity, setIdentity] = useState<PatientIdentity>(EMPTY_IDENTITY);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<WalkInResult | null>(null);
@@ -107,6 +109,7 @@ export function WalkInPage() {
     setSmsConsent(false);
     setSmsOptOut(false);
     setPrivacyNoticeExplained(false);
+    setIdentity(EMPTY_IDENTITY);
     setError(null);
     setResult(null);
   }
@@ -141,6 +144,7 @@ export function WalkInPage() {
         smsConsent,
         smsOptOut,
         privacyNoticeExplained: privacyNoticeAckRequired && privacyNoticeExplained,
+        identity,
         newPatient: isNewPatient
           ? {
               fullName,
@@ -300,6 +304,25 @@ export function WalkInPage() {
               </div>
             </div>
           )}
+
+          <details className="group rounded-2xl border border-slate-200 bg-cream-50 px-4" open={isNewPatient}>
+            <summary className="flex min-h-12 cursor-pointer items-center gap-2 text-sm font-semibold text-navy-900">
+              <IdCard size={17} aria-hidden className="text-gold-700" />
+              ID and next of kin <span className="font-normal text-ink-500">(optional)</span>
+              {lookup.patient && (
+                <span className="ml-auto text-xs font-normal text-ink-500">
+                  {[lookup.patient.hasIdOnFile && 'ID on file', lookup.patient.hasNextOfKinOnFile && 'Next of kin on file'].filter(Boolean).join(' · ') ||
+                    'Nothing on file'}
+                </span>
+              )}
+            </summary>
+            <div className="pb-4">
+              {lookup.patient && (
+                <p className="mb-3 text-sm text-ink-500">Fill in only what you want to add or update. Empty fields leave what&apos;s on file unchanged.</p>
+              )}
+              <IdentityFields idPrefix="walkin" value={identity} onChange={setIdentity} />
+            </div>
+          </details>
 
           <div>
             <label htmlFor="reason" className={label}>

@@ -56,7 +56,25 @@ export interface VisitHistoryEntry {
   isOwnClinic: boolean;
 }
 
-export interface PatientDetail {
+export type PatientIdType = 'NATIONAL_ID' | 'PASSPORT' | 'BIRTH_CERTIFICATE' | 'ALIEN_ID';
+
+/** Optional ID document and next of kin, as edited in forms ('' = not entered). */
+export interface PatientIdentity {
+  idType: PatientIdType | '';
+  idNumber: string;
+  nextOfKinName: string;
+  nextOfKinPhone: string;
+}
+
+/** As stored (null = not on file). */
+export interface PatientIdentityRecord {
+  idType: PatientIdType | null;
+  idNumber: string | null;
+  nextOfKinName: string | null;
+  nextOfKinPhone: string | null;
+}
+
+export interface PatientDetail extends PatientIdentityRecord {
   id: string;
   firstName: string;
   lastName: string;
@@ -164,7 +182,15 @@ export interface DepartmentOption {
 
 export interface WalkInLookup {
   phoneNumber: string;
-  patient: { id: string; name: string; patientCode: string; lastVisitAt: string | null } | null;
+  patient: {
+    id: string;
+    name: string;
+    patientCode: string;
+    lastVisitAt: string | null;
+    /** Only whether they're on file — the details aren't shown at lookup. */
+    hasIdOnFile: boolean;
+    hasNextOfKinOnFile: boolean;
+  } | null;
   /** The Privacy Notice box is needed: a new patient, their first walk-in at this clinic, or a new notice version. */
   privacyNoticeAckRequired: boolean;
 }
@@ -179,6 +205,8 @@ export interface WalkInRequest {
   smsOptOut?: boolean;
   /** "Patient has been told how their data is used and where to read the Privacy Notice." */
   privacyNoticeExplained: boolean;
+  /** Optional; empty fields leave what's on file alone. */
+  identity?: PatientIdentity;
   newPatient?: {
     fullName: string;
     dateOfBirth?: string;
@@ -391,6 +419,13 @@ export const api = {
   },
   savePaymentSettings(body: PaymentSettings) {
     return request<{ ok: true }>('/clinic/payment-settings', { method: 'PUT', body: JSON.stringify(body) });
+  },
+  /** Saves the ID document and next of kin; fields sent empty are cleared. */
+  updatePatientDetails(patientId: string, identity: PatientIdentity) {
+    return request<PatientIdentityRecord>(`/patients/${encodeURIComponent(patientId)}/details`, {
+      method: 'PATCH',
+      body: JSON.stringify(identity),
+    });
   },
   setSmsPreference(patientId: string, smsOptOut: boolean) {
     return request<{ smsOptOut: boolean }>(`/patients/${encodeURIComponent(patientId)}/sms-preference`, {

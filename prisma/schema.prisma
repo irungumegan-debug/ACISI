@@ -6,8 +6,9 @@
 //   is the core product feature, so a patient exists once and accumulates
 //   Encounters at whichever clinics they visit.
 // - Data Protection Act minimalism: Patient collects only what's needed for
-//   clinical continuity (name, DOB, sex, phone). No national ID or other
-//   sensitive identifiers at MVP — add later only behind explicit consent.
+//   clinical continuity (name, DOB, sex, phone), plus an optional ID document
+//   and next of kin (Digital Health Agency certification; legal basis in the
+//   Privacy Notice). All wiped on account deletion.
 // - Every grant/revoke of cross-clinic data sharing is recorded in Consent,
 //   never overwritten, so there is always a full history of what a patient
 //   agreed to and when.
@@ -65,6 +66,15 @@ enum CheckInStatus {
 enum CheckInSource {
   REMOTE
   WALK_IN
+}
+
+/// Which identity document a patient's idNumber comes from.
+enum PatientIdType {
+  NATIONAL_ID
+  PASSPORT
+  BIRTH_CERTIFICATE
+  /// Kenyan alien (foreign national) ID card.
+  ALIEN_ID
 }
 
 enum ConsentType {
@@ -251,18 +261,18 @@ model Staff {
 }
 
 model Patient {
-  id                 String     @id @default(cuid())
+  id                 String         @id @default(cuid())
   /// System-generated human-readable ID, e.g. "ACI-7F2K" — separate from
   /// the phone number and from the internal cuid `id`. Usable as an
   /// alternate login identifier alongside the phone number.
-  patientCode        String     @unique
+  patientCode        String         @unique
   /// E.164 phone number — the primary lookup key, since Africa's Talking
   /// gives us the caller's number on every USSD session.
-  phoneNumber        String     @unique
+  phoneNumber        String         @unique
   firstName          String
   lastName           String
   dateOfBirth        DateTime?
-  sex                Sex        @default(UNKNOWN)
+  sex                Sex            @default(UNKNOWN)
   county             String?
   /// Optional — collected only via the web portal signup form (not USSD,
   /// which has no practical way to enter one). Never used for login or any
@@ -286,10 +296,22 @@ model Patient {
   /// "Patient does not want SMS", set by front desk (at walk-in check-in or
   /// on the patient's page). When true, no clinic SMS is sent to them —
   /// no payment receipt, no visit summary, no invite. Off by default.
-  smsOptOut          Boolean    @default(false)
+  smsOptOut          Boolean        @default(false)
   smsOptOutUpdatedAt DateTime?
-  createdAt          DateTime   @default(now())
-  updatedAt          DateTime   @updatedAt
+  /// Identity document, to identify the patient correctly and avoid duplicate
+  /// records (needed for Digital Health Agency certification). Optional:
+  /// given by the patient at web check-in, or recorded by front desk at a
+  /// walk-in or on the patient's page. Always set together with idNumber.
+  /// Sensitive — wiped on account deletion like every identifying field.
+  idType             PatientIdType?
+  /// Normalised: upper case, no spaces (see services/patientIdentity.ts).
+  idNumber           String?
+  /// Optional next of kin, so the clinic can reach someone on the patient's
+  /// behalf. Phone is E.164. Wiped on account deletion.
+  nextOfKinName      String?
+  nextOfKinPhone     String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
 
   consents         Consent[]
   encounters       Encounter[]

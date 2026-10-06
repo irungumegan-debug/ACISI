@@ -9,6 +9,7 @@ import { recordAuditEvent } from '../services/auditService';
 import { buildVisitRecordDataFromEncounter, renderVisitRecordPdf } from '../services/visitRecordDocument';
 import { patientNeedsWebCheckInPrivacyAck, recordLegalAcceptances } from '../services/legalService';
 import { PRIVACY_NOTICE_VERSION } from '../config/legal';
+import { patientIdentityInputSchema, PatientIdentityError, preparePatientIdentity } from '../services/patientIdentity';
 
 export const portalCheckinRouter = Router();
 export const portalRecordsRouter = Router();
@@ -21,6 +22,8 @@ const checkinSchema = z.object({
   departmentId: z.string().min(1),
   /** The Privacy Notice checkbox — required only when GET /privacy-notice says so. */
   privacyNoticeAcknowledged: z.boolean().optional(),
+  /** Optional ID document and next of kin; empty fields leave what's on file alone. */
+  identity: patientIdentityInputSchema.optional(),
 });
 
 /**
@@ -83,6 +86,28 @@ portalCheckinRouter.post('/', async (req, res) => {
       code: 'PRIVACY_NOTICE_ACK_REQUIRED',
     });
     return;
+  }
+
+  let identityUpdate: ReturnType<typeof preparePatientIdentity> = {};
+  try {
+    identityUpdate = parsed.data.identity ? preparePatientIdentity(parsed.data.identity, 'fillIn') : {};
+  } catch (err) {
+    if (err instanceof PatientIdentityError) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
+  if (Object.keys(identityUpdate).length > 0) {
+    await prisma.patient.update({ where: { id: patient.id }, data: identityUpdate });
+    await recordAuditEvent({
+      actorType: 'PATIENT',
+      actorId: patient.id,
+      action: 'PATIENT_DETAILS_UPDATED',
+      entityType: 'Patient',
+      entityId: patient.id,
+      metadata: { fields: Object.keys(identityUpdate), channel: 'PORTAL_CHECKIN' },
+    });
   }
 
   const { checkIn } = await initiateCheckIn({

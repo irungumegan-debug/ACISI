@@ -14,6 +14,7 @@ import { findArrivalMatch, markAppointmentCompleted } from './appointmentService
 import { publishWalkInCheckedIn } from './realtimeEvents';
 import { buildWalkInInviteSms } from './smsTemplates';
 import { recordLegalAcceptances, walkInNeedsPrivacyAck } from './legalService';
+import { PatientIdentityError, PatientIdentityInput, preparePatientIdentity } from './patientIdentity';
 
 const PRIVACY_NOTICE_REQUIRED_MESSAGE =
   'Tell the patient how their data is used and where to read the Privacy Notice, then tick the box to confirm';
@@ -59,6 +60,13 @@ export interface WalkInLookupResult {
     patientCode: string;
     /** Most recent visit at *this* clinic only — never another clinic's history. */
     lastVisitAt: Date | null;
+    /**
+     * Whether an ID document / next of kin is already on file. Only yes/no:
+     * a phone lookup can find a patient this clinic has never seen, so the
+     * details themselves are never shown here.
+     */
+    hasIdOnFile: boolean;
+    hasNextOfKinOnFile: boolean;
   } | null;
   /**
    * Whether the front desk must confirm the patient was told about the
@@ -97,6 +105,8 @@ export async function lookupWalkInPatient(rawPhone: string, clinicId: string, st
       name: `${patient.firstName} ${patient.lastName}`.trim(),
       patientCode: patient.patientCode,
       lastVisitAt: lastVisit?.createdAt ?? null,
+      hasIdOnFile: Boolean(patient.idNumber),
+      hasNextOfKinOnFile: Boolean(patient.nextOfKinName || patient.nextOfKinPhone),
     },
     privacyNoticeAckRequired: await walkInNeedsPrivacyAck(patient.id, clinicId),
   };
@@ -136,6 +146,11 @@ export interface WalkInCheckInInput {
    * recorded against the staff member who ticked it.
    */
   privacyNoticeExplained?: boolean;
+  /**
+   * Optional ID document and next of kin. Only what's entered is saved — an
+   * empty field never wipes what's already on file.
+   */
+  identity?: PatientIdentityInput;
 }
 
 export type WalkInSmsOutcome = 'sent' | 'failed' | 'not_requested';
@@ -275,6 +290,14 @@ export async function checkInWalkIn(input: WalkInCheckInInput): Promise<WalkInCh
   }
   const reasonForVisit = input.reasonForVisit.trim();
   if (!reasonForVisit) throw new WalkInError('Enter the reason for the visit', 400);
+  // Validated before anything is written, so a mistyped ID never leaves a half-done check-in.
+  let identityUpdate: ReturnType<typeof preparePatientIdentity> = {};
+  try {
+    identityUpdate = input.identity ? preparePatientIdentity(input.identity, 'fillIn') : {};
+  } catch (err) {
+    if (err instanceof PatientIdentityError) throw new WalkInError(err.message, 400);
+    throw err;
+  }
 
   const [clinic, department] = await Promise.all([
     prisma.clinic.findUnique({ where: { id: input.clinicId }, select: { name: true, isActive: true } }),
@@ -353,6 +376,9 @@ export async function checkInWalkIn(input: WalkInCheckInInput): Promise<WalkInCh
         data: { patientId: patient.id, type: 'SMS_CLINIC_MESSAGES', granted: true, channel: 'STAFF_ASSISTED', version: CONSENT_VERSION },
       });
     }
+    if (Object.keys(identityUpdate).length > 0) {
+      await tx.patient.update({ where: { id: patient.id }, data: identityUpdate });
+    }
     if (privacyNoticeAckRequired) {
       await recordLegalAcceptances(
         ['PRIVACY_NOTICE'],
@@ -380,6 +406,8 @@ export async function checkInWalkIn(input: WalkInCheckInInput): Promise<WalkInCh
       smsConsent: input.smsConsent,
       smsOptOut: Boolean(input.smsOptOut),
       appointmentId: appointment?.id ?? null,
+      // Which details were added — never the values themselves.
+      identityFieldsUpdated: Object.keys(identityUpdate),
     },
   });
 
