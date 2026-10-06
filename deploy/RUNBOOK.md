@@ -107,12 +107,13 @@ is needed. If it provides an SSH/SFTP destination, enable the hook in
 ### Install or update the backup job
 
 Files are copied, not linked, so the `acisi` app user can never change what
-root runs.
+root runs. Use full paths: `acisiadmin` can't `cd` into `/opt/acisi` (only
+`sudo` can read it).
 ```
-cd /opt/acisi/app/deploy
-sudo install -m 755 backup/acisi-backup.sh /usr/local/sbin/acisi-backup
-sudo install -m 755 backup/acisi-restore-test.sh /usr/local/sbin/acisi-restore-test
-sudo install -m 644 systemd/acisi-backup.service systemd/acisi-backup.timer /etc/systemd/system/
+D=/opt/acisi/app/deploy
+sudo install -m 755 $D/backup/acisi-backup.sh /usr/local/sbin/acisi-backup
+sudo install -m 755 $D/backup/acisi-restore-test.sh /usr/local/sbin/acisi-restore-test
+sudo install -m 644 $D/systemd/acisi-backup.service $D/systemd/acisi-backup.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now acisi-backup.timer
 ```

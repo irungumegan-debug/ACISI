@@ -10,7 +10,7 @@
 # in DEST and the key below.
 #
 # To enable later:
-#   sudo install -m 700 deploy/backup/offsite-hook.example.sh /etc/acisi/backup-offsite.sh
+#   sudo install -m 700 /opt/acisi/app/deploy/backup/offsite-hook.example.sh /etc/acisi/backup-offsite.sh
 #   sudo nano /etc/acisi/backup-offsite.sh      # set DEST and SSH_KEY
 #   sudo systemctl start acisi-backup && journalctl -u acisi-backup -n 20
 set -euo pipefail
