@@ -71,3 +71,31 @@ describe('home page share tags (web/index.html)', () => {
     expect(html).not.toContain('rel="canonical"');
   });
 });
+
+describe('site icons (web/public)', () => {
+  const pub = (file: string) => fs.readFileSync(path.join(root, 'web/public', file));
+  const html = read('web/index.html');
+
+  it('favicon.ico is a real icon file with 16, 32 and 48px images, so /favicon.ico is never the HTML page', () => {
+    const ico = pub('favicon.ico');
+    expect([...ico.subarray(0, 4)]).toEqual([0, 0, 1, 0]); // ICONDIR: reserved 0, type 1 (icon)
+    const count = ico.readUInt16LE(4);
+    const sizes = Array.from({ length: count }, (_, i) => ico[6 + i * 16]);
+    expect(sizes.sort((a, b) => a! - b!)).toEqual([16, 32, 48]);
+  });
+
+  it('apple-touch-icon.png is a 180x180 PNG', () => {
+    const png = pub('apple-touch-icon.png');
+    expect(png.subarray(1, 4).toString('ascii')).toBe('PNG');
+    expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([180, 180]); // IHDR width, height
+  });
+
+  it('every icon is linked from index.html, and every linked icon exists', () => {
+    expect(html).toContain('<link rel="icon" href="%BASE_URL%favicon.ico"');
+    expect(html).toContain('<link rel="icon" type="image/png" href="%BASE_URL%favicon.png"');
+    expect(html).toContain('<link rel="apple-touch-icon" href="%BASE_URL%apple-touch-icon.png" />');
+    for (const [, file] of html.matchAll(/rel="(?:icon|apple-touch-icon)"[^>]*href="%BASE_URL%([^"]+)"/g)) {
+      expect(fs.existsSync(path.join(root, 'web/public', file!))).toBe(true);
+    }
+  });
+});
