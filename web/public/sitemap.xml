@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Public pages only. Keep in step with SITEMAP_PAGES in web/src/lib/seo.ts
+  (tests/web/seo.test.ts checks both lists match). Add the legal pages
+  (e.g. https://acisi.co.ke/privacy, /terms) to both once they exist.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://acisi.co.ke/</loc></url>
+  <url><loc>https://acisi.co.ke/about</loc></url>
+  <url><loc>https://acisi.co.ke/contact</loc></url>
+</urlset>
