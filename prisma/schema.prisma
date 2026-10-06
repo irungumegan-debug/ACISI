@@ -134,14 +134,15 @@ model Clinic {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  staff           Staff[]
-  checkIns        CheckIn[]
-  encounters      Encounter[]
-  departments     Department[]
-  appointments    Appointment[]
-  paymentSettings ClinicPaymentSettings?
-  bills           Bill[]
-  payments        Payment[]
+  staff            Staff[]
+  checkIns         CheckIn[]
+  encounters       Encounter[]
+  departments      Department[]
+  appointments     Appointment[]
+  paymentSettings  ClinicPaymentSettings?
+  bills            Bill[]
+  payments         Payment[]
+  legalAcceptances LegalAcceptance[]
 
   @@map("clinics")
 }
@@ -234,14 +235,15 @@ model Staff {
   checkIns              CheckIn[]
   auditLogs             AuditLog[]
   otps                  StaffOtp[]
-  assignedEncounters    Encounter[]   @relation("EncounterAssignedDoctor")
-  consultedEncounters   Encounter[]   @relation("EncounterConsultedBy")
-  billsCreated          Bill[]        @relation("BillCreatedBy")
-  paymentsTaken         Payment[]     @relation("PaymentTakenBy")
-  paymentsVoided        Payment[]     @relation("PaymentVoidedBy")
-  checkedOutEncounters  Encounter[]   @relation("EncounterCheckedOutBy")
-  confirmedAppointments Appointment[] @relation("AppointmentConfirmedBy")
-  cancelledAppointments Appointment[] @relation("AppointmentCancelledBy")
+  assignedEncounters    Encounter[]       @relation("EncounterAssignedDoctor")
+  consultedEncounters   Encounter[]       @relation("EncounterConsultedBy")
+  billsCreated          Bill[]            @relation("BillCreatedBy")
+  paymentsTaken         Payment[]         @relation("PaymentTakenBy")
+  paymentsVoided        Payment[]         @relation("PaymentVoidedBy")
+  checkedOutEncounters  Encounter[]       @relation("EncounterCheckedOutBy")
+  confirmedAppointments Appointment[]     @relation("AppointmentConfirmedBy")
+  cancelledAppointments Appointment[]     @relation("AppointmentCancelledBy")
+  legalAcceptances      LegalAcceptance[]
 
   @@index([clinicId])
   @@index([departmentId])
@@ -289,11 +291,12 @@ model Patient {
   createdAt          DateTime   @default(now())
   updatedAt          DateTime   @updatedAt
 
-  consents     Consent[]
-  encounters   Encounter[]
-  checkIns     CheckIn[]
-  otps         Otp[]
-  appointments Appointment[]
+  consents         Consent[]
+  encounters       Encounter[]
+  checkIns         CheckIn[]
+  otps             Otp[]
+  appointments     Appointment[]
+  legalAcceptances LegalAcceptance[]
 
   @@map("patients")
 }
@@ -436,6 +439,7 @@ model CheckIn {
 
   encounter         Encounter?
   mpesaTransactions MpesaTransaction[]
+  legalAcceptances  LegalAcceptance[]
 
   @@index([patientId])
   @@index([clinicId])
@@ -665,6 +669,59 @@ model MpesaTransaction {
 
   @@index([checkInId])
   @@map("mpesa_transactions")
+}
+
+/// ACISI's public legal documents (web/src/content/*.md, shown at
+/// acisi.co.ke/privacy and /terms).
+enum LegalDocument {
+  PRIVACY_NOTICE
+  TERMS_OF_SERVICE
+}
+
+/// Where an acceptance or acknowledgment was captured.
+enum LegalAcceptanceContext {
+  /// Patient ticked "I accept the Terms … and have read the Privacy Notice" at portal signup.
+  PATIENT_SIGNUP
+  /// Patient accepted the current Terms on the one-time screen after logging in to the portal.
+  PATIENT_PORTAL_LOGIN
+  /// Patient acknowledged the Privacy Notice for a clinic when checking in on the web.
+  PATIENT_WEB_CHECKIN
+  /// Front desk confirmed the patient was told how their data is used and
+  /// where to read the Privacy Notice (staffId says who).
+  WALK_IN_CHECKIN
+  /// Clinic admin accepted both documents when registering the clinic.
+  CLINIC_REGISTRATION
+  /// Staff member accepted the current Terms on the one-time screen after logging in to the console.
+  STAFF_LOGIN
+}
+
+/// One row per document accepted or acknowledged. Append-only, like Consent:
+/// never updated or deleted, so there is always a record of exactly which
+/// version was agreed to, by whom and when. `version` is the document's
+/// "Last updated" date (YYYY-MM-DD, see src/config/legal.ts); a new version
+/// means everyone is asked again.
+model LegalAcceptance {
+  id        String                 @id @default(cuid())
+  document  LegalDocument
+  version   String
+  context   LegalAcceptanceContext
+  /// The patient who accepted, or whom a walk-in acknowledgment is about.
+  patientId String?
+  patient   Patient?               @relation(fields: [patientId], references: [id])
+  /// The staff member who accepted (staff login, clinic registration), or
+  /// who recorded a walk-in acknowledgment on the patient's behalf.
+  staffId   String?
+  staff     Staff?                 @relation(fields: [staffId], references: [id])
+  clinicId  String?
+  clinic    Clinic?                @relation(fields: [clinicId], references: [id])
+  checkInId String?
+  checkIn   CheckIn?               @relation(fields: [checkInId], references: [id])
+  createdAt DateTime               @default(now())
+
+  @@index([patientId, document])
+  @@index([staffId, document])
+  @@index([clinicId])
+  @@map("legal_acceptances")
 }
 
 /// The company owner's account, for the separate owner site (/owner). Can

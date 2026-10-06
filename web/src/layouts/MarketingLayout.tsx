@@ -154,7 +154,7 @@ function useRevealOnScroll(dependency: string) {
   }, [dependency]);
 }
 
-/** Wraps Home/About/Contact with the shared footer — signup/login stay distraction-free without it. */
+/** Wraps Home/About/Contact/Privacy/Terms with the shared footer — signup/login stay distraction-free, with just small legal links (see AuthShell). */
 export function ContentLayout() {
   const location = useLocation();
   useRevealOnScroll(location.pathname);
@@ -185,8 +185,8 @@ export function ContentLayout() {
             </div>
             <div>
               <p className="footer-heading">Legal</p>
-              <span className="footer-soon">Privacy Policy (coming soon)</span>
-              <span className="footer-soon">Terms (coming soon)</span>
+              <Link to="/privacy">Privacy Notice</Link>
+              <Link to="/terms">Terms of Service</Link>
             </div>
           </div>
         </div>

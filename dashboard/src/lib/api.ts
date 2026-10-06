@@ -165,6 +165,8 @@ export interface DepartmentOption {
 export interface WalkInLookup {
   phoneNumber: string;
   patient: { id: string; name: string; patientCode: string; lastVisitAt: string | null } | null;
+  /** The Privacy Notice box is needed: a new patient, their first walk-in at this clinic, or a new notice version. */
+  privacyNoticeAckRequired: boolean;
 }
 
 export type Sex = 'MALE' | 'FEMALE' | 'OTHER' | 'UNKNOWN';
@@ -175,6 +177,8 @@ export interface WalkInRequest {
   reasonForVisit: string;
   smsConsent: boolean;
   smsOptOut?: boolean;
+  /** "Patient has been told how their data is used and where to read the Privacy Notice." */
+  privacyNoticeExplained: boolean;
   newPatient?: {
     fullName: string;
     dateOfBirth?: string;
@@ -422,6 +426,14 @@ export const api = {
 
   me() {
     return request<StaffSession>('/auth/me');
+  },
+
+  /** Whether this staff member must accept the current Terms of Service before using the console. */
+  getLegalStatus() {
+    return request<{ termsAcceptanceRequired: boolean }>('/legal');
+  },
+  acceptTerms() {
+    return request<{ termsAcceptanceRequired: boolean }>('/legal/accept', { method: 'POST', body: JSON.stringify({ accept: true }) });
   },
 
   searchPatients(query: string) {

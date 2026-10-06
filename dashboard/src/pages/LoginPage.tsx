@@ -114,6 +114,14 @@ export function LoginPage() {
           </p>
         </div>
         <p className="mt-6 text-center text-sm text-gold-400/80">Healthcare, within reach.</p>
+        <nav aria-label="Legal" className="mt-3 flex justify-center gap-5 text-xs">
+          <a href="/privacy" className="text-slate-400 hover:text-white hover:underline">
+            Privacy Notice
+          </a>
+          <a href="/terms" className="text-slate-400 hover:text-white hover:underline">
+            Terms of Service
+          </a>
+        </nav>
       </div>
     </div>
   );

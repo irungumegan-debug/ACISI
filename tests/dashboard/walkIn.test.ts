@@ -127,3 +127,19 @@ describe('GET /walk-in/lookup and /stats/today', () => {
     expect(getTodayCheckInCounts).toHaveBeenCalledWith('clinic-A');
   });
 });
+
+describe('walk-in route: Privacy Notice checkbox', () => {
+  it('passes the box through to the check-in, defaulting to not ticked', async () => {
+    await withCookie(request(buildApp()).post('/walk-in').send({ ...VALID, privacyNoticeExplained: true }));
+    expect(mockCheckIn).toHaveBeenLastCalledWith(expect.objectContaining({ privacyNoticeExplained: true, staffId: 'staff-1' }));
+    await withCookie(request(buildApp()).post('/walk-in').send(VALID));
+    expect(mockCheckIn).toHaveBeenLastCalledWith(expect.objectContaining({ privacyNoticeExplained: false }));
+  });
+
+  it('returns the refusal when the box is needed and not ticked', async () => {
+    mockCheckIn.mockRejectedValue(new WalkInError('Tell the patient how their data is used and where to read the Privacy Notice, then tick the box to confirm', 400));
+    const res = await withCookie(request(buildApp()).post('/walk-in').send(VALID));
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('Privacy Notice');
+  });
+});

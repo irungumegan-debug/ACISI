@@ -128,6 +128,33 @@ See `prisma/schema.prisma` for full field-level comments. Key decisions:
   consent-revocation flow (not yet built) will correctly cut off access
   without any change to the history-viewing code path.
 
+## Privacy Notice and Terms of Service
+
+The approved documents live in `web/src/content/privacy.md` and `terms.md`
+and are shown word for word at `/privacy` and `/terms`
+(`web/src/lib/legalMarkdown.ts` parses the few Markdown features they use).
+`tests/web/legal.test.ts` pins each file's SHA-256 and proves the rendered
+text equals the file, so any wording change is deliberate.
+
+Acceptances are append-only `LegalAcceptance` rows, each carrying the
+document's version: its "Last updated" date, kept in `src/config/legal.ts`
+(a test fails if that and the file disagree). "Accepted?" always means "a
+row exists for the *current* version", so changing a date asks everyone
+again. See `src/services/legalService.ts`:
+
+| Where | Asked | Recorded |
+|---|---|---|
+| Patient portal signup | always (required) | Terms + Privacy, patient |
+| Patient portal, after login | until the current Terms are accepted | Terms + Privacy, patient |
+| Patient web check-in | first check-in at each clinic, and per new Privacy version | Privacy, patient, clinic, check-in |
+| Walk-in (front desk) | patient's first walk-in at the clinic, and per new Privacy version | Privacy, patient, staff member, clinic, check-in |
+| Clinic registration | always (required) | Terms + Privacy, clinic, admin |
+| Staff console, after login | until the current Terms are accepted | Terms, staff member, clinic |
+
+The server refuses each request without its box; the UIs disable the
+button until it's ticked (`legalBoxSatisfied` in `web/src/lib/legal.ts` and
+its copy in `dashboard/src/lib/legal.ts`).
+
 ## M-Pesa check-in billing flow
 
 1. Patient confirms check-in over USSD (`CHECKIN_CONFIRM`, state machine).

@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { api, ApiError, ClinicListItem, DepartmentListItem, OwnAppointment, VisitHistoryEntry } from '../lib/api';
 import { usePatientAuth } from '../context/PatientAuthContext';
+import { legalBoxSatisfied, PRIVACY_PATH, TERMS_PATH } from '../lib/legal';
 import type { LucideIcon } from 'lucide-react';
 import {
   Building2,
@@ -70,6 +71,11 @@ function CheckInPanel({ patientCode }: { patientCode: string }) {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [confirmed, setConfirmed] = useState<{ departmentName: string } | null>(null);
+  // Privacy Notice checkbox: asked at a patient's first check-in at each
+  // clinic, and again when the notice changes. null while we ask the server.
+  const [privacyAckRequired, setPrivacyAckRequired] = useState<boolean | null>(null);
+  const [privacyClinicName, setPrivacyClinicName] = useState('');
+  const [privacyAcknowledged, setPrivacyAcknowledged] = useState(false);
 
   useEffect(() => {
     api.listClinics().then((res) => {
@@ -92,20 +98,48 @@ function CheckInPanel({ patientCode }: { patientCode: string }) {
     };
   }, [clinicId]);
 
+  function loadPrivacyNotice(forClinicId: string, isCancelled: () => boolean = () => false): void {
+    setPrivacyAckRequired(null);
+    setPrivacyAcknowledged(false);
+    setPrivacyClinicName(clinics.find((c) => c.id === forClinicId)?.name ?? '');
+    api
+      .getCheckInPrivacyNotice(forClinicId)
+      .then((res) => {
+        if (isCancelled()) return;
+        setPrivacyClinicName(res.clinicName);
+        setPrivacyAckRequired(res.acknowledgmentRequired);
+      })
+      // If we can't tell, show the box: the server decides either way.
+      .catch(() => !isCancelled() && setPrivacyAckRequired(true));
+  }
+
+  useEffect(() => {
+    if (!clinicId) return;
+    let cancelled = false;
+    loadPrivacyNotice(clinicId, () => cancelled);
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload only when the clinic changes
+  }, [clinicId]);
+
   async function handleSubmit(): Promise<void> {
-    if (!clinicId || !departmentId) return;
+    if (!clinicId || !departmentId || !legalBoxSatisfied(privacyAckRequired, privacyAcknowledged)) return;
     setError(null);
     setSubmitting(true);
     try {
-      const res = await api.patientCheckIn(clinicId, departmentId);
+      const res = await api.patientCheckIn(clinicId, departmentId, privacyAckRequired === true && privacyAcknowledged);
       if (res.status === 'FAILED') {
         setError('We could not start the payment request. Please try again shortly.');
         return;
       }
       const dept = departments.find((d) => d.id === departmentId);
+      setPrivacyAckRequired(false);
       setConfirmed({ departmentName: dept?.name ?? '' });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.');
+      // e.g. the Privacy Notice was updated since this page loaded: show the box again.
+      if (err instanceof ApiError && err.status === 400) loadPrivacyNotice(clinicId);
     } finally {
       setSubmitting(false);
     }
@@ -167,8 +201,24 @@ function CheckInPanel({ patientCode }: { patientCode: string }) {
             ))}
           </div>
         </div>
+        {privacyAckRequired && (
+          <label className="legal-check">
+            <input type="checkbox" required checked={privacyAcknowledged} onChange={(e) => setPrivacyAcknowledged(e.target.checked)} />
+            <span>
+              I have read the ACISI{' '}
+              <a href={PRIVACY_PATH} target="_blank" rel="noopener noreferrer">
+                Privacy Notice
+              </a>{' '}
+              and understand how my personal and health data will be used by {privacyClinicName || 'the clinic'} and ACISI.
+            </span>
+          </label>
+        )}
         {error && <p className="error-text">{error}</p>}
-        <button className="btn btn-primary" disabled={!departmentId || submitting} onClick={() => void handleSubmit()}>
+        <button
+          className="btn btn-primary"
+          disabled={!departmentId || submitting || !legalBoxSatisfied(privacyAckRequired, privacyAcknowledged)}
+          onClick={() => void handleSubmit()}
+        >
           {submitting ? 'Starting…' : 'Confirm check-in'}
         </button>
       </div>
@@ -509,6 +559,18 @@ function AccountPanel({ patientCode }: { patientCode: string }) {
       <p className="lede">
         Patient ID <strong>{patientCode}</strong>
       </p>
+      <div className="panel">
+        <h2>Legal</h2>
+        <p>How ACISI and your clinics use your data, and the terms you agreed to.</p>
+        <p className="legal-links">
+          <a href={PRIVACY_PATH} target="_blank" rel="noopener noreferrer">
+            Privacy Notice
+          </a>
+          <a href={TERMS_PATH} target="_blank" rel="noopener noreferrer">
+            Terms of Service
+          </a>
+        </p>
+      </div>
       <div className="panel danger-panel">
         <h2>Delete my account</h2>
         <p>

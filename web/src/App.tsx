@@ -9,6 +9,7 @@ import { ContactPage } from './pages/ContactPage';
 import { SignupPage } from './pages/SignupPage';
 import { LoginPage } from './pages/LoginPage';
 import { PatientHomePage } from './pages/PatientHomePage';
+import { LegalPage } from './pages/LegalPage';
 
 export function App() {
   return (
@@ -21,6 +22,8 @@ export function App() {
               <Route path="/" element={<HomePage />} />
               <Route path="/about" element={<AboutPage />} />
               <Route path="/contact" element={<ContactPage />} />
+              <Route path="/privacy" element={<LegalPage document="privacy" />} />
+              <Route path="/terms" element={<LegalPage document="terms" />} />
             </Route>
             <Route path="/signup" element={<SignupPage />} />
             <Route path="/login" element={<LoginPage />} />

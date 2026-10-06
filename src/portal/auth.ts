@@ -64,6 +64,8 @@ const registerSchema = z.object({
   sex: z.enum(['MALE', 'FEMALE', 'OTHER', 'UNKNOWN']).optional(),
   pin: z.string().min(1),
   crossClinicConsent: z.boolean().optional(),
+  /** "I accept the Terms of Service and have read the Privacy Notice" — required. */
+  acceptLegal: z.boolean().optional(),
   // Optional — many patients won't have one, and nothing else in the
   // product depends on it (no email login, no email OTP). Only ever used
   // later for the staff-initiated visit-summary email at checkout.
@@ -94,6 +96,11 @@ portalAuthRouter.post('/register', async (req, res) => {
     return;
   }
 
+  if (parsed.data.acceptLegal !== true) {
+    res.status(400).json({ error: 'Please accept the Terms of Service and Privacy Notice to create your account' });
+    return;
+  }
+
   const patient = await registerPatient({
     phoneNumberE164: phoneE164,
     firstName: parsed.data.firstName,
@@ -104,6 +111,7 @@ portalAuthRouter.post('/register', async (req, res) => {
     crossClinicConsent: parsed.data.crossClinicConsent ?? false,
     pin: parsed.data.pin,
     email: parsed.data.email || undefined,
+    acceptedTermsAndPrivacyNotice: true,
   }).catch((err) => {
     if (err?.code === 'P2002') return null;
     throw err;

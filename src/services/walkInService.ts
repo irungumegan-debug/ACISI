@@ -13,6 +13,10 @@ import { assignDoctorForCheckIn } from './doctorAssignmentService';
 import { findArrivalMatch, markAppointmentCompleted } from './appointmentService';
 import { publishWalkInCheckedIn } from './realtimeEvents';
 import { buildWalkInInviteSms } from './smsTemplates';
+import { recordLegalAcceptances, walkInNeedsPrivacyAck } from './legalService';
+
+const PRIVACY_NOTICE_REQUIRED_MESSAGE =
+  'Tell the patient how their data is used and where to read the Privacy Notice, then tick the box to confirm';
 
 /**
  * Front-desk check-in for a patient who arrives without having checked in
@@ -56,13 +60,19 @@ export interface WalkInLookupResult {
     /** Most recent visit at *this* clinic only — never another clinic's history. */
     lastVisitAt: Date | null;
   } | null;
+  /**
+   * Whether the front desk must confirm the patient was told about the
+   * Privacy Notice: always for a new patient, otherwise at their first
+   * walk-in at this clinic or when the notice's version has changed.
+   */
+  privacyNoticeAckRequired: boolean;
 }
 
 /** Step 1 of the walk-in flow: is there already a patient with this phone number? */
 export async function lookupWalkInPatient(rawPhone: string, clinicId: string, staffId: string): Promise<WalkInLookupResult> {
   const phoneNumber = normalizeWalkInPhone(rawPhone);
   const patient = await findPatientByPhone(phoneNumber);
-  if (!patient) return { phoneNumber, patient: null };
+  if (!patient) return { phoneNumber, patient: null, privacyNoticeAckRequired: true };
 
   const lastVisit = await prisma.encounter.findFirst({
     where: { patientId: patient.id, clinicId },
@@ -88,6 +98,7 @@ export async function lookupWalkInPatient(rawPhone: string, clinicId: string, st
       patientCode: patient.patientCode,
       lastVisitAt: lastVisit?.createdAt ?? null,
     },
+    privacyNoticeAckRequired: await walkInNeedsPrivacyAck(patient.id, clinicId),
   };
 }
 
@@ -118,6 +129,13 @@ export interface WalkInCheckInInput {
    * previously opted out clears the opt-out (they've changed their mind).
    */
   smsOptOut?: boolean;
+  /**
+   * "Patient has been told how their data is used and where to read the
+   * Privacy Notice." Required for a new patient, at a patient's first
+   * walk-in at this clinic, and again when the notice's version changes;
+   * recorded against the staff member who ticked it.
+   */
+  privacyNoticeExplained?: boolean;
 }
 
 export type WalkInSmsOutcome = 'sent' | 'failed' | 'not_requested';
@@ -160,7 +178,11 @@ export function resolveDateOfBirth(details: Pick<NewWalkInPatientDetails, 'dateO
   return undefined;
 }
 
-async function findOrCreatePatient(phoneNumber: string, details: NewWalkInPatientDetails | undefined): Promise<{ patient: Patient; isNew: boolean }> {
+async function findOrCreatePatient(
+  phoneNumber: string,
+  details: NewWalkInPatientDetails | undefined,
+  privacyNoticeExplained: boolean,
+): Promise<{ patient: Patient; isNew: boolean }> {
   const existing = await findPatientByPhone(phoneNumber);
   if (existing) return { patient: existing, isNew: false };
 
@@ -173,6 +195,10 @@ async function findOrCreatePatient(phoneNumber: string, details: NewWalkInPatien
   }
   if (!details.registrationConsent) {
     throw new WalkInError('The patient must agree to ACISI creating a record before they can be registered', 400);
+  }
+  // Checked before registering, so a refused check-in never leaves a new patient behind.
+  if (!privacyNoticeExplained) {
+    throw new WalkInError(PRIVACY_NOTICE_REQUIRED_MESSAGE, 400);
   }
 
   try {
@@ -257,7 +283,12 @@ export async function checkInWalkIn(input: WalkInCheckInInput): Promise<WalkInCh
   if (!clinic || !clinic.isActive) throw new WalkInError('Clinic not found', 404);
   if (!department) throw new WalkInError('Choose a department', 400);
 
-  const { patient, isNew } = await findOrCreatePatient(phoneNumber, input.newPatient);
+  const privacyNoticeExplained = Boolean(input.privacyNoticeExplained);
+  const { patient, isNew } = await findOrCreatePatient(phoneNumber, input.newPatient, privacyNoticeExplained);
+  const privacyNoticeAckRequired = isNew || (await walkInNeedsPrivacyAck(patient.id, input.clinicId));
+  if (privacyNoticeAckRequired && !privacyNoticeExplained) {
+    throw new WalkInError(PRIVACY_NOTICE_REQUIRED_MESSAGE, 400);
+  }
   const assignedDoctorId = await assignDoctorForCheckIn(input.clinicId, department.id);
   const appointment = await findArrivalMatch(patient.id, input.clinicId, department.id);
 
@@ -321,6 +352,14 @@ export async function checkInWalkIn(input: WalkInCheckInInput): Promise<WalkInCh
       await tx.consent.create({
         data: { patientId: patient.id, type: 'SMS_CLINIC_MESSAGES', granted: true, channel: 'STAFF_ASSISTED', version: CONSENT_VERSION },
       });
+    }
+    if (privacyNoticeAckRequired) {
+      await recordLegalAcceptances(
+        ['PRIVACY_NOTICE'],
+        'WALK_IN_CHECKIN',
+        { patientId: patient.id, staffId: input.staffId, clinicId: input.clinicId, checkInId: checkIn.id },
+        tx,
+      );
     }
     return { checkInId: checkIn.id, encounterId: encounter.id, encounterCreatedAt: encounter.createdAt };
   });

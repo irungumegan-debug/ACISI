@@ -662,3 +662,62 @@
     min-width: 240px;
   }
 }
+
+/* ---------- legal: Privacy Notice / Terms ---------- */
+.patient-portal .legal-check {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin: 0 0 18px;
+  padding: 14px;
+  border-radius: var(--radius-md);
+  background: var(--cream-50);
+  border: 1px solid var(--line-strong);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--ink-700);
+  cursor: pointer;
+}
+.patient-portal .legal-check input {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin: 1px 0 0;
+  accent-color: var(--navy-900);
+}
+.patient-portal .legal-check a,
+.patient-portal .legal-links a,
+.patient-legal a {
+  color: var(--gold-700);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.patient-portal .panel > h2 {
+  margin: 0 0 10px;
+  font-family: var(--font-display);
+  font-size: 20px;
+  color: var(--ink-900);
+}
+.patient-portal .panel > p {
+  margin: 0 0 14px;
+  font-size: 15px;
+  color: var(--ink-700);
+}
+.patient-portal .legal-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
+.patient-legal {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin-top: 32px;
+  font-size: 13.5px;
+}
+.patient-legal a {
+  font-weight: 500;
+  color: var(--ink-500);
+}

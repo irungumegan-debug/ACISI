@@ -19,7 +19,6 @@ export interface PageSeo {
 /**
  * The public pages Google should index. Every entry here must also be listed
  * in web/public/sitemap.xml, and nothing else may be — the test enforces it.
- * Add the legal pages here (and to the sitemap) once they exist.
  */
 export const SITEMAP_PAGES: Readonly<Record<string, PageSeo>> = {
   '/': {
@@ -38,6 +37,18 @@ export const SITEMAP_PAGES: Readonly<Record<string, PageSeo>> = {
     title: 'Contact ACISI – Book a demo',
     description:
       'Questions about ACISI, or want a demo for your clinic? Email or call us. Support Mon–Fri 8am–6pm and weekends 10am–5pm EAT.',
+    index: true,
+  },
+  '/privacy': {
+    title: 'Privacy Notice – ACISI',
+    description:
+      'What personal data ACISI collects, why, who sees it, where it is stored in Kenya, and your rights under the Data Protection Act, 2019.',
+    index: true,
+  },
+  '/terms': {
+    title: 'Terms of Service – ACISI',
+    description:
+      'The agreement between ACISI and everyone who uses it: patients, and the clinics, owners, administrators and staff who sign up.',
     index: true,
   },
 };

@@ -5,6 +5,27 @@ import { usePatientAuth } from '../context/PatientAuthContext';
 import { AuthShell, RoleCard } from '../components/AuthShell';
 import { Check, Plus, X } from 'lucide-react';
 import { CODE_PATTERN, cleanName, nameKey, SUGGESTED_DEPARTMENTS, suggestCode } from '../lib/departments';
+import { legalBoxSatisfied, PRIVACY_PATH, TERMS_PATH } from '../lib/legal';
+
+/** Required "accept the Terms and Privacy Notice" box for patient and clinic signup. Links open in a new tab so the form isn't lost. */
+function AcceptLegalCheckbox({ checked, onChange }: { checked: boolean; onChange: (checked: boolean) => void }) {
+  return (
+    <label className="legal-check">
+      <input type="checkbox" required checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      <span>
+        I accept the ACISI{' '}
+        <a href={TERMS_PATH} target="_blank" rel="noopener noreferrer">
+          Terms of Service
+        </a>{' '}
+        and have read the{' '}
+        <a href={PRIVACY_PATH} target="_blank" rel="noopener noreferrer">
+          Privacy Notice
+        </a>
+        .
+      </span>
+    </label>
+  );
+}
 
 type Step =
   | { kind: 'picker' }
@@ -71,6 +92,7 @@ function PatientSignupForm({ onBack }: { onBack: () => void }) {
   const [email, setEmail] = useState('');
   const [pin, setPin] = useState('');
   const [crossClinicConsent, setCrossClinicConsent] = useState(false);
+  const [acceptLegal, setAcceptLegal] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -81,6 +103,10 @@ function PatientSignupForm({ onBack }: { onBack: () => void }) {
     const parts = fullName.trim().split(/\s+/);
     if (parts.length < 2) {
       setError('Please enter both first and last name.');
+      return;
+    }
+    if (!legalBoxSatisfied(true, acceptLegal)) {
+      setError('Please accept the Terms of Service and Privacy Notice to create your account.');
       return;
     }
 
@@ -94,6 +120,7 @@ function PatientSignupForm({ onBack }: { onBack: () => void }) {
         email: email || undefined,
         pin,
         crossClinicConsent,
+        acceptLegal,
       });
       // Same fix as patient login: update PatientAuthContext's session
       // directly (registration already returns it) before navigating
@@ -147,9 +174,10 @@ function PatientSignupForm({ onBack }: { onBack: () => void }) {
         <input type="checkbox" checked={crossClinicConsent} onChange={(e) => setCrossClinicConsent(e.target.checked)} style={{ width: 'auto', marginTop: 3 }} />
         <span>Share my records with other ACISI-connected clinics too (optional — off by default, you can check in elsewhere either way).</span>
       </label>
+      <AcceptLegalCheckbox checked={acceptLegal} onChange={setAcceptLegal} />
 
       {error && <p className="auth-error">{error}</p>}
-      <button className="auth-submit" type="submit" disabled={submitting}>
+      <button className="auth-submit" type="submit" disabled={submitting || !acceptLegal}>
         {submitting ? 'Creating account…' : 'Create account'}
       </button>
     </form>
@@ -298,6 +326,7 @@ function ClinicSignupForm({ onBack, onDone }: { onBack: () => void; onDone: (inv
   const [adminPhoneNumber, setAdminPhoneNumber] = useState('');
   const [adminPin, setAdminPin] = useState('');
   const [departments, setDepartments] = useState<DraftDepartment[]>([{ name: 'General', code: 'GEN', fee: '' }]);
+  const [acceptLegal, setAcceptLegal] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -313,6 +342,10 @@ function ClinicSignupForm({ onBack, onDone }: { onBack: () => void; onDone: (inv
       setError(problem);
       return;
     }
+    if (!legalBoxSatisfied(true, acceptLegal)) {
+      setError('Please accept the Terms of Service and Privacy Notice to register your clinic.');
+      return;
+    }
     setError(null);
     setSubmitting(true);
     try {
@@ -323,6 +356,7 @@ function ClinicSignupForm({ onBack, onDone }: { onBack: () => void; onDone: (inv
         adminPhoneNumber,
         adminPin,
         departments: departments.map((d) => ({ name: cleanName(d.name), code: d.code.trim().toUpperCase(), consultationFeeKes: d.fee.trim() ? Number(d.fee.trim()) : null })),
+        acceptLegal,
       });
       onDone(res.inviteCode, res.staffCode);
     } catch (err) {
@@ -389,8 +423,9 @@ function ClinicSignupForm({ onBack, onDone }: { onBack: () => void; onDone: (inv
             these any time in Settings.
           </p>
           <DepartmentPicker departments={departments} onChange={setDepartments} />
+          <AcceptLegalCheckbox checked={acceptLegal} onChange={setAcceptLegal} />
           {error && <p className="auth-error">{error}</p>}
-          <button className="auth-submit" type="submit" disabled={submitting}>
+          <button className="auth-submit" type="submit" disabled={submitting || !acceptLegal}>
             {submitting ? 'Registering…' : 'Register clinic'}
           </button>
         </>

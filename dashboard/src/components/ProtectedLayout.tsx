@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import { Navigate, NavLink, Outlet, useLocation } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
-import { BarChart3, CalendarDays, ClipboardList, LogOut, Menu, Settings, UserRound, UsersRound, X } from 'lucide-react';
+import { BarChart3, CalendarDays, ClipboardList, LogOut, Menu, ScrollText, Settings, UserRound, UsersRound, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { Avatar, LogoMark, Skeleton } from './ui';
+import { api, ApiError } from '../lib/api';
+import { legalBoxSatisfied, PRIVACY_PATH, TERMS_PATH } from '../lib/legal';
+import { Avatar, btn, LogoMark, Skeleton } from './ui';
 
 interface NavItem {
   to: string;
@@ -118,13 +120,107 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           Log out
         </button>
         <p className="px-3 pt-2 text-xs text-gold-400/80">Healthcare, within reach.</p>
+        <nav aria-label="Legal" className="flex flex-wrap gap-x-4 gap-y-1 px-3 pt-2 text-xs">
+          <a href={PRIVACY_PATH} target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-white hover:underline">
+            Privacy Notice
+          </a>
+          <a href={TERMS_PATH} target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-white hover:underline">
+            Terms of Service
+          </a>
+        </nav>
       </div>
     </div>
   );
 }
 
+/**
+ * Shown instead of the page until the staff member has accepted the current
+ * Terms of Service: once for accounts that existed before the Terms were
+ * published, and again whenever the Terms are updated. A clinic admin who
+ * accepted when registering the clinic is not asked again.
+ */
+function AcceptTermsCard({ onAccepted }: { onAccepted: () => void }) {
+  const [ticked, setTicked] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit(e: FormEvent): Promise<void> {
+    e.preventDefault();
+    if (!legalBoxSatisfied(true, ticked)) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await api.acceptTerms();
+      onAccepted();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Something went wrong. Try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <form onSubmit={(e) => void handleSubmit(e)} className="mx-auto max-w-xl rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 sm:p-7">
+      <div className="flex items-center gap-3">
+        <span className="flex h-11 w-11 flex-none items-center justify-center rounded-xl bg-gold-tint text-gold-700">
+          <ScrollText size={22} aria-hidden />
+        </span>
+        <h1 className="font-display text-xl font-semibold text-navy-900">Before you continue</h1>
+      </div>
+      <p className="mt-4 text-[15px] text-ink-700">
+        Please read and accept ACISI&apos;s Terms of Service to keep using the console. They set out what ACISI does, what your
+        clinic is responsible for, and how patient data is handled.
+      </p>
+      <label className="mt-5 flex items-start gap-3 rounded-xl bg-cream-100 p-3.5 text-[15px] text-ink-700 ring-1 ring-slate-200">
+        <input
+          type="checkbox"
+          required
+          checked={ticked}
+          onChange={(e) => setTicked(e.target.checked)}
+          className="mt-0.5 h-5 w-5 shrink-0 accent-navy-900"
+        />
+        <span>
+          I have read and accept the ACISI{' '}
+          <a href={TERMS_PATH} target="_blank" rel="noopener noreferrer" className="font-semibold text-gold-700 underline">
+            Terms of Service
+          </a>
+          . (See also the{' '}
+          <a href={PRIVACY_PATH} target="_blank" rel="noopener noreferrer" className="font-semibold text-gold-700 underline">
+            Privacy Notice
+          </a>
+          .)
+        </span>
+      </label>
+      {error && (
+        <p role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3.5 py-2.5 text-sm text-red-700">
+          {error}
+        </p>
+      )}
+      <button type="submit" disabled={!ticked || submitting} className={`${btn.gold} mt-5 w-full sm:w-auto`}>
+        {submitting ? 'Saving…' : 'Accept and continue'}
+      </button>
+    </form>
+  );
+}
+
 export function ProtectedLayout() {
   const { session, loading } = useAuth();
+  // null while checking; 'error' shows a retry rather than letting anyone past unchecked.
+  const [termsStatus, setTermsStatus] = useState<'required' | 'accepted' | 'error' | null>(null);
+  const staffId = session?.staffId;
+
+  useEffect(() => {
+    if (!staffId) return;
+    let cancelled = false;
+    setTermsStatus(null);
+    api
+      .getLegalStatus()
+      .then((res) => !cancelled && setTermsStatus(res.termsAcceptanceRequired ? 'required' : 'accepted'))
+      .catch(() => !cancelled && setTermsStatus('error'));
+    return () => {
+      cancelled = true;
+    };
+  }, [staffId]);
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuButton = useRef<HTMLButtonElement>(null);
@@ -251,7 +347,25 @@ export function ProtectedLayout() {
           </div>
         </header>
         <main id="main" className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8 print:max-w-none print:p-0">
-          <Outlet />
+          {termsStatus === 'accepted' ? (
+            <Outlet />
+          ) : termsStatus === 'required' ? (
+            <AcceptTermsCard onAccepted={() => setTermsStatus('accepted')} />
+          ) : termsStatus === 'error' ? (
+            <div className="mx-auto max-w-xl rounded-2xl bg-white p-5 ring-1 ring-slate-200">
+              <p role="alert" className="text-sm text-red-700">
+                Couldn&apos;t load the console. Check your connection and try again.
+              </p>
+              <button type="button" className={`${btn.secondary} mt-4`} onClick={() => window.location.reload()}>
+                Try again
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-4" role="status" aria-label="Loading">
+              <Skeleton className="h-8 w-64" />
+              <Skeleton className="h-64" />
+            </div>
+          )}
         </main>
       </div>
     </div>

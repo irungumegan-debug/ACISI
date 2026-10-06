@@ -14,8 +14,19 @@ export function AuthShell({ children }: { children: ReactNode }) {
           <Logo size={40} />
         </Link>
         <div className="auth-card">{children}</div>
+        <LegalLinks />
       </div>
     </div>
+  );
+}
+
+/** Small Privacy Notice / Terms of Service links under the login and signup card. */
+export function LegalLinks() {
+  return (
+    <nav className="auth-legal" aria-label="Legal">
+      <Link to="/privacy">Privacy Notice</Link>
+      <Link to="/terms">Terms of Service</Link>
+    </nav>
   );
 }
 
