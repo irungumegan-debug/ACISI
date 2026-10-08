@@ -1,6 +1,6 @@
 # ACISI Terms of Service
 
-These terms are the agreement between ACISI Healthcare, a company registered in Kenya ("ACISI", "we"), and everyone who uses ACISI. Part 1 applies to everyone. Part 2 applies to patients. Part 3 applies to clinics that sign up, and to their owners, administrators and staff. By using ACISI, you agree to the parts that apply to you. Please read them together with our Privacy Notice at acisi.co.ke/privacy.
+These terms are the agreement between ACISI Healthcare, a business registered in Kenya (business name registration number BN-L3SMWLDM) ("ACISI", "we"), and everyone who uses ACISI. Part 1 applies to everyone. Part 2 applies to patients. Part 3 applies to clinics that sign up, and to their owners, administrators and staff. By using ACISI, you agree to the parts that apply to you. Please read them together with our Privacy Notice at acisi.co.ke/privacy.
 
 Questions? Contact us at acisi.help@gmail.com or 0746404155.
 
@@ -120,4 +120,4 @@ We may end the service with 30 days' written notice, or sooner if the clinic ser
 
 When the service ends, the clinic can export all of its records free of charge, in a common format, for 30 days. After that, we delete the clinic's data from ACISI, and from our backups as they roll over, except anything the law requires us to keep. The clinic's data is always its own, and we will never hold it back.
 
-**Last updated:** 6 October 2026
+**Last updated:** 8 October 2026

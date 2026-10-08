@@ -4,7 +4,7 @@ This notice explains, in plain language, what personal data ACISI collects, why,
 
 ## Who are we and how can you contact us?
 
-ACISI Healthcare is a company registered in Kenya. We provide ACISI, a records and administration system that clinics use for patient check-in, queues, visit records, prescriptions, payments and receipts.
+ACISI Healthcare is a business registered in Kenya (business name registration number BN-L3SMWLDM). We provide ACISI, a records and administration system that clinics use for patient check-in, queues, visit records, prescriptions, payments and receipts.
 
 ACISI is not a healthcare provider. We do not diagnose, treat, or give medical advice. Your care comes from the clinic you visit. For any questions about your data, contact our Data Protection Officer, Megan Irungu (Founder), at acisi.help@gmail.com or 0746404155. For anything else, reach us at acisi.help@gmail.com or 0746404155.
 
@@ -84,7 +84,9 @@ We do not sell or rent personal data to anyone.
 
 All patient data is stored and processed on servers in a data centre in Nairobi, Kenya. Kenyan law treats data used for primary or secondary health care as a matter of strategic national interest, so we keep it in Kenya.
 
-Website traffic travels encrypted straight between your device and our server in Kenya. Our domain provider, Cloudflare, only directs visitors to the server and never sees the content. SMS messages are sent through Africa's Talking, a Kenyan company. We do not transfer patient records outside Kenya. If that ever changes, we will meet the Data Protection Act's conditions for cross-border transfers first, including your explicit consent for health data, and update this notice.
+Website traffic travels encrypted straight between your device and our server in Kenya. Our domain provider, Cloudflare, only directs visitors to the server and never sees the content. SMS messages are sent through Africa's Talking, a Kenyan company. We do not transfer patient records outside Kenya.
+
+If you email us, or send a message through our contact form, it reaches our email provider, Google, which may store it outside Kenya. Please do not send health details by email; your clinic and ACISI keep those inside the system. If that ever changes, we will meet the Data Protection Act's conditions for cross-border transfers first, including your explicit consent for health data, and update this notice.
 
 ## How do we keep your data safe?
 
@@ -140,4 +142,4 @@ You can reach the ODPC through its website, [odpc.go.ke](https://www.odpc.go.ke)
 
 We review this notice at least once a year and whenever how we use data changes. We post the new version here with its date and tell clinics and patients about important changes by email or SMS.
 
-**Last updated:** 6 October 2026
+**Last updated:** 8 October 2026
