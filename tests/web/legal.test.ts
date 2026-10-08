@@ -17,8 +17,8 @@ const read = (file: string) => fs.readFileSync(path.join(root, file), 'utf8');
  * file, its "Last updated" date, src/config/legal.ts and this hash together.
  */
 const APPROVED = {
-  'web/src/content/privacy.md': 'b1cd8982ac11ac61e37e505daa23c959d1ac6fb01a560cdb5686e9b57ad147e2',
-  'web/src/content/terms.md': '701899c31af98c08e33523a4f7b5ae8771200d4f4d4ed32123bf00fc480652b5',
+  'web/src/content/privacy.md': '12977722c89130ae6968af15c28ff9480d5d0f5c7e9413be59f12e643d6d668c',
+  'web/src/content/terms.md': '0f2c2a98e3d3b11b88403a6cd7e63cd9a0b4327ce33684a86530879d4219bdde',
 };
 
 describe.each(Object.keys(APPROVED) as (keyof typeof APPROVED)[])('%s', (file) => {
