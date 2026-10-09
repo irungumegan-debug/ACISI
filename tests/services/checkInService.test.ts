@@ -1,7 +1,6 @@
 jest.mock('../../src/db/prisma', () => ({
   prisma: {
     checkIn: { findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
-    clinic: { findUnique: jest.fn() },
     encounter: { create: jest.fn() },
     mpesaTransaction: { create: jest.fn() },
   },

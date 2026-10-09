@@ -1,11 +1,11 @@
 import { Bill, BillItemKind, ClinicPaymentSettings, Payment, PaymentMethod, Prisma } from '@prisma/client';
 import { prisma } from '../db/prisma';
+import { smsClient } from '../config/africastalking';
 import { logger } from '../utils/logger';
 import { InvalidPhoneNumberError, toE164 } from '../utils/phone';
 import { formatKenyaDate } from '../utils/kenyaTime';
 import { generateBillNumber } from '../utils/idCodes';
 import { recordAuditEvent } from './auditService';
-import { sendSms } from './smsService';
 import {
   assertWithinBalance,
   BillingError,
@@ -704,7 +704,7 @@ export async function sendPaidReceiptSms(billId: string): Promise<ReceiptSmsOutc
       date: formatKenyaDate(bill.paidAt ?? new Date()),
       payments: bill.payments.map((p) => ({ method: p.method, reference: p.mpesaReceiptNumber ?? p.reference })),
     });
-    if ((await sendSms({ to: patient.phoneNumber, message })) === null) return 'opted_out'; // a demo patient: never sent
+    await smsClient.send({ to: [patient.phoneNumber], message });
     await recordAuditEvent({ actorType: 'SYSTEM', action: 'RECEIPT_SMS_SENT', entityType: 'Bill', entityId: bill.id });
     return 'sent';
   } catch (err) {

@@ -1,5 +1,3 @@
-import { currentDemoKey } from './demoLink';
-
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -80,10 +78,8 @@ export interface StaffSessionSummary {
 
 export const api = {
   // ---- Clinics ----
-  /** Public clinic list; a demo link's key (see lib/demoLink.ts) adds that demo clinic first. */
   listClinics() {
-    const demoKey = currentDemoKey();
-    return request<{ clinics: ClinicListItem[] }>(demoKey ? `/clinics?demo=${encodeURIComponent(demoKey)}` : '/clinics');
+    return request<{ clinics: ClinicListItem[] }>('/clinics');
   },
 
   registerClinic(input: {
