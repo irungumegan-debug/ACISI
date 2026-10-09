@@ -3,7 +3,7 @@ import { parseStkCallback } from './callback';
 import { StkCallbackPayload } from './types';
 import { applyPaymentResult } from '../services/checkInService';
 import { applyClinicStkResult } from '../services/billingService';
-import { logger } from '../utils/logger';
+import { errorSummary, logger } from '../utils/logger';
 
 export const mpesaRouter = Router();
 
@@ -21,17 +21,16 @@ mpesaRouter.post('/callback', async (req, res) => {
     return;
   }
 
-  // One line per callback, deliberately limited to checkInId, resultCode and
-  // the new status — never the phone number, receipt number or payload.
-  const resultCode = payload.Body.stkCallback.ResultCode;
+  // applyPaymentResult writes the one log line per callback (checkInId,
+  // source, resultCode, new status — never the phone number, receipt
+  // number or payload).
   try {
-    const outcome = await applyPaymentResult(parseStkCallback(payload), payload);
-    logger.info(
-      { checkInId: outcome?.checkInId ?? null, resultCode, status: outcome?.status ?? null },
-      outcome ? 'M-Pesa check-in callback' : 'M-Pesa check-in callback for unknown check-in',
-    );
+    await applyPaymentResult(parseStkCallback(payload), payload, 'callback');
   } catch (err) {
-    logger.error({ err, resultCode }, 'Failed to process M-Pesa callback');
+    logger.error(
+      { err: errorSummary(err), resultCode: payload.Body.stkCallback.ResultCode },
+      'Failed to process M-Pesa callback',
+    );
   }
 
   res.status(200).json({ ResultCode: 0, ResultDesc: 'Accepted' });

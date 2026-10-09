@@ -7,6 +7,7 @@ import { startStkStatusWorker } from './jobs/workers/stkStatusWorker';
 import { startVisitSummarySmsWorker } from './jobs/workers/visitSummarySmsWorker';
 import { startVisitSummaryEmailWorker } from './jobs/workers/visitSummaryEmailWorker';
 import { startClinicStkStatusWorker } from './jobs/workers/clinicStkStatusWorker';
+import { scheduleCheckInPaymentSweep } from './jobs/queue';
 
 const app = createApp();
 const smsWorker = startSmsReceiptWorker();
@@ -18,6 +19,8 @@ const clinicStkStatusWorker = startClinicStkStatusWorker();
 const server = app.listen(env.PORT, () => {
   logger.info({ port: env.PORT, env: env.NODE_ENV }, 'ACISI server listening');
 });
+
+scheduleCheckInPaymentSweep().catch((err) => logger.error({ err }, 'Could not schedule the check-in payment sweep'));
 
 void ensureOwnerFromEnv({ email: env.OWNER_EMAIL, name: env.OWNER_NAME, password: env.OWNER_PASSWORD });
 

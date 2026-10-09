@@ -59,7 +59,7 @@ export interface OwnAppointment {
   status: AppointmentStatus;
 }
 
-export type CheckInStatus = 'PENDING_PAYMENT' | 'PAID' | 'FAILED' | 'CANCELLED' | 'NO_FEE';
+export type CheckInStatus = 'PENDING_PAYMENT' | 'PAID' | 'FAILED' | 'CANCELLED' | 'NO_FEE' | 'NEEDS_REVIEW';
 
 export interface CheckInSummary {
   checkInId: string;

@@ -7,9 +7,12 @@ export interface SmsReceiptJobData {
   succeeded: boolean;
 }
 
+/**
+ * The once-a-minute sweep's job carries no data. Jobs queued by older
+ * versions (one delayed check per STK push) carry a checkInId.
+ */
 export interface StkStatusCheckJobData {
-  checkInId: string;
-  checkoutRequestId: string;
+  checkInId?: string;
 }
 
 export interface VisitSummarySmsJobData {
@@ -80,15 +83,13 @@ export async function enqueueVisitSummaryEmail(data: VisitSummaryEmailJobData): 
 }
 
 /**
- * Schedules a Daraja status query for a pending STK push. Used as a safety
- * net when the async callback never arrives (dropped delivery, network
- * partition) — see jobs/workers/stkStatusWorker.ts.
+ * Starts (or keeps — it's an idempotent upsert, safe on every boot) the
+ * once-a-minute sweep that asks Safaricom about check-in fees still awaiting
+ * M-Pesa, and hands the ones unresolved after an hour to staff — see
+ * jobs/workers/stkStatusWorker.ts and checkInService.sweepPendingCheckInPayments.
  */
-export async function scheduleStkStatusCheck(data: StkStatusCheckJobData): Promise<void> {
-  await stkStatusCheckQueue.add('check-status', data, {
-    delay: 90_000,
-    attempts: 1,
-  });
+export async function scheduleCheckInPaymentSweep(): Promise<void> {
+  await stkStatusCheckQueue.upsertJobScheduler('check-in-payment-sweep', { every: 60_000 }, { name: 'sweep', data: {} });
 }
 
 /**

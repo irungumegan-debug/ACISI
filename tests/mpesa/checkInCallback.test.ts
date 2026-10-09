@@ -4,6 +4,7 @@ import request from 'supertest';
 jest.mock('../../src/services/checkInService', () => ({ applyPaymentResult: jest.fn() }));
 jest.mock('../../src/services/billingService', () => ({ applyClinicStkResult: jest.fn() }));
 jest.mock('../../src/utils/logger', () => ({
+  ...jest.requireActual('../../src/utils/logger'),
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
 
@@ -40,54 +41,33 @@ function everythingLogged(): string {
 
 beforeEach(() => jest.clearAllMocks());
 
-describe('POST /api/mpesa/callback logging', () => {
-  it('logs exactly one line with only the checkInId, resultCode and new status', async () => {
+describe('POST /api/mpesa/callback', () => {
+  it("hands the callback to applyPaymentResult as source 'callback' (which writes the one log line) and logs nothing itself", async () => {
     (applyPaymentResult as jest.Mock).mockResolvedValue({ checkInId: 'ci-1', status: 'PAID' });
 
     expect((await request(app).post('/api/mpesa/callback').send(paid)).status).toBe(200);
 
-    expect(logger.info).toHaveBeenCalledTimes(1);
-    expect((logger.info as jest.Mock).mock.calls[0][0]).toEqual({
-      checkInId: 'ci-1',
-      resultCode: 0,
-      status: 'PAID',
-    });
-    expect(everythingLogged()).not.toMatch(/254712345678|QKL98MN76P|ws_CO_1|mr-1/);
+    expect(applyPaymentResult).toHaveBeenCalledWith(
+      expect.objectContaining({ checkoutRequestId: 'ws_CO_1', resultCode: 0 }),
+      paid,
+      'callback',
+    );
+    expect(logger.info).not.toHaveBeenCalled();
   });
 
-  it('logs a cancellation with its result code', async () => {
-    (applyPaymentResult as jest.Mock).mockResolvedValue({ checkInId: 'ci-2', status: 'FAILED' });
-    const cancelled = {
-      Body: {
-        stkCallback: {
-          MerchantRequestID: 'mr-2',
-          CheckoutRequestID: 'ws_CO_2',
-          ResultCode: 1032,
-          ResultDesc: 'Request cancelled by user',
-        },
-      },
-    };
-
-    await request(app).post('/api/mpesa/callback').send(cancelled);
-
-    expect((logger.info as jest.Mock).mock.calls[0][0]).toEqual({
-      checkInId: 'ci-2',
-      resultCode: 1032,
-      status: 'FAILED',
+  it('still answers 200 when processing fails, logging only the error name and result code', async () => {
+    const err = Object.assign(new Error('Unique constraint failed: 254712345678 QKL98MN76P'), {
+      code: 'P2002',
     });
-  });
+    (applyPaymentResult as jest.Mock).mockRejectedValue(err);
 
-  it('still logs one line for a callback matching no check-in', async () => {
-    (applyPaymentResult as jest.Mock).mockResolvedValue(null);
+    expect((await request(app).post('/api/mpesa/callback').send(paid)).status).toBe(200);
 
-    await request(app).post('/api/mpesa/callback').send(paid);
-
-    expect(logger.info).toHaveBeenCalledTimes(1);
-    expect((logger.info as jest.Mock).mock.calls[0][0]).toEqual({
-      checkInId: null,
+    expect((logger.error as jest.Mock).mock.calls[0][0]).toEqual({
+      err: { name: 'Error', code: 'P2002' },
       resultCode: 0,
-      status: null,
     });
+    expect(JSON.stringify((logger.error as jest.Mock).mock.calls)).not.toMatch(/254712345678|QKL98MN76P/);
   });
 
   it('never logs the body of a malformed callback', async () => {

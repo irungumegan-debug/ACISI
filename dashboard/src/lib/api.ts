@@ -86,7 +86,7 @@ export interface PatientDetail extends PatientIdentityRecord {
   hasHiddenHistoryElsewhere: boolean;
 }
 
-export type CheckInStatus = 'PENDING_PAYMENT' | 'PAID' | 'FAILED' | 'CANCELLED' | 'NO_FEE';
+export type CheckInStatus = 'PENDING_PAYMENT' | 'PAID' | 'FAILED' | 'CANCELLED' | 'NO_FEE' | 'NEEDS_REVIEW';
 export type CheckInSource = 'REMOTE' | 'WALK_IN';
 export type EncounterStatus = 'WAITING' | 'IN_CONSULTATION' | 'READY_FOR_CHECKOUT' | 'DONE';
 
@@ -509,9 +509,11 @@ export const api = {
     });
   },
 
-  confirmCheckInPaid(checkInId: string) {
-    return request<{ checkInId: string; status: CheckInStatus }>(`/checkins/${checkInId}/confirm-payment`, {
+  /** Manual confirmation of the check-in fee, with the M-Pesa code from the patient's SMS. */
+  confirmCheckInPaid(checkInId: string, mpesaCode: string) {
+    return request<{ checkInId: string; status: CheckInStatus }>(`/checkins/${encodeURIComponent(checkInId)}/confirm-payment`, {
       method: 'POST',
+      body: JSON.stringify({ mpesaCode }),
     });
   },
 

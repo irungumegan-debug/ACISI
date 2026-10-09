@@ -57,6 +57,12 @@ enum CheckInStatus {
   /// check-in fee is charged and no payment is ever requested. The visit
   /// starts immediately, exactly as if a remote check-in had just been paid.
   NO_FEE
+  /// Still unresolved 60 minutes after the STK push: no callback arrived
+  /// and Safaricom's status query never gave a definite answer. Not FAILED —
+  /// the patient may well have paid — so front desk checks the patient's
+  /// M-Pesa SMS and confirms by hand. A late definite answer from M-Pesa
+  /// still resolves it.
+  NEEDS_REVIEW
 }
 
 /// How a CheckIn came about. REMOTE covers every path that charges the ACISI
@@ -242,18 +248,19 @@ model Staff {
   createdAt          DateTime               @default(now())
   updatedAt          DateTime               @updatedAt
 
-  checkIns              CheckIn[]
-  auditLogs             AuditLog[]
-  otps                  StaffOtp[]
-  assignedEncounters    Encounter[]       @relation("EncounterAssignedDoctor")
-  consultedEncounters   Encounter[]       @relation("EncounterConsultedBy")
-  billsCreated          Bill[]            @relation("BillCreatedBy")
-  paymentsTaken         Payment[]         @relation("PaymentTakenBy")
-  paymentsVoided        Payment[]         @relation("PaymentVoidedBy")
-  checkedOutEncounters  Encounter[]       @relation("EncounterCheckedOutBy")
-  confirmedAppointments Appointment[]     @relation("AppointmentConfirmedBy")
-  cancelledAppointments Appointment[]     @relation("AppointmentCancelledBy")
-  legalAcceptances      LegalAcceptance[]
+  checkIns                 CheckIn[]
+  checkInsPaymentConfirmed CheckIn[]         @relation("CheckInPaymentConfirmedBy")
+  auditLogs                AuditLog[]
+  otps                     StaffOtp[]
+  assignedEncounters       Encounter[]       @relation("EncounterAssignedDoctor")
+  consultedEncounters      Encounter[]       @relation("EncounterConsultedBy")
+  billsCreated             Bill[]            @relation("BillCreatedBy")
+  paymentsTaken            Payment[]         @relation("PaymentTakenBy")
+  paymentsVoided           Payment[]         @relation("PaymentVoidedBy")
+  checkedOutEncounters     Encounter[]       @relation("EncounterCheckedOutBy")
+  confirmedAppointments    Appointment[]     @relation("AppointmentConfirmedBy")
+  cancelledAppointments    Appointment[]     @relation("AppointmentCancelledBy")
+  legalAcceptances         LegalAcceptance[]
 
   @@index([clinicId])
   @@index([departmentId])
@@ -430,34 +437,42 @@ model Encounter {
 }
 
 model CheckIn {
-  id                     String        @id @default(cuid())
-  patientId              String
-  patient                Patient       @relation(fields: [patientId], references: [id])
-  clinicId               String
-  clinic                 Clinic        @relation(fields: [clinicId], references: [id])
+  id                        String        @id @default(cuid())
+  patientId                 String
+  patient                   Patient       @relation(fields: [patientId], references: [id])
+  clinicId                  String
+  clinic                    Clinic        @relation(fields: [clinicId], references: [id])
   /// The staff member who checked the patient in, for staff-initiated
   /// check-ins (walk-ins). Null when the patient checked in themselves.
-  staffId                String?
-  staff                  Staff?        @relation(fields: [staffId], references: [id])
-  source                 CheckInSource @default(REMOTE)
-  departmentId           String
-  department             Department    @relation(fields: [departmentId], references: [id])
+  staffId                   String?
+  staff                     Staff?        @relation(fields: [staffId], references: [id])
+  source                    CheckInSource @default(REMOTE)
+  departmentId              String
+  department                Department    @relation(fields: [departmentId], references: [id])
   /// Idempotency guard: one CheckIn per USSD session, so a dropped-session
   /// replay (see docs/ARCHITECTURE.md) can never trigger a second STK push.
-  ussdSessionId          String        @unique
-  amountKes              Decimal       @db.Decimal(10, 2)
-  status                 CheckInStatus @default(PENDING_PAYMENT)
-  mpesaCheckoutRequestId String?       @unique
-  mpesaMerchantRequestId String?
+  ussdSessionId             String        @unique
+  amountKes                 Decimal       @db.Decimal(10, 2)
+  status                    CheckInStatus @default(PENDING_PAYMENT)
+  mpesaCheckoutRequestId    String?       @unique
+  mpesaMerchantRequestId    String?
   /// Set when this arrival fulfills an existing Appointment — either
   /// auto-matched (see checkInService.initiateCheckIn/appointmentService.
   /// findArrivalMatch) or explicitly linked by staff checking the patient in
   /// against a specific booking. Null for an ordinary walk-in with no prior
   /// booking. Setting this also moves the Appointment to COMPLETED.
-  appointmentId          String?       @unique
-  appointment            Appointment?  @relation(fields: [appointmentId], references: [id])
-  createdAt              DateTime      @default(now())
-  paidAt                 DateTime?
+  appointmentId             String?       @unique
+  appointment               Appointment?  @relation(fields: [appointmentId], references: [id])
+  createdAt                 DateTime      @default(now())
+  paidAt                    DateTime?
+  /// Set only when front desk confirmed the fee by hand: the M-Pesa
+  /// transaction code from the patient's SMS (unique, so one payment can't
+  /// be used twice), who entered it and when. Also in the audit log
+  /// (CHECK_IN_PAID_MANUALLY).
+  manualMpesaCode           String?       @unique
+  paymentConfirmedByStaffId String?
+  paymentConfirmedBy        Staff?        @relation("CheckInPaymentConfirmedBy", fields: [paymentConfirmedByStaffId], references: [id])
+  paymentConfirmedAt        DateTime?
 
   encounter         Encounter?
   mpesaTransactions MpesaTransaction[]

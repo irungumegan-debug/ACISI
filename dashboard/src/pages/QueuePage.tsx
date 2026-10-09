@@ -24,10 +24,16 @@ import { api, ApiError, CheckoutDeliveryMethod, QueueItem, subscribeToQueue } fr
 import { useAuth } from '../context/AuthContext';
 import { Avatar, Badge, btn, Card, EmptyState, SkeletonList, StatCard, StatusBadge, WalkInBadge } from '../components/ui';
 import { ChangeDoctorDialog } from '../components/ChangeDoctorDialog';
+import { ConfirmFeeDialog } from '../components/ConfirmFeeDialog';
 
-/** Payment isn't resolved (still pending, or failed and awaiting a manual rescue) — the encounter, if any, hasn't started yet. */
+/** Payment isn't resolved (still pending, failed, or unknown and awaiting a manual check) — the encounter, if any, hasn't started yet. */
 function isUnresolvedPayment(item: QueueItem): boolean {
-  return item.checkInStatus === 'PENDING_PAYMENT' || item.checkInStatus === 'FAILED';
+  return item.checkInStatus === 'PENDING_PAYMENT' || isPaymentProblem(item);
+}
+
+/** Kept out of the main queue, in "Payment didn't go through": failed, or no answer from M-Pesa within an hour. */
+function isPaymentProblem(item: QueueItem): boolean {
+  return item.checkInStatus === 'FAILED' || item.checkInStatus === 'NEEDS_REVIEW';
 }
 
 function displayStatus(item: QueueItem): string {
@@ -64,6 +70,7 @@ function waited(iso: string, now: number): string {
 const CHECK_IN_STATUS_LABEL: Record<string, string> = {
   PENDING_PAYMENT: 'Awaiting fee',
   FAILED: 'Fee payment failed',
+  NEEDS_REVIEW: 'Check M-Pesa SMS',
 };
 
 export function QueuePage() {
@@ -77,6 +84,7 @@ export function QueuePage() {
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [changingDoctor, setChangingDoctor] = useState<QueueItem | null>(null);
+  const [confirmingFee, setConfirmingFee] = useState<QueueItem | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [deptFilter, setDeptFilter] = useState<string>('all');
   const [groupBy, setGroupBy] = useState<'status' | 'department'>(() => {
@@ -120,19 +128,6 @@ export function QueuePage() {
     return () => window.clearInterval(timer);
   }, []);
 
-  async function handleConfirmPayment(checkInId: string): Promise<void> {
-    setBusyId(checkInId);
-    setError(null);
-    try {
-      await api.confirmCheckInPaid(checkInId);
-      await refresh();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to confirm payment');
-    } finally {
-      setBusyId(null);
-    }
-  }
-
   async function handleCheckout(checkInId: string): Promise<void> {
     setBusyId(checkInId);
     setError(null);
@@ -149,8 +144,8 @@ export function QueuePage() {
   // A failed check-in fee doesn't mean the patient is waiting: those sit in
   // their own collapsed section below the queue, not in it. (The server
   // already drops ones where the patient checked in again and paid.)
-  const queueItems = useMemo(() => items.filter((i) => i.checkInStatus !== 'FAILED'), [items]);
-  const failedItems = useMemo(() => items.filter((i) => i.checkInStatus === 'FAILED'), [items]);
+  const queueItems = useMemo(() => items.filter((i) => !isPaymentProblem(i)), [items]);
+  const failedItems = useMemo(() => items.filter(isPaymentProblem), [items]);
 
   /** Departments present in today's queue, with how many patients each has. */
   const departmentsInQueue = useMemo(() => {
@@ -200,7 +195,10 @@ export function QueuePage() {
         emailDeliveryAvailable={emailDeliveryAvailable}
         delivery={deliveryChoice[item.checkInId] ?? 'sms'}
         onDelivery={(value) => setDeliveryChoice((prev) => ({ ...prev, [item.checkInId]: value }))}
-        onConfirmPayment={() => void handleConfirmPayment(item.checkInId)}
+        onConfirmPayment={() => {
+          setNotice(null);
+          setConfirmingFee(item);
+        }}
         onCheckout={() => void handleCheckout(item.checkInId)}
         onChangeDoctor={() => {
           setNotice(null);
@@ -272,6 +270,19 @@ export function QueuePage() {
         <p role="status" className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900">
           {notice}
         </p>
+      )}
+      {confirmingFee && (
+        <ConfirmFeeDialog
+          checkInId={confirmingFee.checkInId}
+          patientName={confirmingFee.patientName}
+          amountKes={confirmingFee.amountKes}
+          onClose={() => setConfirmingFee(null)}
+          onConfirmed={() => {
+            setNotice(`Check-in fee confirmed for ${confirmingFee.patientName}.`);
+            setConfirmingFee(null);
+            void refresh();
+          }}
+        />
       )}
       {changingDoctor && (
         <ChangeDoctorDialog
@@ -381,8 +392,9 @@ export function QueuePage() {
             <ChevronDown size={17} aria-hidden className="ml-auto text-ink-500 transition group-open:rotate-180" />
           </summary>
           <p className="pb-3 text-sm text-ink-500">
-            These patients aren&apos;t in the queue: their M-Pesa check-in fee was cancelled or failed. If one is here and has paid
-            another way, confirm the fee to add them.
+            These patients aren&apos;t in the queue: their M-Pesa check-in fee failed, or M-Pesa never told us the outcome
+            (&ldquo;Check M-Pesa SMS&rdquo;). If the patient shows you an M-Pesa SMS for the fee, confirm it with the code to add
+            them.
           </p>
           <ul className="grid gap-3 pb-4 xl:grid-cols-2">{visibleFailed.map(renderCard)}</ul>
         </details>

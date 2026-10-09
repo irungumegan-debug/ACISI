@@ -171,6 +171,14 @@ describe('duplicate M-Pesa codes', () => {
     ).rejects.toMatchObject({ status: 409 });
   });
 
+  it('rejects a code staff already entered to confirm an ACISI check-in fee by hand', async () => {
+    mockDb.manualFeeCheckIns.push({ manualMpesaCode: 'QFE55XY12Z' });
+    const { bill } = await billFor([1000]);
+    await expect(
+      recordPayment({ ...base, billId: bill.id, idempotencyKey: key(), method: 'MPESA_MANUAL', amountKes: 1000, mpesaCode: 'QFE55XY12Z' }),
+    ).rejects.toMatchObject({ status: 409 });
+  });
+
   it('rejects a badly formatted code before touching the bill', async () => {
     const { bill } = await billFor([1000]);
     await expect(

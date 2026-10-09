@@ -26,7 +26,7 @@ jest.mock('../../src/services/realtimeEvents', () => ({ publishWalkInCheckedIn: 
 jest.mock('../../src/services/legalService', () => ({ walkInNeedsPrivacyAck: jest.fn(), recordLegalAcceptances: jest.fn() }));
 // The remote, fee-charging path — mocked only to prove walk-ins never touch it.
 jest.mock('../../src/mpesa/stkPush', () => ({ initiateStkPush: jest.fn() }));
-jest.mock('../../src/jobs/queue', () => ({ enqueueSmsReceipt: jest.fn(), scheduleStkStatusCheck: jest.fn() }));
+jest.mock('../../src/jobs/queue', () => ({ enqueueSmsReceipt: jest.fn() }));
 
 import { prisma } from '../../src/db/prisma';
 import { smsClient } from '../../src/config/africastalking';
@@ -37,7 +37,7 @@ import { findArrivalMatch, markAppointmentCompleted } from '../../src/services/a
 import { publishWalkInCheckedIn } from '../../src/services/realtimeEvents';
 import { recordLegalAcceptances, walkInNeedsPrivacyAck } from '../../src/services/legalService';
 import { initiateStkPush } from '../../src/mpesa/stkPush';
-import { enqueueSmsReceipt, scheduleStkStatusCheck } from '../../src/jobs/queue';
+import { enqueueSmsReceipt } from '../../src/jobs/queue';
 import {
   checkInWalkIn,
   getTodayCheckInCounts,
@@ -256,7 +256,6 @@ describe('no ACISI fee for walk-ins', () => {
     expect(Number(data.amountKes)).toBe(0);
     expect(data.status).toBe('NO_FEE');
     expect(initiateStkPush).not.toHaveBeenCalled();
-    expect(scheduleStkStatusCheck).not.toHaveBeenCalled();
     expect(enqueueSmsReceipt).not.toHaveBeenCalled();
   });
 });

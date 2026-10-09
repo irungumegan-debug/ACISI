@@ -170,19 +170,35 @@ its copy in `dashboard/src/lib/legal.ts`).
    (`PENDING_PAYMENT`) and calls `mpesa/stkPush.ts`, which triggers Daraja's
    STK push to the patient's phone. The USSD session ends here — Daraja's
    response is asynchronous and outlives the ~180s USSD session.
-3. `scheduleStkStatusCheck` queues a BullMQ job (`stk-status-check`) 90s out
-   as a safety net in case Daraja's callback never arrives.
+3. The callback alone isn't trusted to arrive. `checkInService.queryCheckInPayment`
+   asks Safaricom's M-Pesa Express Query API (`/mpesa/stkpushquery/v1/query`,
+   `mpesa/verify.ts`) with the check-in's `CheckoutRequestID`: PAID on
+   ResultCode 0, FAILED on a definite failure (1, 1019, 1032, 1037, 2001),
+   still pending otherwise (including Daraja's "being processed" error). It
+   runs from two places, throttled to once per 10s per check-in via Redis:
+   - the patient portal's status poll (`GET /api/patients/checkin/:id`), from
+     ~20s after the STK push;
+   - a once-a-minute BullMQ sweep (`stk-status-check` queue, scheduled by
+     `scheduleCheckInPaymentSweep`) over check-ins pending 1–60 minutes. Any
+     still pending after 60 minutes become `NEEDS_REVIEW` (not `FAILED`: the
+     patient may have paid) and show in the staff queue's "Payment didn't go
+     through" section.
 4. When the patient enters their M-Pesa PIN, Daraja POSTs the result to
    `POST /api/mpesa/callback` (`src/mpesa/router.ts`), which is parsed by
-   `mpesa/callback.ts` and applied by `checkInService.applyPaymentResult`:
-   logs an `MpesaTransaction` row (with the full raw payload, for
-   reconciliation), flips `CheckIn.status` to `PAID`/`FAILED`, and — on
-   success — creates the `Encounter` that makes this visit show up in the
-   patient's portable history.
-5. `applyPaymentResult` is idempotent per `CheckIn` (`status !==
-   PENDING_PAYMENT` short-circuits), so it's safe to call from both the
-   callback route and the `stk-status-check` fallback worker without double
-   counting a payment.
+   `mpesa/callback.ts` and applied by `checkInService.applyPaymentResult`
+   (the query uses the same function): logs an `MpesaTransaction` row (with
+   the full raw payload, for reconciliation), flips `CheckIn.status` to
+   `PAID`/`FAILED`, and — on success — creates the `Encounter` that makes
+   this visit show up in the patient's portable history.
+5. Whichever answer arrives first wins — callback, query, or front desk
+   confirming by hand with the M-Pesa code from the patient's SMS
+   (`confirmCheckInPaidManually`, which stores the code, who and when). The
+   status change is a conditional update (`UPDATE … WHERE status IN
+   (PENDING_PAYMENT, NEEDS_REVIEW)`, in one transaction with the
+   `MpesaTransaction` row and `Encounter`), so a later or simultaneous answer
+   changes nothing and nothing is counted twice. Each outcome writes one log
+   line: `checkInId`, `source` (callback/query/staff), `resultCode` and the
+   new `status` — never phone numbers, receipt codes or payloads.
 6. An SMS receipt is queued (`enqueueSmsReceipt`) regardless of outcome, so
    the patient has a record even if they've already left the USSD session.
 
