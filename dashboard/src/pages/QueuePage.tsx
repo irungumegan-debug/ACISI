@@ -6,6 +6,7 @@ import {
   ArrowRight,
   BarChart3,
   CheckCircle2,
+  ChevronDown,
   Clock,
   Footprints,
   Globe,
@@ -17,6 +18,7 @@ import {
   Stethoscope,
   UsersRound,
   Wallet,
+  XCircle,
 } from 'lucide-react';
 import { api, ApiError, CheckoutDeliveryMethod, QueueItem, subscribeToQueue } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
@@ -144,19 +146,29 @@ export function QueuePage() {
     }
   }
 
+  // A failed check-in fee doesn't mean the patient is waiting: those sit in
+  // their own collapsed section below the queue, not in it. (The server
+  // already drops ones where the patient checked in again and paid.)
+  const queueItems = useMemo(() => items.filter((i) => i.checkInStatus !== 'FAILED'), [items]);
+  const failedItems = useMemo(() => items.filter((i) => i.checkInStatus === 'FAILED'), [items]);
+
   /** Departments present in today's queue, with how many patients each has. */
   const departmentsInQueue = useMemo(() => {
     const map = new Map<string, { id: string; name: string; code: string | null; count: number }>();
-    for (const item of items) {
+    for (const item of queueItems) {
       const entry = map.get(item.departmentId) ?? { id: item.departmentId, name: item.departmentName, code: item.departmentCode, count: 0 };
       entry.count += 1;
       map.set(item.departmentId, entry);
     }
     return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
-  }, [items]);
+  }, [queueItems]);
   // A filter for a department that has left the queue falls back to everyone.
   const activeFilter = deptFilter !== 'all' && departmentsInQueue.some((d) => d.id === deptFilter) ? deptFilter : 'all';
-  const visible = useMemo(() => (activeFilter === 'all' ? items : items.filter((i) => i.departmentId === activeFilter)), [items, activeFilter]);
+  const visible = useMemo(
+    () => (activeFilter === 'all' ? queueItems : queueItems.filter((i) => i.departmentId === activeFilter)),
+    [queueItems, activeFilter],
+  );
+  const visibleFailed = activeFilter === 'all' ? failedItems : failedItems.filter((i) => i.departmentId === activeFilter);
   const showDepartmentTools = departmentsInQueue.length > 1;
 
   const grouped = useMemo(() => {
@@ -277,7 +289,7 @@ export function QueuePage() {
       {!loading && showDepartmentTools && (
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div role="group" aria-label="Filter by department" className="flex flex-wrap gap-2">
-            {[{ id: 'all', name: 'All departments', code: null, count: items.length }, ...departmentsInQueue].map((d) => {
+            {[{ id: 'all', name: 'All departments', code: null, count: queueItems.length }, ...departmentsInQueue].map((d) => {
               const on = activeFilter === d.id;
               return (
                 <button
@@ -313,7 +325,7 @@ export function QueuePage() {
 
       {loading ? (
         <SkeletonList rows={5} label="Loading the queue" />
-      ) : items.length === 0 ? (
+      ) : queueItems.length === 0 ? (
         <Card>
           <EmptyState icon={UsersRound} title="No check-ins yet today" tone="gold">
             Patients who check in online, and walk-ins you add, will appear here.
@@ -358,6 +370,22 @@ export function QueuePage() {
             );
           })}
         </div>
+      )}
+
+      {!loading && visibleFailed.length > 0 && (
+        <details className="group mt-8 rounded-2xl border border-slate-200 bg-cream-50 px-4">
+          <summary className="flex min-h-12 cursor-pointer list-none items-center gap-2 text-sm font-semibold text-ink-700">
+            <XCircle size={17} aria-hidden className="text-red-500" />
+            Payment didn&apos;t go through
+            <span className="rounded-full bg-white px-2 py-0.5 text-xs text-ink-500 ring-1 ring-slate-200">{visibleFailed.length}</span>
+            <ChevronDown size={17} aria-hidden className="ml-auto text-ink-500 transition group-open:rotate-180" />
+          </summary>
+          <p className="pb-3 text-sm text-ink-500">
+            These patients aren&apos;t in the queue: their M-Pesa check-in fee was cancelled or failed. If one is here and has paid
+            another way, confirm the fee to add them.
+          </p>
+          <ul className="grid gap-3 pb-4 xl:grid-cols-2">{visibleFailed.map(renderCard)}</ul>
+        </details>
       )}
     </div>
   );

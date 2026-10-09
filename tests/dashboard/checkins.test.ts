@@ -87,6 +87,55 @@ beforeEach(() => {
 });
 
 describe('GET /checkins/today', () => {
+  function row(id: string, patientId: string, status: string) {
+    return {
+      id,
+      patientId,
+      amountKes: '50',
+      status,
+      paidAt: null,
+      createdAt: new Date(),
+      patient: {
+        firstName: 'Jane',
+        lastName: 'Wanjiru',
+        patientCode: 'ACI-1042',
+        phoneNumber: '+254712345678',
+      },
+      department: { id: 'dept-1', name: 'General', code: 'GEN' },
+      encounter: null,
+    };
+  }
+
+  it("drops a FAILED check-in once the same patient has paid at this clinic today, but keeps other patients' failed ones", async () => {
+    mockFindManyCheckIns
+      .mockResolvedValueOnce([
+        row('ci-paid', 'p-1', 'PAID'),
+        row('ci-failed', 'p-1', 'FAILED'),
+        row('ci-other-failed', 'p-2', 'FAILED'),
+      ])
+      .mockResolvedValueOnce([{ patientId: 'p-1' }]);
+
+    const res = await withCookie(request(buildApp()).get('/checkins/today'));
+
+    expect(res.body.checkIns.map((c: { checkInId: string }) => c.checkInId)).toEqual([
+      'ci-paid',
+      'ci-other-failed',
+    ]);
+    // Clinic-wide lookup, so a paid retry in another department still counts.
+    expect(mockFindManyCheckIns.mock.calls[1][0].where).toMatchObject({
+      clinicId: 'clinic-1',
+      status: { in: ['PAID', 'NO_FEE'] },
+      patientId: { in: ['p-1', 'p-2'] },
+    });
+    expect(mockFindManyCheckIns.mock.calls[1][0].where).not.toHaveProperty('departmentId');
+  });
+
+  it('skips the extra lookup when nothing failed', async () => {
+    mockFindManyCheckIns.mockResolvedValueOnce([row('ci-paid', 'p-1', 'PAID')]);
+    await withCookie(request(buildApp()).get('/checkins/today'));
+    expect(mockFindManyCheckIns).toHaveBeenCalledTimes(1);
+  });
+
   it('shows a doctor only the patients in their own departments', async () => {
     mockLoadSession.mockResolvedValue({ ...SESSION, role: 'DOCTOR', staffId: 'doc-1' });
     (getDoctorDepartmentIds as jest.Mock).mockResolvedValue(['dept-braces', 'dept-invisalign']);
@@ -97,7 +146,10 @@ describe('GET /checkins/today', () => {
     expect(getDoctorDepartmentIds).toHaveBeenCalledWith('doc-1');
     expect(mockFindManyCheckIns).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ clinicId: 'clinic-1', departmentId: { in: ['dept-braces', 'dept-invisalign'] } }),
+        where: expect.objectContaining({
+          clinicId: 'clinic-1',
+          departmentId: { in: ['dept-braces', 'dept-invisalign'] },
+        }),
       }),
     );
   });
@@ -120,7 +172,12 @@ describe('GET /checkins/today', () => {
         status: 'PAID',
         paidAt: new Date(),
         createdAt: new Date(),
-        patient: { firstName: 'Jane', lastName: 'Wanjiru', patientCode: 'ACI-1042', phoneNumber: '+254712345678' },
+        patient: {
+          firstName: 'Jane',
+          lastName: 'Wanjiru',
+          patientCode: 'ACI-1042',
+          phoneNumber: '+254712345678',
+        },
         department: { name: 'General' },
         encounter: { id: 'enc-1', status: 'WAITING', assignedDoctor: { name: 'Dr. Amani Wambui' } },
       },
@@ -145,7 +202,9 @@ describe('GET /checkins/today', () => {
     await withCookie(request(buildApp()).get('/checkins/today'));
 
     expect(mockFindManyCheckIns).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ status: { in: ['PENDING_PAYMENT', 'PAID', 'FAILED', 'NO_FEE'] } }) }),
+      expect.objectContaining({
+        where: expect.objectContaining({ status: { in: ['PENDING_PAYMENT', 'PAID', 'FAILED', 'NO_FEE'] } }),
+      }),
     );
   });
 
@@ -154,7 +213,13 @@ describe('GET /checkins/today', () => {
       {
         id: 'ci-walk',
         patientId: 'p-1',
-        patient: { firstName: 'Jane', lastName: 'Wanjiru', patientCode: 'ACI-7F2K', phoneNumber: '+254712345678', email: null },
+        patient: {
+          firstName: 'Jane',
+          lastName: 'Wanjiru',
+          patientCode: 'ACI-7F2K',
+          phoneNumber: '+254712345678',
+          email: null,
+        },
         department: { name: 'General' },
         staff: { name: 'Test Receptionist' },
         amountKes: 0,
@@ -186,7 +251,12 @@ describe('GET /checkins/today', () => {
         status: 'PAID',
         paidAt: new Date(),
         createdAt: new Date(),
-        patient: { firstName: 'Amos', lastName: 'Kiptoo', patientCode: 'ACI-2091', phoneNumber: '+254798765432' },
+        patient: {
+          firstName: 'Amos',
+          lastName: 'Kiptoo',
+          patientCode: 'ACI-2091',
+          phoneNumber: '+254798765432',
+        },
         department: { name: 'General' },
         encounter: { id: 'enc-2', status: 'WAITING', assignedDoctor: null },
       },
@@ -206,7 +276,13 @@ describe('GET /checkins/today', () => {
         status: 'PAID',
         paidAt: new Date(),
         createdAt: new Date(),
-        patient: { firstName: 'Jane', lastName: 'Wanjiru', patientCode: 'ACI-1042', phoneNumber: '+254712345678', email: 'jane@example.com' },
+        patient: {
+          firstName: 'Jane',
+          lastName: 'Wanjiru',
+          patientCode: 'ACI-1042',
+          phoneNumber: '+254712345678',
+          email: 'jane@example.com',
+        },
         department: { name: 'General' },
         encounter: null,
       },
@@ -217,7 +293,13 @@ describe('GET /checkins/today', () => {
         status: 'PAID',
         paidAt: new Date(),
         createdAt: new Date(),
-        patient: { firstName: 'Amos', lastName: 'Kiptoo', patientCode: 'ACI-2091', phoneNumber: '+254798765432', email: null },
+        patient: {
+          firstName: 'Amos',
+          lastName: 'Kiptoo',
+          patientCode: 'ACI-2091',
+          phoneNumber: '+254798765432',
+          email: null,
+        },
         department: { name: 'General' },
         encounter: null,
       },
@@ -261,7 +343,7 @@ describe('POST /checkins/:id/checkout', () => {
     expect(mockCheckout).not.toHaveBeenCalled();
   });
 
-  it("checks the visit out once ready, defaulting to SMS-only delivery when no method is given", async () => {
+  it('checks the visit out once ready, defaulting to SMS-only delivery when no method is given', async () => {
     mockFindFirstEncounter.mockResolvedValue({ id: 'enc-1' });
     mockCheckout.mockResolvedValue({ id: 'enc-1', status: 'DONE' });
 
@@ -276,14 +358,18 @@ describe('POST /checkins/:id/checkout', () => {
     mockFindFirstEncounter.mockResolvedValue({ id: 'enc-1' });
     mockCheckout.mockResolvedValue({ id: 'enc-1', status: 'DONE' });
 
-    const res = await withCookie(request(buildApp()).post('/checkins/ci-1/checkout').send({ deliveryMethod: 'sms_and_email' }));
+    const res = await withCookie(
+      request(buildApp()).post('/checkins/ci-1/checkout').send({ deliveryMethod: 'sms_and_email' }),
+    );
 
     expect(res.status).toBe(200);
     expect(mockCheckout).toHaveBeenCalledWith('enc-1', 'clinic-1', 'staff-1', 'sms_and_email');
   });
 
   it('rejects an invalid delivery method', async () => {
-    const res = await withCookie(request(buildApp()).post('/checkins/ci-1/checkout').send({ deliveryMethod: 'carrier_pigeon' }));
+    const res = await withCookie(
+      request(buildApp()).post('/checkins/ci-1/checkout').send({ deliveryMethod: 'carrier_pigeon' }),
+    );
 
     expect(res.status).toBe(400);
     expect(mockCheckout).not.toHaveBeenCalled();
@@ -312,16 +398,26 @@ describe('change doctor', () => {
 
   it('moves a patient and passes who did it', async () => {
     mockChange.mockResolvedValue({ changed: true, doctorName: 'Dr. Lisa' });
-    const res = await withCookie(request(buildApp()).post('/checkins/ci-1/doctor').send({ doctorId: 'doc-b' }));
+    const res = await withCookie(
+      request(buildApp()).post('/checkins/ci-1/doctor').send({ doctorId: 'doc-b' }),
+    );
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ changed: true, doctorName: 'Dr. Lisa' });
-    expect(mockChange).toHaveBeenCalledWith({ checkInId: 'ci-1', clinicId: 'clinic-1', doctorId: 'doc-b', staffId: 'staff-1' });
+    expect(mockChange).toHaveBeenCalledWith({
+      checkInId: 'ci-1',
+      clinicId: 'clinic-1',
+      doctorId: 'doc-b',
+      staffId: 'staff-1',
+    });
   });
 
   it('refuses doctors on the server', async () => {
     mockLoadSession.mockResolvedValue({ ...SESSION, role: 'DOCTOR', departmentId: 'dept-1' });
     expect((await withCookie(request(buildApp()).get('/checkins/ci-1/doctor-options'))).status).toBe(403);
-    expect((await withCookie(request(buildApp()).post('/checkins/ci-1/doctor').send({ doctorId: 'doc-b' }))).status).toBe(403);
+    expect(
+      (await withCookie(request(buildApp()).post('/checkins/ci-1/doctor').send({ doctorId: 'doc-b' })))
+        .status,
+    ).toBe(403);
     expect(mockList).not.toHaveBeenCalled();
     expect(mockChange).not.toHaveBeenCalled();
   });
@@ -332,8 +428,12 @@ describe('change doctor', () => {
   });
 
   it('turns rule errors into their status and message', async () => {
-    mockChange.mockRejectedValue(new ReassignError('Only a patient who is still waiting can be moved to another doctor.', 409));
-    const res = await withCookie(request(buildApp()).post('/checkins/ci-1/doctor').send({ doctorId: 'doc-b' }));
+    mockChange.mockRejectedValue(
+      new ReassignError('Only a patient who is still waiting can be moved to another doctor.', 409),
+    );
+    const res = await withCookie(
+      request(buildApp()).post('/checkins/ci-1/doctor').send({ doctorId: 'doc-b' }),
+    );
     expect(res.status).toBe(409);
     expect(res.body.error).toContain('still waiting');
   });

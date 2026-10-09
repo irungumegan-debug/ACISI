@@ -12,6 +12,8 @@ jest.mock('../../src/db/prisma', () => ({
     clinic: { findUnique: jest.fn() },
     department: { findFirst: jest.fn() },
     legalAcceptance: { findFirst: jest.fn(), createMany: jest.fn() },
+    checkIn: { findFirst: jest.fn() },
+    encounter: { count: jest.fn() },
   },
 }));
 jest.mock('../../src/services/checkInService', () => ({ initiateCheckIn: jest.fn() }));
@@ -48,11 +50,30 @@ const withCookie = (req: request.Test) => req.set('Cookie', `${PATIENT_SESSION_C
 beforeEach(() => {
   jest.clearAllMocks();
   (loadPatientSession as jest.Mock).mockResolvedValue(SESSION);
-  (prisma.patient.findUnique as jest.Mock).mockResolvedValue({ id: 'patient-1', phoneNumber: '+254712345678' });
+  (prisma.patient.findUnique as jest.Mock).mockResolvedValue({
+    id: 'patient-1',
+    phoneNumber: '+254712345678',
+  });
   (prisma.clinic.findUnique as jest.Mock).mockResolvedValue(CLINIC);
   (prisma.department.findFirst as jest.Mock).mockResolvedValue({ id: 'dept-1' });
   mockInitiate.mockResolvedValue({ checkIn: { id: 'ci-1', status: 'PENDING_PAYMENT' } });
+  // No check-in in progress today; looking one up by id finds the new one.
+  (prisma.checkIn.findFirst as jest.Mock).mockImplementation(({ where }) =>
+    Promise.resolve(where.id ? describedCheckIn({ id: where.id }) : null),
+  );
 });
+
+function describedCheckIn(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'ci-1',
+    status: 'PENDING_PAYMENT',
+    departmentId: 'dept-1',
+    clinic: { name: 'Sunrise Family Clinic' },
+    department: { name: 'General' },
+    encounter: null,
+    ...overrides,
+  };
+}
 
 describe('web check-in: Privacy Notice checkbox', () => {
   const body = { clinicId: 'clinic-A', departmentId: 'dept-1' };
@@ -61,14 +82,25 @@ describe('web check-in: Privacy Notice checkbox', () => {
     mockFindAcceptance.mockResolvedValue(null);
     const res = await withCookie(request(buildApp()).get('/checkin/privacy-notice?clinicId=clinic-A'));
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ acknowledgmentRequired: true, clinicName: 'Sunrise Family Clinic', version: PRIVACY_NOTICE_VERSION });
-    expect(mockFindAcceptance.mock.calls[0][0].where).toMatchObject({ patientId: 'patient-1', clinicId: 'clinic-A' });
+    expect(res.body).toEqual({
+      acknowledgmentRequired: true,
+      clinicName: 'Sunrise Family Clinic',
+      version: PRIVACY_NOTICE_VERSION,
+    });
+    expect(mockFindAcceptance.mock.calls[0][0].where).toMatchObject({
+      patientId: 'patient-1',
+      clinicId: 'clinic-A',
+    });
   });
 
   it('cannot check in without ticking it, and nothing is recorded or charged', async () => {
     mockFindAcceptance.mockResolvedValue(null);
     for (const extra of [{}, { privacyNoticeAcknowledged: false }]) {
-      const res = await withCookie(request(buildApp()).post('/checkin').send({ ...body, ...extra }));
+      const res = await withCookie(
+        request(buildApp())
+          .post('/checkin')
+          .send({ ...body, ...extra }),
+      );
       expect(res.status).toBe(400);
       expect(res.body.code).toBe('PRIVACY_NOTICE_ACK_REQUIRED');
       expect(res.body.error).toContain('Sunrise Family Clinic');
@@ -79,7 +111,11 @@ describe('web check-in: Privacy Notice checkbox', () => {
 
   it('records the acknowledgment with the version, clinic and check-in when ticked', async () => {
     mockFindAcceptance.mockResolvedValue(null);
-    const res = await withCookie(request(buildApp()).post('/checkin').send({ ...body, privacyNoticeAcknowledged: true }));
+    const res = await withCookie(
+      request(buildApp())
+        .post('/checkin')
+        .send({ ...body, privacyNoticeAcknowledged: true }),
+    );
     expect(res.status).toBe(201);
     expect(mockCreateMany).toHaveBeenCalledWith({
       data: [
@@ -108,7 +144,9 @@ describe('web check-in: Privacy Notice checkbox', () => {
 
   it('404s for an unknown clinic', async () => {
     (prisma.clinic.findUnique as jest.Mock).mockResolvedValue(null);
-    expect((await withCookie(request(buildApp()).get('/checkin/privacy-notice?clinicId=nope'))).status).toBe(404);
+    expect((await withCookie(request(buildApp()).get('/checkin/privacy-notice?clinicId=nope'))).status).toBe(
+      404,
+    );
   });
 });
 
@@ -137,15 +175,27 @@ describe('portal login: accept the current Terms once', () => {
     expect(res.status).toBe(201);
     expect(mockCreateMany).toHaveBeenCalledWith({
       data: [
-        { document: 'TERMS_OF_SERVICE', version: TERMS_OF_SERVICE_VERSION, context: 'PATIENT_PORTAL_LOGIN', patientId: 'patient-1' },
-        { document: 'PRIVACY_NOTICE', version: PRIVACY_NOTICE_VERSION, context: 'PATIENT_PORTAL_LOGIN', patientId: 'patient-1' },
+        {
+          document: 'TERMS_OF_SERVICE',
+          version: TERMS_OF_SERVICE_VERSION,
+          context: 'PATIENT_PORTAL_LOGIN',
+          patientId: 'patient-1',
+        },
+        {
+          document: 'PRIVACY_NOTICE',
+          version: PRIVACY_NOTICE_VERSION,
+          context: 'PATIENT_PORTAL_LOGIN',
+          patientId: 'patient-1',
+        },
       ],
     });
   });
 
   it('needs a logged-in patient', async () => {
     (loadPatientSession as jest.Mock).mockResolvedValue(null);
-    expect((await withCookie(request(buildApp()).post('/legal/accept').send({ accept: true }))).status).toBe(401);
+    expect((await withCookie(request(buildApp()).post('/legal/accept').send({ accept: true }))).status).toBe(
+      401,
+    );
   });
 });
 
@@ -164,7 +214,12 @@ describe('web check-in: optional ID document and next of kin', () => {
       nextOfKinPhone: null,
     });
     const res = await withCookie(request(buildApp()).get('/details'));
-    expect(res.body).toEqual({ idType: 'PASSPORT', idNumber: 'AK123456', nextOfKinName: null, nextOfKinPhone: null });
+    expect(res.body).toEqual({
+      idType: 'PASSPORT',
+      idNumber: 'AK123456',
+      nextOfKinName: null,
+      nextOfKinPhone: null,
+    });
     expect((prisma.patient.findFirst as jest.Mock).mock.calls[0][0].where).toMatchObject({ id: 'patient-1' });
   });
 
@@ -172,22 +227,123 @@ describe('web check-in: optional ID document and next of kin', () => {
     const res = await withCookie(
       request(buildApp())
         .post('/checkin')
-        .send({ ...body, identity: { idType: 'BIRTH_CERTIFICATE', idNumber: '123 4567', nextOfKinName: '', nextOfKinPhone: '' } }),
+        .send({
+          ...body,
+          identity: {
+            idType: 'BIRTH_CERTIFICATE',
+            idNumber: '123 4567',
+            nextOfKinName: '',
+            nextOfKinPhone: '',
+          },
+        }),
     );
     expect(res.status).toBe(201);
-    expect(mockUpdate).toHaveBeenCalledWith({ where: { id: 'patient-1' }, data: { idType: 'BIRTH_CERTIFICATE', idNumber: '1234567' } });
+    expect(mockUpdate).toHaveBeenCalledWith({
+      where: { id: 'patient-1' },
+      data: { idType: 'BIRTH_CERTIFICATE', idNumber: '1234567' },
+    });
   });
 
   it('checks in normally when nothing is entered, without touching the record', async () => {
-    const res = await withCookie(request(buildApp()).post('/checkin').send({ ...body, identity: { idType: '', idNumber: '' } }));
+    const res = await withCookie(
+      request(buildApp())
+        .post('/checkin')
+        .send({ ...body, identity: { idType: '', idNumber: '' } }),
+    );
     expect(res.status).toBe(201);
     expect(mockUpdate).not.toHaveBeenCalled();
   });
 
   it('refuses invalid details before charging the check-in fee', async () => {
-    const res = await withCookie(request(buildApp()).post('/checkin').send({ ...body, identity: { nextOfKinPhone: '999' } }));
+    const res = await withCookie(
+      request(buildApp())
+        .post('/checkin')
+        .send({ ...body, identity: { nextOfKinPhone: '999' } }),
+    );
     expect(res.status).toBe(400);
     expect(mockInitiate).not.toHaveBeenCalled();
     expect(mockUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe('web check-in: one check-in per clinic per day, and status polling', () => {
+  const body = { clinicId: 'clinic-A', departmentId: 'dept-1', privacyNoticeAcknowledged: true };
+  const mockFindCheckIn = prisma.checkIn.findFirst as jest.Mock;
+  const mockCountEncounters = prisma.encounter.count as jest.Mock;
+
+  beforeEach(() => mockFindAcceptance.mockResolvedValue({ id: 'la-1' }));
+
+  it('creates a check-in and returns it with the clinic and department', async () => {
+    const res = await withCookie(request(buildApp()).post('/checkin').send(body));
+    expect(res.status).toBe(201);
+    expect(res.body).toEqual({
+      checkInId: 'ci-1',
+      status: 'PENDING_PAYMENT',
+      clinicName: 'Sunrise Family Clinic',
+      departmentName: 'General',
+      queuePosition: null,
+      existing: false,
+    });
+    // Only PAID visits not yet finished, and PENDING_PAYMENT ones still within the STK window, count.
+    const lookup = mockFindCheckIn.mock.calls[0][0].where;
+    expect(lookup).toMatchObject({ patientId: 'patient-1', clinicId: 'clinic-A' });
+    expect(lookup.OR.map((o: { status: string }) => o.status)).toEqual(['PAID', 'PENDING_PAYMENT']);
+  });
+
+  it('hands back a check-in already PAID at this clinic today instead of charging again', async () => {
+    mockFindCheckIn.mockImplementation(() =>
+      Promise.resolve(
+        describedCheckIn({
+          id: 'ci-paid',
+          status: 'PAID',
+          encounter: {
+            id: 'enc-1',
+            clinicId: 'clinic-A',
+            status: 'WAITING',
+            assignedDoctorId: 'doc-1',
+            createdAt: new Date(),
+          },
+        }),
+      ),
+    );
+    mockCountEncounters.mockResolvedValue(2);
+
+    const res = await withCookie(request(buildApp()).post('/checkin').send(body));
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      checkInId: 'ci-paid',
+      status: 'PAID',
+      queuePosition: 3,
+      existing: true,
+    });
+    expect(mockInitiate).not.toHaveBeenCalled();
+  });
+
+  it('hands back a check-in still awaiting M-Pesa instead of sending a second prompt', async () => {
+    mockFindCheckIn.mockResolvedValue(describedCheckIn({ id: 'ci-pending' }));
+    const res = await withCookie(request(buildApp()).post('/checkin').send(body));
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ checkInId: 'ci-pending', status: 'PENDING_PAYMENT', existing: true });
+    expect(mockInitiate).not.toHaveBeenCalled();
+  });
+
+  it("returns the patient's own check-in status for polling", async () => {
+    mockFindCheckIn.mockResolvedValue(describedCheckIn({ status: 'FAILED' }));
+    const res = await withCookie(request(buildApp()).get('/checkin/ci-1'));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      checkInId: 'ci-1',
+      status: 'FAILED',
+      clinicName: 'Sunrise Family Clinic',
+      departmentName: 'General',
+      queuePosition: null,
+    });
+    expect(mockFindCheckIn.mock.calls[0][0].where).toEqual({ id: 'ci-1', patientId: 'patient-1' });
+  });
+
+  it("404s for another patient's check-in", async () => {
+    mockFindCheckIn.mockResolvedValue(null);
+    expect((await withCookie(request(buildApp()).get('/checkin/ci-other'))).status).toBe(404);
   });
 });

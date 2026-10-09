@@ -15,16 +15,23 @@ mpesaRouter.post('/callback', async (req, res) => {
   const payload = req.body as StkCallbackPayload;
 
   if (!payload?.Body?.stkCallback) {
-    logger.warn({ body: req.body }, 'Received malformed M-Pesa callback');
+    // No body in the log: a callback can carry the patient's phone number.
+    logger.warn('Received malformed M-Pesa callback');
     res.status(400).json({ ResultCode: 1, ResultDesc: 'Malformed callback body' });
     return;
   }
 
+  // One line per callback, deliberately limited to checkInId, resultCode and
+  // the new status — never the phone number, receipt number or payload.
+  const resultCode = payload.Body.stkCallback.ResultCode;
   try {
-    const parsed = parseStkCallback(payload);
-    await applyPaymentResult(parsed, payload);
+    const outcome = await applyPaymentResult(parseStkCallback(payload), payload);
+    logger.info(
+      { checkInId: outcome?.checkInId ?? null, resultCode, status: outcome?.status ?? null },
+      outcome ? 'M-Pesa check-in callback' : 'M-Pesa check-in callback for unknown check-in',
+    );
   } catch (err) {
-    logger.error({ err }, 'Failed to process M-Pesa callback');
+    logger.error({ err, resultCode }, 'Failed to process M-Pesa callback');
   }
 
   res.status(200).json({ ResultCode: 0, ResultDesc: 'Accepted' });
@@ -53,7 +60,11 @@ mpesaRouter.post('/clinic-callback', async (req, res) => {
       mpesaReceiptNumber: parsed.mpesaReceiptNumber,
       rawPayload: payload,
     });
-    if (!matched) logger.warn({ checkoutRequestId: parsed.checkoutRequestId }, 'Clinic M-Pesa callback for unknown payment');
+    if (!matched)
+      logger.warn(
+        { checkoutRequestId: parsed.checkoutRequestId },
+        'Clinic M-Pesa callback for unknown payment',
+      );
   } catch (err) {
     logger.error({ err }, 'Failed to process clinic M-Pesa callback');
   }

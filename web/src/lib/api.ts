@@ -59,6 +59,17 @@ export interface OwnAppointment {
   status: AppointmentStatus;
 }
 
+export type CheckInStatus = 'PENDING_PAYMENT' | 'PAID' | 'FAILED' | 'CANCELLED' | 'NO_FEE';
+
+export interface CheckInSummary {
+  checkInId: string;
+  status: CheckInStatus;
+  clinicName: string;
+  departmentName: string;
+  /** 1 = next in line. Null when not known (not paid yet, or already with the doctor). */
+  queuePosition: number | null;
+}
+
 export interface StaffSessionSummary {
   staffName: string;
   clinicName: string;
@@ -185,11 +196,17 @@ export const api = {
     });
   },
 
+  /** Starts a check-in, or hands back the patient's check-in already in progress at this clinic today (existing: true). */
   patientCheckIn(clinicId: string, departmentId: string, privacyNoticeAcknowledged: boolean, identity?: PatientIdentity) {
-    return request<{ checkInId: string; status: string }>('/patients/checkin', {
+    return request<CheckInSummary & { existing: boolean }>('/patients/checkin', {
       method: 'POST',
       body: JSON.stringify({ clinicId, departmentId, privacyNoticeAcknowledged, identity }),
     });
+  },
+
+  /** Polled after the M-Pesa prompt is sent, until the check-in is PAID or FAILED. */
+  getCheckIn(checkInId: string) {
+    return request<CheckInSummary>(`/patients/checkin/${encodeURIComponent(checkInId)}`);
   },
 
   /** The patient's own ID document and next of kin (null when not on file). */

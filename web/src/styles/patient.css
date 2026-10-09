@@ -421,6 +421,19 @@
   max-width: 40ch;
   color: var(--ink-500);
 }
+.patient-portal .confirm .spin {
+  animation: patient-spin 1s linear infinite;
+}
+@keyframes patient-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .patient-portal .confirm .spin {
+    animation: none;
+  }
+}
 .patient-portal .patient-id {
   display: inline-block;
   margin: 12px 0;
