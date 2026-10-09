@@ -26,6 +26,9 @@ const westlands = JSON.parse(fs.readFileSync(path.join(__dirname, '../../demo/we
 const alina = JSON.parse(fs.readFileSync(path.join(__dirname, '../../demo/alina.json'), 'utf8'));
 
 describeDb('demo clinics against a real database', () => {
+  // Real database work (several seeds and resets per test): Jest's 5s default is too tight on a cold database.
+  jest.setTimeout(60_000);
+
   let prisma: PrismaClient;
   let demo: Service;
   let tables: string[];
