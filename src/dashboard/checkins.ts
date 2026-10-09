@@ -4,7 +4,11 @@ import dayjs from 'dayjs';
 import { prisma } from '../db/prisma';
 import { requireStaffSession, AuthenticatedRequest } from './auth';
 import { CheckInNotPendingError, confirmCheckInPaidManually } from '../services/checkInService';
-import { CheckoutDeliveryMethod, EncounterNotReadyForCheckoutError, checkoutEncounter } from '../services/encounterService';
+import {
+  CheckoutDeliveryMethod,
+  EncounterNotReadyForCheckoutError,
+  checkoutEncounter,
+} from '../services/encounterService';
 import { emailConfigured } from '../config/email';
 import { changeDoctor, listDoctorOptions, ReassignError } from '../services/doctorReassignmentService';
 import { getDoctorDepartmentIds } from '../services/departmentService';
@@ -19,13 +23,16 @@ checkinsRouter.use(requireStaffSession);
  * just PAID) so front desk can manually confirm the ACISI check-in fee
  * whenever the automated M-Pesa flow hasn't gone through yet or didn't
  * succeed, for any patient — CANCELLED check-ins aren't actionable so those
- * are still left out.
+ * are still left out, and so is a FAILED one once the same patient has
+ * paid (or walked in) at this clinic today. The dashboard shows the
+ * remaining FAILED rows in a collapsed section, not the main queue.
  */
 checkinsRouter.get('/today', async (req, res) => {
   const { clinicId, role, staffId } = (req as AuthenticatedRequest).dashboardSession;
   const startOfToday = dayjs().startOf('day').toDate();
   // Doctors only ever see patients in their own departments (read fresh each request).
-  const departmentScope = role === 'DOCTOR' ? { departmentId: { in: await getDoctorDepartmentIds(staffId) } } : {};
+  const departmentScope =
+    role === 'DOCTOR' ? { departmentId: { in: await getDoctorDepartmentIds(staffId) } } : {};
 
   const checkIns = await prisma.checkIn.findMany({
     where: {
@@ -36,7 +43,9 @@ checkinsRouter.get('/today', async (req, res) => {
     },
     orderBy: { createdAt: 'desc' },
     include: {
-      patient: { select: { firstName: true, lastName: true, patientCode: true, phoneNumber: true, email: true } },
+      patient: {
+        select: { firstName: true, lastName: true, patientCode: true, phoneNumber: true, email: true },
+      },
       department: { select: { id: true, name: true, code: true } },
       staff: { select: { name: true } },
       encounter: {
@@ -51,13 +60,38 @@ checkinsRouter.get('/today', async (req, res) => {
     },
   });
 
+  // A FAILED check-in is noise once the same patient has checked in again
+  // and paid (or been added as a walk-in) at this clinic today. Looked up
+  // clinic-wide, not just within a doctor's departments, so a retry in a
+  // different department still counts.
+  const failedPatientIds = [
+    ...new Set(checkIns.filter((c) => c.status === 'FAILED').map((c) => c.patientId)),
+  ];
+  const patientsInQueue =
+    failedPatientIds.length === 0
+      ? new Set<string>()
+      : new Set(
+          (
+            await prisma.checkIn.findMany({
+              where: {
+                clinicId,
+                createdAt: { gte: startOfToday },
+                status: { in: ['PAID', 'NO_FEE'] },
+                patientId: { in: failedPatientIds },
+              },
+              select: { patientId: true },
+            })
+          ).map((c) => c.patientId),
+        );
+  const shown = checkIns.filter((c) => !(c.status === 'FAILED' && patientsInQueue.has(c.patientId)));
+
   res.json({
     // Whether checkout can even offer email delivery at all — separate
     // from whether any given patient has an email on file, checked
     // per-row below. The dashboard only shows the email option when both
     // are true.
     emailDeliveryAvailable: emailConfigured,
-    checkIns: checkIns.map((c) => ({
+    checkIns: shown.map((c) => ({
       checkInId: c.id,
       encounterId: c.encounter?.id ?? null,
       patientId: c.patientId,
@@ -128,7 +162,9 @@ checkinsRouter.post('/:id/checkout', async (req, res) => {
 
   const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
 
-  const encounter = await prisma.encounter.findFirst({ where: { checkInId: req.params.id as string, clinicId } });
+  const encounter = await prisma.encounter.findFirst({
+    where: { checkInId: req.params.id as string, clinicId },
+  });
   if (!encounter) {
     res.status(404).json({ error: 'Visit not found' });
     return;
@@ -183,7 +219,14 @@ checkinsRouter.post('/:id/doctor', async (req, res) => {
   }
   const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
   try {
-    res.json(await changeDoctor({ checkInId: req.params.id as string, clinicId, doctorId: parsed.data.doctorId, staffId }));
+    res.json(
+      await changeDoctor({
+        checkInId: req.params.id as string,
+        clinicId,
+        doctorId: parsed.data.doctorId,
+        staffId,
+      }),
+    );
   } catch (err) {
     if (err instanceof ReassignError) {
       res.status(err.status).json({ error: err.message });

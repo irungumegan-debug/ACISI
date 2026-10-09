@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { api, ApiError, ClinicListItem, DepartmentListItem, OwnAppointment, VisitHistoryEntry } from '../lib/api';
+import { api, ApiError, CheckInSummary, ClinicListItem, DepartmentListItem, OwnAppointment, VisitHistoryEntry } from '../lib/api';
 import { usePatientAuth } from '../context/PatientAuthContext';
 import { legalBoxSatisfied, PRIVACY_PATH, TERMS_PATH } from '../lib/legal';
 import { EMPTY_IDENTITY, IdentityFields } from '../components/IdentityFields';
@@ -11,12 +11,16 @@ import {
   CalendarClock,
   CalendarPlus,
   Check,
+  CheckCircle2,
+  Clock,
   Download,
   FileText,
+  Loader2,
   Pill,
   Smartphone,
   Stethoscope,
   UserRound,
+  XCircle,
 } from 'lucide-react';
 
 const TABS: { key: Tab; label: string; short: string; icon: LucideIcon }[] = [
@@ -30,6 +34,21 @@ const TABS: { key: Tab; label: string; short: string; icon: LucideIcon }[] = [
 const STATUS_TONE: Record<string, string> = { REQUESTED: 'warning', CONFIRMED: 'info', CANCELLED: 'neutral', COMPLETED: 'success' };
 
 type Tab = 'checkin' | 'book' | 'appointments' | 'records' | 'account';
+
+/** After the M-Pesa prompt is sent: ask the server for the check-in's status this often, for this long. */
+const PAYMENT_POLL_INTERVAL_MS = 3_000;
+const PAYMENT_POLL_TIMEOUT_MS = 90_000;
+
+/**
+ * Where a submitted check-in stands. 'waiting' polls until the M-Pesa
+ * callback marks it PAID or FAILED; 'timedOut' is the give-up state when
+ * neither arrives in time.
+ */
+type PaymentStage =
+  | { kind: 'waiting'; checkIn: CheckInSummary }
+  | { kind: 'paid'; checkIn: CheckInSummary; existing: boolean }
+  | { kind: 'failed' }
+  | { kind: 'timedOut' };
 
 export function PatientHomePage() {
   const { session } = usePatientAuth();
@@ -72,7 +91,7 @@ function CheckInPanel({ patientCode }: { patientCode: string }) {
   const [departmentId, setDepartmentId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [confirmed, setConfirmed] = useState<{ departmentName: string } | null>(null);
+  const [stage, setStage] = useState<PaymentStage | null>(null);
   // Privacy Notice checkbox: asked at a patient's first check-in at each
   // clinic, and again when the notice changes. null while we ask the server.
   const [privacyAckRequired, setPrivacyAckRequired] = useState<boolean | null>(null);
@@ -138,20 +157,61 @@ function CheckInPanel({ patientCode }: { patientCode: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reload only when the clinic changes
   }, [clinicId]);
 
+  // Polls the check-in while we wait for M-Pesa. Stops on PAID/FAILED, after
+  // PAYMENT_POLL_TIMEOUT_MS, or when the patient leaves this screen.
+  const waitingCheckInId = stage?.kind === 'waiting' ? stage.checkIn.checkInId : null;
+  useEffect(() => {
+    if (!waitingCheckInId) return;
+    let stopped = false;
+    let timer: number | undefined;
+    const giveUpAt = Date.now() + PAYMENT_POLL_TIMEOUT_MS;
+
+    async function poll(): Promise<void> {
+      try {
+        const checkIn = await api.getCheckIn(waitingCheckInId!);
+        if (stopped) return;
+        if (checkIn.status === 'PAID') {
+          setStage({ kind: 'paid', checkIn, existing: false });
+          return;
+        }
+        if (checkIn.status === 'FAILED' || checkIn.status === 'CANCELLED') {
+          setStage({ kind: 'failed' });
+          return;
+        }
+      } catch {
+        // A dropped request (patchy mobile data) just means try again next tick.
+        if (stopped) return;
+      }
+      if (Date.now() >= giveUpAt) {
+        setStage({ kind: 'timedOut' });
+        return;
+      }
+      timer = window.setTimeout(() => void poll(), PAYMENT_POLL_INTERVAL_MS);
+    }
+
+    timer = window.setTimeout(() => void poll(), PAYMENT_POLL_INTERVAL_MS);
+    return () => {
+      stopped = true;
+      window.clearTimeout(timer);
+    };
+  }, [waitingCheckInId]);
+
   async function handleSubmit(): Promise<void> {
     if (!clinicId || !departmentId || !legalBoxSatisfied(privacyAckRequired, privacyAcknowledged)) return;
     setError(null);
     setSubmitting(true);
     try {
-      const res = await api.patientCheckIn(clinicId, departmentId, privacyAckRequired === true && privacyAcknowledged, identity);
-      if (res.status === 'FAILED') {
-        setError('We could not start the payment request. Please try again shortly.');
-        return;
-      }
-      const dept = departments.find((d) => d.id === departmentId);
+      const { existing, ...checkIn } = await api.patientCheckIn(
+        clinicId,
+        departmentId,
+        privacyAckRequired === true && privacyAcknowledged,
+        identity,
+      );
       setPrivacyAckRequired(false);
-      setConfirmed({ departmentName: dept?.name ?? '' });
+      // Already paid here today: show that visit instead of charging again.
+      setStage(checkIn.status === 'PAID' ? { kind: 'paid', checkIn, existing } : { kind: 'waiting', checkIn });
     } catch (err) {
+      setStage(null);
       setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.');
       // e.g. the Privacy Notice was updated since this page loaded: show the box again.
       if (err instanceof ApiError && err.status === 400) loadPrivacyNotice(clinicId);
@@ -160,18 +220,57 @@ function CheckInPanel({ patientCode }: { patientCode: string }) {
     }
   }
 
-  if (confirmed) {
+  if (stage?.kind === 'waiting') {
     return (
-      <div className="panel confirm">
+      <div className="panel confirm" role="status" aria-live="polite">
         <div className="badge">
-          <Smartphone size={28} aria-hidden />
+          <Loader2 size={28} className="spin" aria-hidden />
         </div>
-        <h2>Check your phone</h2>
-        <p>{confirmed.departmentName}</p>
+        <h2>Waiting for M-Pesa confirmation…</h2>
+        <p>
+          {stage.checkIn.clinicName} · {stage.checkIn.departmentName}
+        </p>
+        <p>We&apos;ve sent an M-Pesa prompt to your phone. Enter your M-Pesa PIN to complete check-in. Keep this page open.</p>
+      </div>
+    );
+  }
+
+  if (stage?.kind === 'paid') {
+    const { checkIn } = stage;
+    return (
+      <div className="panel confirm" role="status">
+        <div className="badge">
+          <CheckCircle2 size={28} aria-hidden />
+        </div>
+        <h2>{stage.existing ? 'You’re already checked in' : 'You’re checked in'}</h2>
+        <p>
+          <strong>{checkIn.clinicName}</strong> · {checkIn.departmentName}
+        </p>
         <div className="patient-id">{patientCode}</div>
-        <p>We&apos;ve sent an M-Pesa prompt to your phone. Enter your M-Pesa PIN to complete check-in.</p>
-        <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={() => setConfirmed(null)}>
-          Check in again
+        {checkIn.queuePosition !== null && (
+          <p>{checkIn.queuePosition === 1 ? 'You’re next in line.' : `You’re number ${checkIn.queuePosition} in the queue.`}</p>
+        )}
+        <p>Payment received. Show your patient ID at the front desk when you arrive.</p>
+      </div>
+    );
+  }
+
+  if (stage?.kind === 'failed' || stage?.kind === 'timedOut') {
+    const failed = stage.kind === 'failed';
+    return (
+      <div className="panel confirm" role="alert">
+        <div className="badge">{failed ? <XCircle size={28} aria-hidden /> : <Clock size={28} aria-hidden />}</div>
+        <h2>{failed ? 'Payment was cancelled' : 'We didn’t hear back from M-Pesa'}</h2>
+        <p>
+          {failed
+            ? 'The M-Pesa payment was cancelled or didn’t go through, so you are not checked in yet. No money was taken.'
+            : 'We couldn’t confirm your payment yet. If you entered your PIN, wait for the M-Pesa SMS, then tap Try again: you won’t be charged twice.'}
+        </p>
+        <button className="btn btn-primary" style={{ marginTop: 16 }} disabled={submitting} onClick={() => void handleSubmit()}>
+          {submitting ? 'Starting…' : 'Try again'}
+        </button>
+        <button className="btn btn-secondary" style={{ marginTop: 8 }} disabled={submitting} onClick={() => setStage(null)}>
+          Change clinic or department
         </button>
       </div>
     );

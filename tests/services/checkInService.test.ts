@@ -28,7 +28,11 @@ import { assignDoctorForCheckIn } from '../../src/services/doctorAssignmentServi
 import { publishCheckInFailed } from '../../src/services/realtimeEvents';
 import { recordAuditEvent } from '../../src/services/auditService';
 import { initiateStkPush } from '../../src/mpesa/stkPush';
-import { findArrivalMatch, getAppointmentForArrival, markAppointmentCompleted } from '../../src/services/appointmentService';
+import {
+  findArrivalMatch,
+  getAppointmentForArrival,
+  markAppointmentCompleted,
+} from '../../src/services/appointmentService';
 import {
   CheckInNotPendingError,
   applyPaymentResult,
@@ -73,14 +77,18 @@ describe('confirmCheckInPaidManually', () => {
   it('rejects a check-in that is already PAID', async () => {
     mockFindFirstCheckIn.mockResolvedValue({ ...PENDING_CHECK_IN, status: 'PAID' });
 
-    await expect(confirmCheckInPaidManually('ci-1', 'clinic-A', 'staff-1')).rejects.toThrow(CheckInNotPendingError);
+    await expect(confirmCheckInPaidManually('ci-1', 'clinic-A', 'staff-1')).rejects.toThrow(
+      CheckInNotPendingError,
+    );
     expect(mockAssignDoctor).not.toHaveBeenCalled();
   });
 
   it('rejects a check-in that is CANCELLED', async () => {
     mockFindFirstCheckIn.mockResolvedValue({ ...PENDING_CHECK_IN, status: 'CANCELLED' });
 
-    await expect(confirmCheckInPaidManually('ci-1', 'clinic-A', 'staff-1')).rejects.toThrow(CheckInNotPendingError);
+    await expect(confirmCheckInPaidManually('ci-1', 'clinic-A', 'staff-1')).rejects.toThrow(
+      CheckInNotPendingError,
+    );
     expect(mockAssignDoctor).not.toHaveBeenCalled();
   });
 
@@ -143,15 +151,44 @@ describe('initiateCheckIn (STK push fails to initiate)', () => {
 
 describe('applyPaymentResult (STK push resolves unsuccessfully)', () => {
   it('marks the CheckIn FAILED and publishes a live-queue event, same as an initiation failure', async () => {
-    mockFindUniqueCheckIn.mockResolvedValue({ ...PENDING_CHECK_IN, id: 'ci-3', mpesaCheckoutRequestId: 'checkout-1' });
+    mockFindUniqueCheckIn.mockResolvedValue({
+      ...PENDING_CHECK_IN,
+      id: 'ci-3',
+      mpesaCheckoutRequestId: 'checkout-1',
+    });
 
     await applyPaymentResult(
-      { merchantRequestId: 'merchant-1', checkoutRequestId: 'checkout-1', resultCode: 1032, resultDesc: 'Cancelled by user' },
+      {
+        merchantRequestId: 'merchant-1',
+        checkoutRequestId: 'checkout-1',
+        resultCode: 1032,
+        resultDesc: 'Cancelled by user',
+      },
       { raw: true },
     );
 
     expect(mockUpdateCheckIn).toHaveBeenCalledWith({ where: { id: 'ci-3' }, data: { status: 'FAILED' } });
     expect(mockPublishFailed).toHaveBeenCalledWith({ checkInId: 'ci-3', clinicId: 'clinic-A' });
+  });
+
+  it('returns the check-in id and its new status, for the callback log line', async () => {
+    mockFindUniqueCheckIn.mockResolvedValue({ ...PENDING_CHECK_IN, id: 'ci-3' });
+    await expect(
+      applyPaymentResult(
+        { merchantRequestId: 'm', checkoutRequestId: 'c', resultCode: 1032, resultDesc: 'Cancelled by user' },
+        {},
+      ),
+    ).resolves.toEqual({ checkInId: 'ci-3', status: 'FAILED' });
+  });
+
+  it('returns the unchanged status for a duplicate result, and null for an unknown check-in', async () => {
+    mockFindUniqueCheckIn
+      .mockResolvedValueOnce({ ...PENDING_CHECK_IN, status: 'PAID' })
+      .mockResolvedValueOnce(null);
+    const result = { merchantRequestId: 'm', checkoutRequestId: 'c', resultCode: 0, resultDesc: 'ok' };
+    await expect(applyPaymentResult(result, {})).resolves.toEqual({ checkInId: 'ci-1', status: 'PAID' });
+    await expect(applyPaymentResult(result, {})).resolves.toBeNull();
+    expect(mockUpdateCheckIn).not.toHaveBeenCalled();
   });
 });
 
@@ -167,7 +204,10 @@ describe('initiateCheckIn (appointment linking)', () => {
 
   beforeEach(() => {
     mockFindUniqueCheckIn.mockResolvedValue(null);
-    mockInitiateStkPush.mockResolvedValue({ checkoutRequestId: 'checkout-1', merchantRequestId: 'merchant-1' });
+    mockInitiateStkPush.mockResolvedValue({
+      checkoutRequestId: 'checkout-1',
+      merchantRequestId: 'merchant-1',
+    });
   });
 
   it('links a same-day match found automatically when no appointmentId is given, and marks it completed', async () => {
@@ -201,13 +241,15 @@ describe('initiateCheckIn (appointment linking)', () => {
 
     await initiateCheckIn(NEW_CHECK_IN_INPUT);
 
-    expect(mockCreateCheckIn).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ appointmentId: null }) }));
+    expect(mockCreateCheckIn).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ appointmentId: null }) }),
+    );
     expect(mockMarkAppointmentCompleted).not.toHaveBeenCalled();
   });
 });
 
 describe('checkInPatientForAppointment', () => {
-  it("checks the patient in against the given appointment and records a staff-attributed audit event", async () => {
+  it('checks the patient in against the given appointment and records a staff-attributed audit event', async () => {
     mockGetAppointmentForArrival.mockResolvedValue({
       id: 'appt-3',
       patientId: 'patient-1',
@@ -218,8 +260,16 @@ describe('checkInPatientForAppointment', () => {
     });
     mockFindUniqueCheckIn.mockResolvedValue(null);
     mockCreateCheckIn.mockResolvedValue({ id: 'ci-12', clinicId: 'clinic-A', appointmentId: 'appt-3' });
-    mockUpdateCheckIn.mockResolvedValue({ id: 'ci-12', clinicId: 'clinic-A', appointmentId: 'appt-3', status: 'PENDING_PAYMENT' });
-    mockInitiateStkPush.mockResolvedValue({ checkoutRequestId: 'checkout-2', merchantRequestId: 'merchant-2' });
+    mockUpdateCheckIn.mockResolvedValue({
+      id: 'ci-12',
+      clinicId: 'clinic-A',
+      appointmentId: 'appt-3',
+      status: 'PENDING_PAYMENT',
+    });
+    mockInitiateStkPush.mockResolvedValue({
+      checkoutRequestId: 'checkout-2',
+      merchantRequestId: 'merchant-2',
+    });
 
     await checkInPatientForAppointment('appt-3', 'clinic-A', 'staff-1');
 

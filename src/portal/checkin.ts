@@ -9,7 +9,12 @@ import { recordAuditEvent } from '../services/auditService';
 import { buildVisitRecordDataFromEncounter, renderVisitRecordPdf } from '../services/visitRecordDocument';
 import { patientNeedsWebCheckInPrivacyAck, recordLegalAcceptances } from '../services/legalService';
 import { PRIVACY_NOTICE_VERSION } from '../config/legal';
-import { patientIdentityInputSchema, PatientIdentityError, preparePatientIdentity } from '../services/patientIdentity';
+import {
+  patientIdentityInputSchema,
+  PatientIdentityError,
+  preparePatientIdentity,
+} from '../services/patientIdentity';
+import { kenyaDayRange, kenyaToday } from '../utils/kenyaTime';
 
 export const portalCheckinRouter = Router();
 export const portalRecordsRouter = Router();
@@ -25,6 +30,89 @@ const checkinSchema = z.object({
   /** Optional ID document and next of kin; empty fields leave what's on file alone. */
   identity: patientIdentityInputSchema.optional(),
 });
+
+/**
+ * How long a PENDING_PAYMENT check-in still counts as "in flight" for the
+ * duplicate guard below. The STK prompt on the phone expires within about a
+ * minute and the status worker asks Daraja 90s after the push, so a row
+ * still pending after this is stuck (e.g. Daraja's query errored) — it must
+ * not stop the patient checking in for the rest of the day.
+ */
+const PENDING_CHECK_IN_WINDOW_MS = 5 * 60 * 1000;
+
+/**
+ * The patient's live check-in at this clinic today, if any: PAID with the
+ * visit not yet finished, or PENDING_PAYMENT within the STK window. Checking
+ * in again while one exists would only create a duplicate (and a second fee).
+ */
+async function findActiveCheckInToday(patientId: string, clinicId: string) {
+  const { start } = kenyaDayRange(kenyaToday());
+  const pendingSince = new Date(Math.max(start.getTime(), Date.now() - PENDING_CHECK_IN_WINDOW_MS));
+  return prisma.checkIn.findFirst({
+    where: {
+      patientId,
+      clinicId,
+      OR: [
+        // A finished visit (DONE) doesn't block coming back later the same day.
+        { status: 'PAID', createdAt: { gte: start }, encounter: { status: { not: 'DONE' } } },
+        { status: 'PENDING_PAYMENT', createdAt: { gte: pendingSince } },
+      ],
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+}
+
+/**
+ * How many patients are ahead of this visit: WAITING encounters at the same
+ * clinic and department that started earlier and could go to the same
+ * doctor. Null once the patient is no longer waiting (or has no visit yet).
+ */
+async function queuePositionFor(
+  encounter: {
+    id: string;
+    clinicId: string;
+    status: string;
+    assignedDoctorId: string | null;
+    createdAt: Date;
+  },
+  departmentId: string,
+) {
+  if (encounter.status !== 'WAITING') return null;
+  const ahead = await prisma.encounter.count({
+    where: {
+      clinicId: encounter.clinicId,
+      status: 'WAITING',
+      createdAt: { lt: encounter.createdAt },
+      checkIn: { departmentId },
+      ...(encounter.assignedDoctorId
+        ? { OR: [{ assignedDoctorId: encounter.assignedDoctorId }, { assignedDoctorId: null }] }
+        : {}),
+    },
+  });
+  return ahead + 1;
+}
+
+/** What the portal shows for one of the patient's own check-ins; null if it isn't theirs. */
+async function describeOwnCheckIn(checkInId: string, patientId: string) {
+  const checkIn = await prisma.checkIn.findFirst({
+    where: { id: checkInId, patientId },
+    include: {
+      clinic: { select: { name: true } },
+      department: { select: { name: true } },
+      encounter: {
+        select: { id: true, clinicId: true, status: true, assignedDoctorId: true, createdAt: true },
+      },
+    },
+  });
+  if (!checkIn) return null;
+  return {
+    checkInId: checkIn.id,
+    status: checkIn.status,
+    clinicName: checkIn.clinic.name,
+    departmentName: checkIn.department.name,
+    queuePosition: checkIn.encounter ? await queuePositionFor(checkIn.encounter, checkIn.departmentId) : null,
+  };
+}
 
 /**
  * Whether checking in at this clinic needs the Privacy Notice checkbox:
@@ -63,7 +151,9 @@ portalCheckinRouter.post('/', async (req, res) => {
   const [patient, clinic, department] = await Promise.all([
     prisma.patient.findUnique({ where: { id: patientId } }),
     prisma.clinic.findUnique({ where: { id: parsed.data.clinicId } }),
-    prisma.department.findFirst({ where: { id: parsed.data.departmentId, clinicId: parsed.data.clinicId, isActive: true } }),
+    prisma.department.findFirst({
+      where: { id: parsed.data.departmentId, clinicId: parsed.data.clinicId, isActive: true },
+    }),
   ]);
 
   if (!patient) {
@@ -76,6 +166,14 @@ portalCheckinRouter.post('/', async (req, res) => {
   }
   if (!department) {
     res.status(400).json({ error: 'Please choose a valid department' });
+    return;
+  }
+
+  // Tapping "Confirm check-in" again (or after a page reload) must never
+  // create a second check-in and STK push: hand back the one in progress.
+  const active = await findActiveCheckInToday(patient.id, clinic.id);
+  if (active) {
+    res.status(200).json({ ...(await describeOwnCheckIn(active.id, patient.id)), existing: true });
     return;
   }
 
@@ -132,7 +230,23 @@ portalCheckinRouter.post('/', async (req, res) => {
     return;
   }
 
-  res.status(201).json({ checkInId: checkIn.id, status: checkIn.status });
+  res.status(201).json({ ...(await describeOwnCheckIn(checkIn.id, patient.id)), existing: false });
+});
+
+/**
+ * Polled by the portal every few seconds after the STK push, until the
+ * M-Pesa callback (or the status worker) moves the check-in to PAID or
+ * FAILED. Scoped to the logged-in patient's own check-ins: anything else is
+ * a 404.
+ */
+portalCheckinRouter.get('/:checkInId', async (req, res) => {
+  const { patientId } = (req as unknown as AuthenticatedPatientRequest).patientSession;
+  const described = await describeOwnCheckIn(req.params.checkInId as string, patientId);
+  if (!described) {
+    res.status(404).json({ error: 'Check-in not found' });
+    return;
+  }
+  res.json(described);
 });
 
 portalRecordsRouter.get('/', async (req, res) => {
@@ -164,7 +278,12 @@ portalRecordsRouter.get('/:encounterId/download', async (req, res) => {
 
   const encounter = await prisma.encounter.findFirst({
     where: { id: req.params.encounterId, patientId },
-    include: { patient: true, clinic: true, checkIn: { include: { department: true } }, consultedByStaff: true },
+    include: {
+      patient: true,
+      clinic: true,
+      checkIn: { include: { department: true } },
+      consultedByStaff: true,
+    },
   });
 
   if (!encounter) {

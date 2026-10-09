@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { CheckIn } from '@prisma/client';
+import { CheckIn, CheckInStatus } from '@prisma/client';
 import { prisma } from '../db/prisma';
 import { env } from '../config/env';
 import { logger } from '../utils/logger';
@@ -132,7 +132,12 @@ async function finalizePaidCheckIn(checkIn: CheckIn): Promise<CheckIn> {
   const assignedDoctorId = await assignDoctorForCheckIn(checkIn.clinicId, checkIn.departmentId);
 
   await prisma.encounter.create({
-    data: { patientId: checkIn.patientId, clinicId: checkIn.clinicId, checkInId: checkIn.id, assignedDoctorId },
+    data: {
+      patientId: checkIn.patientId,
+      clinicId: checkIn.clinicId,
+      checkInId: checkIn.id,
+      assignedDoctorId,
+    },
   });
 
   publishCheckInPaid({
@@ -154,20 +159,26 @@ async function finalizePaidCheckIn(checkIn: CheckIn): Promise<CheckIn> {
  * matching CheckIn: logs the MpesaTransaction, marks PAID/FAILED, and on
  * success creates the Encounter that makes this visit show up in the
  * patient's portable history.
+ *
+ * Returns the CheckIn's id and status afterwards (unchanged for a duplicate
+ * result), or null if no CheckIn matches. Callers do the logging, so the
+ * callback route can keep it to one line per callback.
  */
-export async function applyPaymentResult(parsed: ParsedStkCallback, rawPayload: unknown): Promise<void> {
+export async function applyPaymentResult(
+  parsed: ParsedStkCallback,
+  rawPayload: unknown,
+): Promise<{ checkInId: string; status: CheckInStatus } | null> {
   const checkIn = await prisma.checkIn.findUnique({
     where: { mpesaCheckoutRequestId: parsed.checkoutRequestId },
   });
 
   if (!checkIn) {
-    logger.warn({ checkoutRequestId: parsed.checkoutRequestId }, 'Received M-Pesa result for unknown CheckIn');
-    return;
+    return null;
   }
 
+  // Duplicate result (Daraja retry, or callback and status worker racing).
   if (checkIn.status !== 'PENDING_PAYMENT') {
-    logger.info({ checkInId: checkIn.id, status: checkIn.status }, 'Ignoring duplicate M-Pesa result');
-    return;
+    return { checkInId: checkIn.id, status: checkIn.status };
   }
 
   await prisma.mpesaTransaction.create({
@@ -202,6 +213,8 @@ export async function applyPaymentResult(parsed: ParsedStkCallback, rawPayload: 
     entityId: checkIn.id,
     metadata: { resultCode: parsed.resultCode, resultDesc: parsed.resultDesc },
   });
+
+  return { checkInId: checkIn.id, status: succeeded ? 'PAID' : 'FAILED' };
 }
 
 export class CheckInNotPendingError extends Error {
@@ -226,7 +239,11 @@ export class CheckInNotPendingError extends Error {
  * caller (dashboard route), same as every other staff-facing check-in
  * action.
  */
-export async function confirmCheckInPaidManually(checkInId: string, clinicId: string, staffId: string): Promise<CheckIn> {
+export async function confirmCheckInPaidManually(
+  checkInId: string,
+  clinicId: string,
+  staffId: string,
+): Promise<CheckIn> {
   const checkIn = await prisma.checkIn.findFirst({ where: { id: checkInId, clinicId } });
   if (!checkIn) {
     throw new Error('Check-in not found');
