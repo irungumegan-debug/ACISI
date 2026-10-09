@@ -16,7 +16,9 @@ jest.mock('../../src/db/prisma', () => {
     },
   };
 });
-jest.mock('../../src/config/africastalking', () => ({ smsClient: { send: jest.fn() } }));
+jest.mock('../../src/config/africastalking', () => ({ rawSmsClient: { send: jest.fn() } }));
+// Nobody in these tests is a demo patient (see tests/services/demoGuard.test.ts for those).
+jest.mock('../../src/services/demoGuard', () => ({ ...jest.requireActual('../../src/services/demoGuard'), isDemoRecipient: jest.fn() }));
 jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
 jest.mock('../../src/services/patientService', () => ({ findPatientByPhone: jest.fn(), registerPatient: jest.fn() }));
 jest.mock('../../src/services/departmentService', () => ({ findActiveDepartment: jest.fn() }));
@@ -29,7 +31,7 @@ jest.mock('../../src/mpesa/stkPush', () => ({ initiateStkPush: jest.fn() }));
 jest.mock('../../src/jobs/queue', () => ({ enqueueSmsReceipt: jest.fn() }));
 
 import { prisma } from '../../src/db/prisma';
-import { smsClient } from '../../src/config/africastalking';
+import { rawSmsClient as smsClient } from '../../src/config/africastalking';
 import { findPatientByPhone, registerPatient } from '../../src/services/patientService';
 import { findActiveDepartment } from '../../src/services/departmentService';
 import { assignDoctorForCheckIn } from '../../src/services/doctorAssignmentService';

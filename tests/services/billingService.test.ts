@@ -6,7 +6,9 @@ jest.mock('../../src/db/prisma', () => ({
     return mockDb.db;
   },
 }));
-jest.mock('../../src/config/africastalking', () => ({ smsClient: { send: jest.fn() } }));
+jest.mock('../../src/config/africastalking', () => ({ rawSmsClient: { send: jest.fn() } }));
+// Nobody in these tests is a demo patient (see tests/services/demoGuard.test.ts for those).
+jest.mock('../../src/services/demoGuard', () => ({ ...jest.requireActual('../../src/services/demoGuard'), isDemoRecipient: jest.fn() }));
 jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
 jest.mock('../../src/mpesa/clinicStk', () => ({
   clinicStkConfigured: jest.fn(() => true),
@@ -14,7 +16,7 @@ jest.mock('../../src/mpesa/clinicStk', () => ({
 }));
 jest.mock('../../src/jobs/queue', () => ({ scheduleClinicStkStatusCheck: jest.fn() }));
 
-import { smsClient } from '../../src/config/africastalking';
+import { rawSmsClient as smsClient } from '../../src/config/africastalking';
 import { sendClinicStkPush } from '../../src/mpesa/clinicStk';
 import { scheduleClinicStkStatusCheck } from '../../src/jobs/queue';
 import {

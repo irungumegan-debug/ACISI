@@ -55,6 +55,41 @@ Database migrations run automatically on start (`prisma migrate deploy`).
 If the service files in `deploy/` changed, copy them again (see "Install
 or update the backup job").
 
+## Demo clinics
+
+A demo clinic is a copy of ACISI dressed as a prospective clinic (for example
+"Westlands Medical Centre (Demo)"), with doctors, front desk and a morning's
+queue already in it. Each one is described by a file in `demo/` in the app
+(`demo/westlands.json`, `demo/alina.json`); edit the departments and names
+there, in a pull request.
+
+What keeps it safe:
+- It never appears in the public clinic list or on USSD. Patients reach it only
+  through its demo link: `https://acisi.co.ke/patient?demo=<key>`.
+- Its fake patients and staff (surname "Mfano", numbers `+254799000…`) never
+  get an SMS or an M-Pesa prompt. A real patient checking in there (your own
+  phone, during the demo) gets the prompt, receipt and visit summary as normal.
+- Its check-in fee is KSh 150, real money if M-Pesa is in production mode.
+- It is left out of every total on the owner site, and marked "Demo" in the
+  clinic list.
+
+The commands run inside the app's own environment. `systemd-run` gives them
+the settings file without anyone being able to read it:
+
+```
+D() { sudo systemd-run --quiet --pipe --wait --uid=acisi -p EnvironmentFile=/etc/acisi/acisi.env -p WorkingDirectory=/opt/acisi/app --setenv=DEMO_PIN="$DEMO_PIN" /opt/acisi/app/node_modules/.bin/ts-node --transpile-only scripts/demoClinic.ts "$@"; }
+read -rsp "Demo PIN (6 digits, not a date or a sequence): " DEMO_PIN; echo
+D reset westlands            # wipe it and create it fresh (also creates it the first time)
+D delete westlands           # shows what would be removed
+D delete westlands --yes     # removes it completely
+```
+
+`reset` prints the logins (front desk, doctors, clinic admin, all with your
+PIN) and the demo link. Run it 30–60 minutes before the demo: the queue's
+waiting times count from the moment you run it. Then sign in once with each
+login you'll use, to accept the Terms, so the demo itself goes straight in.
+Reset and delete only ever touch that one demo clinic and its fake patients.
+
 ## Backups
 
 **What:** every night at about 02:00 EAT, `acisi-backup` writes two encrypted files to

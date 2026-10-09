@@ -10,6 +10,7 @@ import { recordAuditEvent } from './auditService';
 import { initiateStkPush } from '../mpesa/stkPush';
 import { ParsedStkCallback } from '../mpesa/types';
 import { enqueueSmsReceipt } from '../jobs/queue';
+import { DEMO_CHECKIN_FEE_KES } from './demoGuard';
 import { publishCheckInFailed, publishCheckInPaid } from './realtimeEvents';
 import { assignDoctorForCheckIn } from './doctorAssignmentService';
 import { findArrivalMatch, getAppointmentForArrival, markAppointmentCompleted } from './appointmentService';
@@ -37,6 +38,12 @@ interface InitiateCheckInResult {
   wasAlreadyInitiated: boolean;
 }
 
+/** ACISI's check-in fee at this clinic: the demo fee at a demo clinic (see demoGuard.ts), the normal fee everywhere else. */
+export async function checkInFeeKes(clinicId: string): Promise<number> {
+  const clinic = await prisma.clinic.findUnique({ where: { id: clinicId }, select: { isDemo: true } });
+  return clinic?.isDemo ? DEMO_CHECKIN_FEE_KES : env.CHECKIN_FEE_AMOUNT_KES;
+}
+
 /**
  * Creates the CheckIn row and triggers the STK push. ussdSessionId is unique
  * on CheckIn, so if a dropped-session replay (src/ussd/session.ts) calls
@@ -54,13 +61,15 @@ export async function initiateCheckIn(input: InitiateCheckInInput): Promise<Init
       ? input.appointmentId
       : ((await findArrivalMatch(input.patientId, input.clinicId, input.departmentId))?.id ?? null);
 
+  const amountKes = await checkInFeeKes(input.clinicId);
+
   const checkIn = await prisma.checkIn.create({
     data: {
       patientId: input.patientId,
       clinicId: input.clinicId,
       departmentId: input.departmentId,
       ussdSessionId: input.ussdSessionId,
-      amountKes: env.CHECKIN_FEE_AMOUNT_KES,
+      amountKes,
       status: 'PENDING_PAYMENT',
       appointmentId,
     },
@@ -84,7 +93,7 @@ export async function initiateCheckIn(input: InitiateCheckInInput): Promise<Init
 
   try {
     const stkResponse = await initiateStkPush({
-      amountKes: env.CHECKIN_FEE_AMOUNT_KES,
+      amountKes,
       phoneNumberE164: input.phoneNumberE164,
       // Daraja caps AccountReference at 12 chars.
       accountReference: checkIn.id.slice(-10),

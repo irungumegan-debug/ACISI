@@ -2,11 +2,11 @@ import crypto from 'node:crypto';
 import dayjs from 'dayjs';
 import { Patient, Prisma, Sex } from '@prisma/client';
 import { prisma } from '../db/prisma';
-import { smsClient } from '../config/africastalking';
 import { CONSENT_VERSION } from '../config/constants';
 import { logger } from '../utils/logger';
 import { InvalidPhoneNumberError, toE164 } from '../utils/phone';
 import { recordAuditEvent } from './auditService';
+import { sendSms } from './smsService';
 import { findPatientByPhone, registerPatient } from './patientService';
 import { findActiveDepartment } from './departmentService';
 import { assignDoctorForCheckIn } from './doctorAssignmentService';
@@ -197,6 +197,7 @@ async function findOrCreatePatient(
   phoneNumber: string,
   details: NewWalkInPatientDetails | undefined,
   privacyNoticeExplained: boolean,
+  demoClinicId: string | undefined,
 ): Promise<{ patient: Patient; isNew: boolean }> {
   const existing = await findPatientByPhone(phoneNumber);
   if (existing) return { patient: existing, isNew: false };
@@ -226,6 +227,7 @@ async function findOrCreatePatient(
       consentChannel: 'STAFF_ASSISTED',
       // Cross-clinic sharing stays off by default; the patient can opt in later.
       crossClinicConsent: false,
+      demoClinicId,
     });
     return { patient, isNew: true };
   } catch (err) {
@@ -258,7 +260,8 @@ function smsWasAccepted(response: unknown): boolean {
  */
 async function sendWalkInInvite(patient: Patient, clinicName: string, staffId: string): Promise<WalkInSmsOutcome> {
   try {
-    const response = await smsClient.send({ to: [patient.phoneNumber], message: buildWalkInInviteSms(clinicName) });
+    const response = await sendSms({ to: patient.phoneNumber, message: buildWalkInInviteSms(clinicName) });
+    if (response === null) return 'not_requested'; // a demo patient: never sent
     if (!smsWasAccepted(response)) throw new Error('SMS rejected by provider');
     await recordAuditEvent({
       actorType: 'STAFF',
@@ -300,14 +303,20 @@ export async function checkInWalkIn(input: WalkInCheckInInput): Promise<WalkInCh
   }
 
   const [clinic, department] = await Promise.all([
-    prisma.clinic.findUnique({ where: { id: input.clinicId }, select: { name: true, isActive: true } }),
+    prisma.clinic.findUnique({ where: { id: input.clinicId }, select: { name: true, isActive: true, isDemo: true } }),
     findActiveDepartment(input.departmentId, input.clinicId),
   ]);
   if (!clinic || !clinic.isActive) throw new WalkInError('Clinic not found', 404);
   if (!department) throw new WalkInError('Choose a department', 400);
 
   const privacyNoticeExplained = Boolean(input.privacyNoticeExplained);
-  const { patient, isNew } = await findOrCreatePatient(phoneNumber, input.newPatient, privacyNoticeExplained);
+  // A new patient added at a demo clinic is a demo patient (never messaged).
+  const { patient, isNew } = await findOrCreatePatient(
+    phoneNumber,
+    input.newPatient,
+    privacyNoticeExplained,
+    clinic.isDemo ? input.clinicId : undefined,
+  );
   const privacyNoticeAckRequired = isNew || (await walkInNeedsPrivacyAck(patient.id, input.clinicId));
   if (privacyNoticeAckRequired && !privacyNoticeExplained) {
     throw new WalkInError(PRIVACY_NOTICE_REQUIRED_MESSAGE, 400);
