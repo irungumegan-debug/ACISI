@@ -12,7 +12,7 @@
   ],
   "queueDepartments": ["GEN"],
   "doctors": [
-    { "name": "Dr. Wambui Mfano", "departments": ["GEN"] },
+    { "name": "Dr. Zawadi Mfano", "departments": ["GEN"] },
     { "name": "Dr. Hassan Mfano", "departments": ["GEN"] }
   ],
   "frontDesk": [{ "name": "Grace Mfano" }],

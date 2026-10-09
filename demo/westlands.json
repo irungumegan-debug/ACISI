@@ -16,10 +16,10 @@
   ],
   "queueDepartments": ["GP", "PAED", "OBG", "DEN", "MED"],
   "doctors": [
-    { "name": "Dr. Njeri Mfano", "departments": ["GP", "MED"] },
-    { "name": "Dr. Omondi Mfano", "departments": ["PAED"] },
+    { "name": "Dr. Grace Mfano", "departments": ["GP", "MED"] },
+    { "name": "Dr. Daniel Mfano", "departments": ["PAED"] },
     { "name": "Dr. Halima Mfano", "departments": ["OBG"] },
-    { "name": "Dr. Kiprono Mfano", "departments": ["DEN"] }
+    { "name": "Dr. Peter Mfano", "departments": ["DEN"] }
   ],
   "frontDesk": [{ "name": "Faith Mfano" }, { "name": "Brian Mfano" }],
   "admin": { "name": "Clinic Admin (Demo)" }

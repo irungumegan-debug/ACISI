@@ -129,7 +129,7 @@ const SCENARIO: Array<{
   medicinesKes?: number;
 }> = [
   {
-    firstName: 'Wanjiru',
+    firstName: 'Neema',
     sex: 'FEMALE',
     birthYear: 1991,
     minutesAgo: 165,
@@ -141,7 +141,7 @@ const SCENARIO: Array<{
     medicinesKes: 650,
   },
   {
-    firstName: 'Otieno',
+    firstName: 'James',
     sex: 'MALE',
     birthYear: 1968,
     minutesAgo: 140,
@@ -152,7 +152,7 @@ const SCENARIO: Array<{
     medicinesKes: 900,
   },
   {
-    firstName: 'Akinyi',
+    firstName: 'Imani',
     sex: 'FEMALE',
     birthYear: 2019,
     minutesAgo: 95,
@@ -162,15 +162,15 @@ const SCENARIO: Array<{
     prescription: 'Paracetamol syrup 120 mg/5 ml, 7.5 ml 3 times daily for 3 days\nOral rehydration and rest',
   },
   {
-    firstName: 'Kamau',
+    firstName: 'Joseph',
     sex: 'MALE',
     birthYear: 1984,
     minutesAgo: 50,
     queueSlot: 0,
     stage: 'IN_CONSULTATION',
   },
-  { firstName: 'Chebet', sex: 'FEMALE', birthYear: 1996, minutesAgo: 35, queueSlot: 2, stage: 'WAITING' },
-  { firstName: 'Mutua', sex: 'MALE', birthYear: 1977, minutesAgo: 25, queueSlot: 3, stage: 'WAITING' },
+  { firstName: 'Rehema', sex: 'FEMALE', birthYear: 1996, minutesAgo: 35, queueSlot: 2, stage: 'WAITING' },
+  { firstName: 'David', sex: 'MALE', birthYear: 1977, minutesAgo: 25, queueSlot: 3, stage: 'WAITING' },
   {
     firstName: 'Baraka',
     sex: 'MALE',
@@ -180,10 +180,10 @@ const SCENARIO: Array<{
     stage: 'WALK_IN',
     visitReason: 'Cough and fever for 3 days',
   },
-  { firstName: 'Nyambura', sex: 'FEMALE', birthYear: 1988, minutesAgo: 8, queueSlot: 0, stage: 'WAITING' },
+  { firstName: 'Mary', sex: 'FEMALE', birthYear: 1988, minutesAgo: 8, queueSlot: 0, stage: 'WAITING' },
 ];
 
-/** Earlier visits for the first patient (Wanjiru), so her record history has something to show. */
+/** Earlier visits for the first patient (Neema), so her record history has something to show. */
 const PAST_VISITS = [
   {
     daysAgo: 23,
