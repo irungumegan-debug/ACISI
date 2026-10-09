@@ -66,7 +66,6 @@ ownerClinicsRouter.get('/', async (req, res) => {
       county: c.county,
       ussdCode: c.ussdCode,
       isActive: c.isActive,
-      isDemo: c.isDemo,
       createdAt: c.createdAt,
       doctorCount: doctors.get(c.id) ?? 0,
       staffCount: otherStaff.get(c.id) ?? 0,

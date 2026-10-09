@@ -9,12 +9,10 @@ jest.mock('bullmq', () => ({
   }),
 }));
 jest.mock('../../src/db/prisma', () => ({ prisma: { encounter: { findUnique: jest.fn() } } }));
-jest.mock('../../src/config/africastalking', () => ({ rawSmsClient: { send: jest.fn() } }));
-// Nobody in these tests is a demo patient (see tests/services/demoGuard.test.ts for those).
-jest.mock('../../src/services/demoGuard', () => ({ ...jest.requireActual('../../src/services/demoGuard'), isDemoRecipient: jest.fn() }));
+jest.mock('../../src/config/africastalking', () => ({ smsClient: { send: jest.fn() } }));
 
 import { prisma } from '../../src/db/prisma';
-import { rawSmsClient as smsClient } from '../../src/config/africastalking';
+import { smsClient } from '../../src/config/africastalking';
 import { startVisitSummarySmsWorker } from '../../src/jobs/workers/visitSummarySmsWorker';
 
 const ENCOUNTER = {

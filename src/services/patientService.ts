@@ -66,12 +66,6 @@ interface RegisterPatientInput {
    */
   pin?: string;
   /**
-   * Set when a new patient is registered at a demo clinic (a walk-in added
-   * during a demo): that patient is a demo patient, so they never get SMS or
-   * M-Pesa prompts and are removed with the demo clinic. See demoGuard.ts.
-   */
-  demoClinicId?: string;
-  /**
    * Optional, web-portal-only (USSD has no practical way to collect one).
    * Used solely for the staff-initiated visit-summary email at checkout —
    * never for login, never for any other notification.
@@ -106,7 +100,6 @@ export async function registerPatient(input: RegisterPatientInput): Promise<Pati
         sex: input.sex,
         email: input.email,
         pinHash,
-        demoClinicId: input.demoClinicId,
       },
     });
 
