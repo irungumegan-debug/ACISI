@@ -1,7 +1,7 @@
 import { Worker } from 'bullmq';
 import { redisQueueConnection } from '../../config/redis';
 import { prisma } from '../../db/prisma';
-import { smsClient } from '../../config/africastalking';
+import { sendSms } from '../../services/smsService';
 import { logger } from '../../utils/logger';
 import { formatKenyaDate } from '../../utils/kenyaTime';
 import { buildVisitSummarySms } from '../../services/smsTemplates';
@@ -39,7 +39,7 @@ export function startVisitSummarySmsWorker(): Worker<VisitSummarySmsJobData> {
         prescription: encounter.prescription,
       });
 
-      await smsClient.send({ to: [encounter.patient.phoneNumber], message });
+      await sendSms({ to: encounter.patient.phoneNumber, message });
     },
     { connection: redisQueueConnection },
   );

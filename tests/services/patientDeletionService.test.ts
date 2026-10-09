@@ -8,12 +8,14 @@ jest.mock('../../src/db/prisma', () => {
   };
   return { prisma: { $transaction: jest.fn(async (fn: (t: typeof tx) => unknown) => fn(tx)), __tx: tx } };
 });
-jest.mock('../../src/config/africastalking', () => ({ smsClient: { send: jest.fn() } }));
+jest.mock('../../src/config/africastalking', () => ({ rawSmsClient: { send: jest.fn() } }));
+// Nobody in these tests is a demo patient (see tests/services/demoGuard.test.ts for those).
+jest.mock('../../src/services/demoGuard', () => ({ ...jest.requireActual('../../src/services/demoGuard'), isDemoRecipient: jest.fn() }));
 jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
 jest.mock('../../src/services/sessionRevocation', () => ({ revokeSessionsFor: jest.fn() }));
 
 import { prisma } from '../../src/db/prisma';
-import { smsClient } from '../../src/config/africastalking';
+import { rawSmsClient as smsClient } from '../../src/config/africastalking';
 import { recordAuditEvent } from '../../src/services/auditService';
 import { revokeSessionsFor } from '../../src/services/sessionRevocation';
 import {

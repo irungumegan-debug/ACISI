@@ -1,0 +1,20 @@
+{
+  "key": "alina",
+  "name": "Alina Medical Centre",
+  "county": "Nairobi",
+  "location": "Hurlingham, Nairobi",
+  "loginPrefix": "AMC",
+  "phoneBlock": 2,
+  "departments": [
+    { "name": "General Outpatient", "code": "GEN", "consultationFeeKes": 1000 },
+    { "name": "Laboratory", "code": "LAB" },
+    { "name": "Pharmacy", "code": "PHA" }
+  ],
+  "queueDepartments": ["GEN"],
+  "doctors": [
+    { "name": "Dr. Zawadi Mfano", "departments": ["GEN"] },
+    { "name": "Dr. Hassan Mfano", "departments": ["GEN"] }
+  ],
+  "frontDesk": [{ "name": "Grace Mfano" }],
+  "admin": { "name": "Clinic Admin (Demo)" }
+}

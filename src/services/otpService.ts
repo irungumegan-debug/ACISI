@@ -1,6 +1,6 @@
 import bcrypt from 'bcrypt';
 import { prisma } from '../db/prisma';
-import { smsClient } from '../config/africastalking';
+import { sendSms } from './smsService';
 import { logger } from '../utils/logger';
 import { recordAuditEvent } from './auditService';
 import { OTP_MAX_VERIFY_ATTEMPTS, OTP_TTL_SECONDS } from '../config/constants';
@@ -26,8 +26,8 @@ export async function requestPinResetOtp(patient: Patient): Promise<void> {
   });
 
   try {
-    await smsClient.send({
-      to: [patient.phoneNumber],
+    await sendSms({
+      to: patient.phoneNumber,
       message: `Your ACISI PIN reset code is ${code}. It expires in ${Math.round(OTP_TTL_SECONDS / 60)} minutes. Do not share it with anyone.`,
     });
   } catch (err) {
@@ -89,8 +89,8 @@ export async function requestStaffPinResetOtp(staff: Staff): Promise<void> {
   });
 
   try {
-    await smsClient.send({
-      to: [staff.phoneNumber],
+    await sendSms({
+      to: staff.phoneNumber,
       message: `Your ACISI staff PIN reset code is ${code}. It expires in ${Math.round(OTP_TTL_SECONDS / 60)} minutes. Do not share it with anyone.`,
     });
   } catch (err) {

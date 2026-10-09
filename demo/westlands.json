@@ -1,0 +1,26 @@
+{
+  "key": "westlands",
+  "name": "Westlands Medical Centre",
+  "county": "Nairobi",
+  "location": "Woodvale Grove, Westlands, Nairobi",
+  "loginPrefix": "WMC",
+  "phoneBlock": 1,
+  "departments": [
+    { "name": "General Outpatient", "code": "GP", "consultationFeeKes": 1000 },
+    { "name": "Paediatrics", "code": "PAED", "consultationFeeKes": 1200 },
+    { "name": "Obstetrics & Gynaecology", "code": "OBG", "consultationFeeKes": 1500 },
+    { "name": "Internal Medicine", "code": "MED", "consultationFeeKes": 1500 },
+    { "name": "Dental", "code": "DEN", "consultationFeeKes": 1000 },
+    { "name": "Laboratory", "code": "LAB" },
+    { "name": "Pharmacy", "code": "PHA" }
+  ],
+  "queueDepartments": ["GP", "PAED", "OBG", "DEN", "MED"],
+  "doctors": [
+    { "name": "Dr. Grace Mfano", "departments": ["GP", "MED"] },
+    { "name": "Dr. Daniel Mfano", "departments": ["PAED"] },
+    { "name": "Dr. Halima Mfano", "departments": ["OBG"] },
+    { "name": "Dr. Peter Mfano", "departments": ["DEN"] }
+  ],
+  "frontDesk": [{ "name": "Faith Mfano" }, { "name": "Brian Mfano" }],
+  "admin": { "name": "Clinic Admin (Demo)" }
+}
