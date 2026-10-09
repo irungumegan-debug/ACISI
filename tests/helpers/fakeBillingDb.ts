@@ -29,6 +29,8 @@ export function createFakeBillingDb() {
   const items: Row[] = [];
   const payments: Row[] = [];
   const mpesaTransactions: Row[] = [];
+  /** Check-in fees staff confirmed by hand, with the M-Pesa code they entered. */
+  const manualFeeCheckIns: Row[] = [];
   const encounters: Row[] = [];
   const settings: Row[] = [];
 
@@ -45,6 +47,7 @@ export function createFakeBillingDb() {
     $transaction: async (fn: (tx: any) => unknown) => fn(db),
     clinicPaymentSettings: { findUnique: async ({ where }: any) => settings.find((s) => s.clinicId === where.clinicId) ?? null },
     mpesaTransaction: { findUnique: async ({ where }: any) => mpesaTransactions.find((t) => t.mpesaReceiptNumber === where.mpesaReceiptNumber) ?? null },
+    checkIn: { findUnique: async ({ where }: any) => manualFeeCheckIns.find((c) => c.manualMpesaCode === where.manualMpesaCode) ?? null },
     encounter: {
       findFirst: async ({ where }: any) => encounters.find((e) => matches(e, where)) ?? null,
       findUniqueOrThrow: async ({ where }: any) => {
@@ -155,6 +158,7 @@ export function createFakeBillingDb() {
     items,
     payments,
     mpesaTransactions,
+    manualFeeCheckIns,
     encounters,
     settings,
     addVisit(overrides: Partial<{ status: string; smsOptOut: boolean }> = {}) {

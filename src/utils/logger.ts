@@ -19,3 +19,13 @@ export const logger = pino({
     censor: '[REDACTED]',
   },
 });
+
+/**
+ * An error reduced to its name and code, for logs on payment paths: a
+ * database or HTTP error's message can echo the data it was given (a phone
+ * number, an M-Pesa code), which must never reach the logs.
+ */
+export function errorSummary(err: unknown): { name: string; code?: string } {
+  const code = (err as { code?: unknown })?.code;
+  return { name: err instanceof Error ? err.name : typeof err, ...(typeof code === 'string' ? { code } : {}) };
+}

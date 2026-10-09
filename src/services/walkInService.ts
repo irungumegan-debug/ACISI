@@ -330,7 +330,7 @@ export async function checkInWalkIn(input: WalkInCheckInInput): Promise<WalkInCh
       where: {
         patientId: patient.id,
         clinicId: input.clinicId,
-        status: { in: ['PENDING_PAYMENT', 'FAILED'] },
+        status: { in: ['PENDING_PAYMENT', 'FAILED', 'NEEDS_REVIEW'] },
         createdAt: { gte: dayjs().startOf('day').toDate() },
       },
     });

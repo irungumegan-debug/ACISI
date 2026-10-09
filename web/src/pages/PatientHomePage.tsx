@@ -48,7 +48,8 @@ type PaymentStage =
   | { kind: 'waiting'; checkIn: CheckInSummary }
   | { kind: 'paid'; checkIn: CheckInSummary; existing: boolean }
   | { kind: 'failed' }
-  | { kind: 'timedOut' };
+  | { kind: 'timedOut' }
+  | { kind: 'review' };
 
 export function PatientHomePage() {
   const { session } = usePatientAuth();
@@ -178,6 +179,11 @@ function CheckInPanel({ patientCode }: { patientCode: string }) {
           setStage({ kind: 'failed' });
           return;
         }
+        // M-Pesa never gave an answer: front desk checks the patient's SMS.
+        if (checkIn.status === 'NEEDS_REVIEW') {
+          setStage({ kind: 'review' });
+          return;
+        }
       } catch {
         // A dropped request (patchy mobile data) just means try again next tick.
         if (stopped) return;
@@ -255,6 +261,24 @@ function CheckInPanel({ patientCode }: { patientCode: string }) {
     );
   }
 
+  if (stage?.kind === 'review') {
+    return (
+      <div className="panel confirm" role="alert">
+        <div className="badge">
+          <Clock size={28} aria-hidden />
+        </div>
+        <h2>We couldn’t confirm your payment</h2>
+        <p>
+          M-Pesa hasn’t told us whether this payment went through. If you paid, show the M-Pesa SMS at the front desk and they will check
+          you in. If you didn’t pay, you can try again.
+        </p>
+        <button className="btn btn-secondary" style={{ marginTop: 16 }} disabled={submitting} onClick={() => setStage(null)}>
+          Back to check-in
+        </button>
+      </div>
+    );
+  }
+
   if (stage?.kind === 'failed' || stage?.kind === 'timedOut') {
     const failed = stage.kind === 'failed';
     return (
@@ -264,7 +288,7 @@ function CheckInPanel({ patientCode }: { patientCode: string }) {
         <p>
           {failed
             ? 'The M-Pesa payment was cancelled or didn’t go through, so you are not checked in yet. No money was taken.'
-            : 'We couldn’t confirm your payment yet. If you entered your PIN, wait for the M-Pesa SMS, then tap Try again: you won’t be charged twice.'}
+            : 'We couldn’t confirm your payment yet. If you entered your PIN, wait for the M-Pesa SMS, then tap Try again to check: you won’t get a second prompt while this one is still being processed.'}
         </p>
         <button className="btn btn-primary" style={{ marginTop: 16 }} disabled={submitting} onClick={() => void handleSubmit()}>
           {submitting ? 'Starting…' : 'Try again'}

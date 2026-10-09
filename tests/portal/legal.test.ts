@@ -16,13 +16,16 @@ jest.mock('../../src/db/prisma', () => ({
     encounter: { count: jest.fn() },
   },
 }));
-jest.mock('../../src/services/checkInService', () => ({ initiateCheckIn: jest.fn() }));
+jest.mock('../../src/services/checkInService', () => ({
+  initiateCheckIn: jest.fn(),
+  queryCheckInPayment: jest.fn(),
+}));
 jest.mock('../../src/services/patientService', () => ({ getOwnVisitHistory: jest.fn() }));
 jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
 
 import { loadPatientSession, PATIENT_SESSION_COOKIE_NAME } from '../../src/portal/session';
 import { prisma } from '../../src/db/prisma';
-import { initiateCheckIn } from '../../src/services/checkInService';
+import { initiateCheckIn, queryCheckInPayment } from '../../src/services/checkInService';
 import { PRIVACY_NOTICE_VERSION, TERMS_OF_SERVICE_VERSION } from '../../src/config/legal';
 import { portalCheckinRouter } from '../../src/portal/checkin';
 import { portalLegalRouter } from '../../src/portal/legal';
@@ -71,6 +74,7 @@ function describedCheckIn(overrides: Record<string, unknown> = {}) {
     clinic: { name: 'Sunrise Family Clinic' },
     department: { name: 'General' },
     encounter: null,
+    createdAt: new Date(),
     ...overrides,
   };
 }
@@ -288,6 +292,8 @@ describe('web check-in: one check-in per clinic per day, and status polling', ()
     const lookup = mockFindCheckIn.mock.calls[0][0].where;
     expect(lookup).toMatchObject({ patientId: 'patient-1', clinicId: 'clinic-A' });
     expect(lookup.OR.map((o: { status: string }) => o.status)).toEqual(['PAID', 'PENDING_PAYMENT']);
+    // A pending check-in blocks for the whole day (the query settles it, or it becomes NEEDS_REVIEW).
+    expect(lookup.OR[1].createdAt.gte).toEqual(lookup.OR[0].createdAt.gte);
   });
 
   it('hands back a check-in already PAID at this clinic today instead of charging again', async () => {
@@ -345,5 +351,38 @@ describe('web check-in: one check-in per clinic per day, and status polling', ()
   it("404s for another patient's check-in", async () => {
     mockFindCheckIn.mockResolvedValue(null);
     expect((await withCookie(request(buildApp()).get('/checkin/ci-other'))).status).toBe(404);
+  });
+
+  it('asks Safaricom directly while the patient waits, once the check-in has been pending 20 seconds', async () => {
+    const pending = describedCheckIn({ createdAt: new Date(Date.now() - 25_000) });
+    mockFindCheckIn.mockResolvedValueOnce(pending).mockResolvedValueOnce({ ...pending, status: 'PAID' });
+    (queryCheckInPayment as jest.Mock).mockResolvedValue('PAID');
+
+    const res = await withCookie(request(buildApp()).get('/checkin/ci-1'));
+
+    expect(queryCheckInPayment).toHaveBeenCalledWith('ci-1');
+    expect(res.body.status).toBe('PAID');
+  });
+
+  it('leaves it to the callback for the first 20 seconds', async () => {
+    mockFindCheckIn.mockResolvedValue(describedCheckIn({ createdAt: new Date(Date.now() - 5_000) }));
+    await withCookie(request(buildApp()).get('/checkin/ci-1'));
+    expect(queryCheckInPayment).not.toHaveBeenCalled();
+  });
+
+  it('keeps answering the poll if the query fails', async () => {
+    mockFindCheckIn.mockResolvedValue(describedCheckIn({ createdAt: new Date(Date.now() - 60_000) }));
+    (queryCheckInPayment as jest.Mock).mockRejectedValue(new Error('Daraja down'));
+    const res = await withCookie(request(buildApp()).get('/checkin/ci-1'));
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('PENDING_PAYMENT');
+  });
+
+  it('never queries a check-in that is already settled', async () => {
+    mockFindCheckIn.mockResolvedValue(
+      describedCheckIn({ status: 'PAID', createdAt: new Date(Date.now() - 60_000) }),
+    );
+    await withCookie(request(buildApp()).get('/checkin/ci-1'));
+    expect(queryCheckInPayment).not.toHaveBeenCalled();
   });
 });

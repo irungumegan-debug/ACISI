@@ -3,7 +3,11 @@ import { z } from 'zod';
 import dayjs from 'dayjs';
 import { prisma } from '../db/prisma';
 import { requireStaffSession, AuthenticatedRequest } from './auth';
-import { CheckInNotPendingError, confirmCheckInPaidManually } from '../services/checkInService';
+import {
+  CheckInNotPendingError,
+  confirmCheckInPaidManually,
+  InvalidMpesaCodeError,
+} from '../services/checkInService';
 import {
   CheckoutDeliveryMethod,
   EncounterNotReadyForCheckoutError,
@@ -19,13 +23,14 @@ checkinsRouter.use(requireStaffSession);
 
 /**
  * Initial snapshot of today's arrivals; live updates arrive via /events
- * (SSE) after this loads. Includes PENDING_PAYMENT and FAILED rows (not
+ * (SSE) after this loads. Includes PENDING_PAYMENT, FAILED and NEEDS_REVIEW rows (not
  * just PAID) so front desk can manually confirm the ACISI check-in fee
  * whenever the automated M-Pesa flow hasn't gone through yet or didn't
  * succeed, for any patient — CANCELLED check-ins aren't actionable so those
  * are still left out, and so is a FAILED one once the same patient has
  * paid (or walked in) at this clinic today. The dashboard shows the
- * remaining FAILED rows in a collapsed section, not the main queue.
+ * remaining FAILED rows, and NEEDS_REVIEW ones (always kept: the patient
+ * may have paid), in a collapsed section, not the main queue.
  */
 checkinsRouter.get('/today', async (req, res) => {
   const { clinicId, role, staffId } = (req as AuthenticatedRequest).dashboardSession;
@@ -38,7 +43,7 @@ checkinsRouter.get('/today', async (req, res) => {
     where: {
       clinicId,
       createdAt: { gte: startOfToday },
-      status: { in: ['PENDING_PAYMENT', 'PAID', 'FAILED', 'NO_FEE'] },
+      status: { in: ['PENDING_PAYMENT', 'PAID', 'FAILED', 'NEEDS_REVIEW', 'NO_FEE'] },
       ...departmentScope,
     },
     orderBy: { createdAt: 'desc' },
@@ -121,16 +126,33 @@ checkinsRouter.get('/today', async (req, res) => {
 /**
  * Real, permanent, audited manual confirmation of ACISI's own check-in fee
  * — rescues a check-in for any patient at any clinic when the automated
- * M-Pesa STK flow didn't go through. Never touches or replaces the STK
- * push flow itself.
+ * M-Pesa STK flow didn't go through. Staff must enter the M-Pesa
+ * transaction code from the patient's SMS; it's stored with who confirmed
+ * and when. Never touches or replaces the STK push flow itself.
  */
+const confirmPaymentSchema = z.object({ mpesaCode: z.string().trim().min(1).max(32) });
+
 checkinsRouter.post('/:id/confirm-payment', async (req, res) => {
+  const parsed = confirmPaymentSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Enter the M-Pesa code from the patient's SMS" });
+    return;
+  }
   const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
 
   try {
-    const checkIn = await confirmCheckInPaidManually(req.params.id as string, clinicId, staffId);
+    const checkIn = await confirmCheckInPaidManually(
+      req.params.id as string,
+      clinicId,
+      staffId,
+      parsed.data.mpesaCode,
+    );
     res.json({ checkInId: checkIn.id, status: checkIn.status });
   } catch (err) {
+    if (err instanceof InvalidMpesaCodeError) {
+      res.status(err.status).json({ error: err.message });
+      return;
+    }
     if (err instanceof CheckInNotPendingError) {
       res.status(409).json({ error: err.message });
       return;

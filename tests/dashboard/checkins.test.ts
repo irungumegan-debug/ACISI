@@ -9,6 +9,15 @@ jest.mock('../../src/dashboard/session', () => ({
 
 jest.mock('../../src/services/checkInService', () => ({
   confirmCheckInPaidManually: jest.fn(),
+  InvalidMpesaCodeError: class InvalidMpesaCodeError extends Error {
+    constructor(
+      message: string,
+      public status = 400,
+    ) {
+      super(message);
+      this.name = 'InvalidMpesaCodeError';
+    }
+  },
   CheckInNotPendingError: class CheckInNotPendingError extends Error {
     constructor() {
       super('This check-in is not awaiting payment');
@@ -46,7 +55,11 @@ jest.mock('../../src/db/prisma', () => ({
 }));
 
 import { loadDashboardSession, SESSION_COOKIE_NAME } from '../../src/dashboard/session';
-import { confirmCheckInPaidManually, CheckInNotPendingError } from '../../src/services/checkInService';
+import {
+  confirmCheckInPaidManually,
+  CheckInNotPendingError,
+  InvalidMpesaCodeError,
+} from '../../src/services/checkInService';
 import { checkoutEncounter, EncounterNotReadyForCheckoutError } from '../../src/services/encounterService';
 import { prisma } from '../../src/db/prisma';
 import { checkinsRouter } from '../../src/dashboard/checkins';
@@ -203,7 +216,7 @@ describe('GET /checkins/today', () => {
 
     expect(mockFindManyCheckIns).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ status: { in: ['PENDING_PAYMENT', 'PAID', 'FAILED', 'NO_FEE'] } }),
+        where: expect.objectContaining({ status: { in: ['PENDING_PAYMENT', 'PAID', 'FAILED', 'NEEDS_REVIEW', 'NO_FEE'] } }),
       }),
     );
   });
@@ -314,20 +327,48 @@ describe('GET /checkins/today', () => {
 });
 
 describe('POST /checkins/:id/confirm-payment', () => {
-  it('confirms payment and returns the updated status', async () => {
+  it("confirms payment with the M-Pesa code from the patient's SMS, attributed to the signed-in staff member", async () => {
     mockConfirmPaid.mockResolvedValue({ id: 'ci-1', status: 'PAID' });
 
-    const res = await withCookie(request(buildApp()).post('/checkins/ci-1/confirm-payment'));
+    const res = await withCookie(
+      request(buildApp()).post('/checkins/ci-1/confirm-payment').send({ mpesaCode: ' qab12cd34e ' }),
+    );
 
     expect(res.status).toBe(200);
-    expect(mockConfirmPaid).toHaveBeenCalledWith('ci-1', 'clinic-1', 'staff-1');
+    expect(mockConfirmPaid).toHaveBeenCalledWith('ci-1', 'clinic-1', 'staff-1', 'qab12cd34e');
     expect(res.body.status).toBe('PAID');
+  });
+
+  it('requires an M-Pesa code', async () => {
+    const res = await withCookie(request(buildApp()).post('/checkins/ci-1/confirm-payment').send({}));
+    expect(res.status).toBe(400);
+    expect(mockConfirmPaid).not.toHaveBeenCalled();
+  });
+
+  it('passes on a bad (400) or already-used (409) code', async () => {
+    mockConfirmPaid.mockRejectedValueOnce(new InvalidMpesaCodeError('Enter a valid M-Pesa code'));
+    mockConfirmPaid.mockRejectedValueOnce(
+      new InvalidMpesaCodeError('M-Pesa code QAB12CD34E has already been used for a payment', 409),
+    );
+
+    const bad = await withCookie(
+      request(buildApp()).post('/checkins/ci-1/confirm-payment').send({ mpesaCode: 'nope' }),
+    );
+    const used = await withCookie(
+      request(buildApp()).post('/checkins/ci-1/confirm-payment').send({ mpesaCode: 'QAB12CD34E' }),
+    );
+
+    expect(bad.status).toBe(400);
+    expect(used.status).toBe(409);
+    expect(used.body.error).toContain('already been used');
   });
 
   it('rejects a check-in that is not pending payment', async () => {
     mockConfirmPaid.mockRejectedValue(new CheckInNotPendingError());
 
-    const res = await withCookie(request(buildApp()).post('/checkins/ci-1/confirm-payment'));
+    const res = await withCookie(
+      request(buildApp()).post('/checkins/ci-1/confirm-payment').send({ mpesaCode: 'QAB12CD34E' }),
+    );
 
     expect(res.status).toBe(409);
   });

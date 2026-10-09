@@ -3,7 +3,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db/prisma';
 import { requirePatientSession, AuthenticatedPatientRequest } from './auth';
-import { initiateCheckIn } from '../services/checkInService';
+import { initiateCheckIn, queryCheckInPayment } from '../services/checkInService';
 import { getOwnVisitHistory } from '../services/patientService';
 import { recordAuditEvent } from '../services/auditService';
 import { buildVisitRecordDataFromEncounter, renderVisitRecordPdf } from '../services/visitRecordDocument';
@@ -15,6 +15,7 @@ import {
   preparePatientIdentity,
 } from '../services/patientIdentity';
 import { kenyaDayRange, kenyaToday } from '../utils/kenyaTime';
+import { errorSummary, logger } from '../utils/logger';
 
 export const portalCheckinRouter = Router();
 export const portalRecordsRouter = Router();
@@ -31,23 +32,19 @@ const checkinSchema = z.object({
   identity: patientIdentityInputSchema.optional(),
 });
 
-/**
- * How long a PENDING_PAYMENT check-in still counts as "in flight" for the
- * duplicate guard below. The STK prompt on the phone expires within about a
- * minute and the status worker asks Daraja 90s after the push, so a row
- * still pending after this is stuck (e.g. Daraja's query errored) — it must
- * not stop the patient checking in for the rest of the day.
- */
-const PENDING_CHECK_IN_WINDOW_MS = 5 * 60 * 1000;
+/** While the portal polls, start asking Safaricom about a still-pending check-in this long after the STK push. */
+const PORTAL_QUERY_AFTER_MS = 20 * 1000;
 
 /**
  * The patient's live check-in at this clinic today, if any: PAID with the
- * visit not yet finished, or PENDING_PAYMENT within the STK window. Checking
- * in again while one exists would only create a duplicate (and a second fee).
+ * visit not yet finished, or still PENDING_PAYMENT. Checking in again while
+ * one exists would only create a duplicate (and a second fee). A pending one
+ * can't block the patient for long: the status query settles it, or after
+ * an hour it becomes NEEDS_REVIEW, which doesn't block (front desk sorts it
+ * out from the patient's M-Pesa SMS).
  */
 async function findActiveCheckInToday(patientId: string, clinicId: string) {
   const { start } = kenyaDayRange(kenyaToday());
-  const pendingSince = new Date(Math.max(start.getTime(), Date.now() - PENDING_CHECK_IN_WINDOW_MS));
   return prisma.checkIn.findFirst({
     where: {
       patientId,
@@ -55,7 +52,7 @@ async function findActiveCheckInToday(patientId: string, clinicId: string) {
       OR: [
         // A finished visit (DONE) doesn't block coming back later the same day.
         { status: 'PAID', createdAt: { gte: start }, encounter: { status: { not: 'DONE' } } },
-        { status: 'PENDING_PAYMENT', createdAt: { gte: pendingSince } },
+        { status: 'PENDING_PAYMENT', createdAt: { gte: start } },
       ],
     },
     orderBy: { createdAt: 'desc' },
@@ -241,12 +238,29 @@ portalCheckinRouter.post('/', async (req, res) => {
  */
 portalCheckinRouter.get('/:checkInId', async (req, res) => {
   const { patientId } = (req as unknown as AuthenticatedPatientRequest).patientSession;
-  const described = await describeOwnCheckIn(req.params.checkInId as string, patientId);
-  if (!described) {
+  const checkInId = req.params.checkInId as string;
+  const own = await prisma.checkIn.findFirst({
+    where: { id: checkInId, patientId },
+    select: { status: true, createdAt: true },
+  });
+  if (!own) {
     res.status(404).json({ error: 'Check-in not found' });
     return;
   }
-  res.json(described);
+
+  // Don't rely on the callback alone: from ~20s after the STK push, ask
+  // Safaricom directly while the patient waits (throttled per check-in, and
+  // a no-op if the callback has already settled it).
+  if (own.status === 'PENDING_PAYMENT' && Date.now() - own.createdAt.getTime() >= PORTAL_QUERY_AFTER_MS) {
+    try {
+      await queryCheckInPayment(checkInId);
+    } catch (err) {
+      // The patient's page just keeps polling; the sweep tries again too.
+      logger.warn({ err: errorSummary(err), checkInId }, 'Check-in payment query from portal failed');
+    }
+  }
+
+  res.json(await describeOwnCheckIn(checkInId, patientId));
 });
 
 portalRecordsRouter.get('/', async (req, res) => {

@@ -340,16 +340,18 @@ export type RecordPaymentInput = PaymentBase &
 
 /**
  * Throws if this M-Pesa code is already recorded anywhere — as another
- * clinic payment, or as an ACISI check-in fee receipt. (A voided payment
+ * clinic payment, or as an ACISI check-in fee receipt (from M-Pesa, or
+ * entered by staff confirming the fee by hand). (A voided payment
  * releases its code, so a mistaken entry can be re-entered on the right bill.)
  */
 async function assertMpesaCodeUnused(tx: Tx, code: string): Promise<void> {
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`mpesa-code:${code}`}))`;
-  const [clinicPayment, feeReceipt] = await Promise.all([
+  const [clinicPayment, feeReceipt, manualFee] = await Promise.all([
     tx.payment.findUnique({ where: { mpesaReceiptNumber: code } }),
     tx.mpesaTransaction.findUnique({ where: { mpesaReceiptNumber: code } }),
+    tx.checkIn.findUnique({ where: { manualMpesaCode: code } }),
   ]);
-  if (clinicPayment || feeReceipt) throw new BillingError(`M-Pesa code ${code} has already been used for a payment`, 409);
+  if (clinicPayment || feeReceipt || manualFee) throw new BillingError(`M-Pesa code ${code} has already been used for a payment`, 409);
 }
 
 async function findBillForPayment(tx: Tx, billId: string, clinicId: string): Promise<Bill> {
