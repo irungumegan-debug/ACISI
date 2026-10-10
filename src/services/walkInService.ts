@@ -4,12 +4,13 @@ import { Patient, Prisma, Sex } from '@prisma/client';
 import { prisma } from '../db/prisma';
 import { smsClient } from '../config/africastalking';
 import { CONSENT_VERSION } from '../config/constants';
-import { logger } from '../utils/logger';
+import { errorSummary, logger } from '../utils/logger';
 import { InvalidPhoneNumberError, toE164 } from '../utils/phone';
 import { recordAuditEvent } from './auditService';
 import { findPatientByPhone, registerPatient } from './patientService';
 import { findActiveDepartment } from './departmentService';
 import { assignDoctorForCheckIn } from './doctorAssignmentService';
+import { DEMO_PATIENT_REAL_CLINIC_MESSAGE } from './demoGuard';
 import { findArrivalMatch, markAppointmentCompleted } from './appointmentService';
 import { publishWalkInCheckedIn } from './realtimeEvents';
 import { buildWalkInInviteSms } from './smsTemplates';
@@ -79,7 +80,14 @@ export interface WalkInLookupResult {
 /** Step 1 of the walk-in flow: is there already a patient with this phone number? */
 export async function lookupWalkInPatient(rawPhone: string, clinicId: string, staffId: string): Promise<WalkInLookupResult> {
   const phoneNumber = normalizeWalkInPhone(rawPhone);
-  const patient = await findPatientByPhone(phoneNumber);
+  const [patient, clinic] = await Promise.all([
+    findPatientByPhone(phoneNumber),
+    prisma.clinic.findUnique({ where: { id: clinicId }, select: { isDemo: true } }),
+  ]);
+  // A demo clinic only ever sees its own demo patients — never a real
+  // patient's name — and a real clinic never sees a demo patient.
+  if (clinic?.isDemo && patient?.demoClinicId !== clinicId) throw new WalkInError(DEMO_WALK_IN_MESSAGE, 400);
+  if (!clinic?.isDemo && patient?.demoClinicId) throw new WalkInError(DEMO_PATIENT_REAL_CLINIC_MESSAGE, 400);
   if (!patient) return { phoneNumber, patient: null, privacyNoticeAckRequired: true };
 
   const lastVisit = await prisma.encounter.findFirst({
@@ -259,6 +267,7 @@ function smsWasAccepted(response: unknown): boolean {
 async function sendWalkInInvite(patient: Patient, clinicName: string, staffId: string): Promise<WalkInSmsOutcome> {
   try {
     const response = await smsClient.send({ to: [patient.phoneNumber], message: buildWalkInInviteSms(clinicName) });
+    if (response === null) return 'not_requested'; // a demo patient: never sent
     if (!smsWasAccepted(response)) throw new Error('SMS rejected by provider');
     await recordAuditEvent({
       actorType: 'STAFF',
@@ -270,10 +279,14 @@ async function sendWalkInInvite(patient: Patient, clinicName: string, staffId: s
     });
     return 'sent';
   } catch (err) {
-    logger.error({ err, patientId: patient.id }, 'Failed to send walk-in invite SMS');
+    // errorSummary only: the provider's error can echo the phone number.
+    logger.error({ err: errorSummary(err), patientId: patient.id }, 'Failed to send walk-in invite SMS');
     return 'failed';
   }
 }
+
+export const DEMO_WALK_IN_MESSAGE =
+  "This is a demo clinic: only its demo patients can be checked in here. Use one of the demo patients' numbers.";
 
 /**
  * Checks a walk-in patient in: finds the patient by phone or registers them
@@ -300,11 +313,22 @@ export async function checkInWalkIn(input: WalkInCheckInInput): Promise<WalkInCh
   }
 
   const [clinic, department] = await Promise.all([
-    prisma.clinic.findUnique({ where: { id: input.clinicId }, select: { name: true, isActive: true } }),
+    prisma.clinic.findUnique({ where: { id: input.clinicId }, select: { name: true, isActive: true, isDemo: true } }),
     findActiveDepartment(input.departmentId, input.clinicId),
   ]);
   if (!clinic || !clinic.isActive) throw new WalkInError('Clinic not found', 404);
   if (!department) throw new WalkInError('Choose a department', 400);
+
+  // Demo clinics serve only their own demo patients, and a demo patient is
+  // never added to a real clinic's queue (see demoGuard.ts). Same message
+  // whether or not a real patient has this number, so nothing leaks.
+  const known = await findPatientByPhone(phoneNumber);
+  if (clinic.isDemo && known?.demoClinicId !== input.clinicId) {
+    throw new WalkInError(DEMO_WALK_IN_MESSAGE, 400);
+  }
+  if (!clinic.isDemo && known?.demoClinicId) {
+    throw new WalkInError(DEMO_PATIENT_REAL_CLINIC_MESSAGE, 400);
+  }
 
   const privacyNoticeExplained = Boolean(input.privacyNoticeExplained);
   const { patient, isNew } = await findOrCreatePatient(phoneNumber, input.newPatient, privacyNoticeExplained);

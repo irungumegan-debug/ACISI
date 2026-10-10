@@ -13,6 +13,7 @@ import { enqueueSmsReceipt } from '../jobs/queue';
 import { publishCheckInFailed, publishCheckInPaid } from './realtimeEvents';
 import { assignDoctorForCheckIn } from './doctorAssignmentService';
 import { findArrivalMatch, getAppointmentForArrival, markAppointmentCompleted } from './appointmentService';
+import { assertDemoBoundary, DEMO_CHECKIN_FEE_KES, isDemoClinic } from './demoGuard';
 
 interface InitiateCheckInInput {
   ussdSessionId: string;
@@ -42,12 +43,21 @@ interface InitiateCheckInResult {
  * on CheckIn, so if a dropped-session replay (src/ussd/session.ts) calls
  * this twice for the same session, the second call reuses the existing row
  * instead of double-charging the patient.
+ *
+ * At a demo clinic no STK push is ever sent: the check-in waits in
+ * PENDING_PAYMENT for the patient's simulated payment
+ * (simulateCheckInPayment). Throws DemoBoundaryError for a real patient at a
+ * demo clinic or a demo patient anywhere else (see demoGuard.ts).
  */
 export async function initiateCheckIn(input: InitiateCheckInInput): Promise<InitiateCheckInResult> {
   const existing = await prisma.checkIn.findUnique({ where: { ussdSessionId: input.ussdSessionId } });
   if (existing) {
     return { checkIn: existing, wasAlreadyInitiated: true };
   }
+
+  await assertDemoBoundary(input.patientId, input.clinicId);
+  const isDemo = await isDemoClinic(input.clinicId);
+  const amountKes = isDemo ? DEMO_CHECKIN_FEE_KES : env.CHECKIN_FEE_AMOUNT_KES;
 
   const appointmentId =
     input.appointmentId !== undefined
@@ -60,7 +70,7 @@ export async function initiateCheckIn(input: InitiateCheckInInput): Promise<Init
       clinicId: input.clinicId,
       departmentId: input.departmentId,
       ussdSessionId: input.ussdSessionId,
-      amountKes: env.CHECKIN_FEE_AMOUNT_KES,
+      amountKes,
       status: 'PENDING_PAYMENT',
       appointmentId,
     },
@@ -82,9 +92,12 @@ export async function initiateCheckIn(input: InitiateCheckInInput): Promise<Init
     metadata: { clinicId: input.clinicId, departmentId: input.departmentId, appointmentId },
   });
 
+  // Demo clinic: no M-Pesa prompt. The patient taps the simulated payment.
+  if (isDemo) return { checkIn, wasAlreadyInitiated: false };
+
   try {
     const stkResponse = await initiateStkPush({
-      amountKes: env.CHECKIN_FEE_AMOUNT_KES,
+      amountKes,
       phoneNumberE164: input.phoneNumberE164,
       // Daraja caps AccountReference at 12 chars.
       accountReference: checkIn.id.slice(-10),
@@ -104,7 +117,7 @@ export async function initiateCheckIn(input: InitiateCheckInInput): Promise<Init
 
     return { checkIn: updated, wasAlreadyInitiated: false };
   } catch (err) {
-    logger.error({ err, checkInId: checkIn.id }, 'STK push failed to initiate; marking check-in FAILED');
+    logger.error({ err: errorSummary(err), checkInId: checkIn.id }, 'STK push failed to initiate; marking check-in FAILED');
     const failed = await prisma.checkIn.update({ where: { id: checkIn.id }, data: { status: 'FAILED' } });
     // Without this, a staff member already watching the live queue would
     // never see this arrival until they manually reload the page — the row
@@ -117,7 +130,7 @@ export async function initiateCheckIn(input: InitiateCheckInInput): Promise<Init
 }
 
 /** Where a check-in's payment outcome came from — the only thing besides ids and codes that payment logs carry. */
-export type PaymentSource = 'callback' | 'query' | 'staff';
+export type PaymentSource = 'callback' | 'query' | 'staff' | 'simulated';
 
 /**
  * The one log line for every payment outcome, whatever its source. Only
@@ -206,7 +219,7 @@ async function claimPaid(
 export async function applyPaymentResult(
   parsed: ParsedStkCallback,
   rawPayload: unknown,
-  source: Exclude<PaymentSource, 'staff'> = 'callback',
+  source: 'callback' | 'query' = 'callback',
 ): Promise<{ checkInId: string; status: CheckInStatus } | null> {
   const checkIn = await prisma.checkIn.findUnique({
     where: { mpesaCheckoutRequestId: parsed.checkoutRequestId },
@@ -513,6 +526,41 @@ export async function confirmCheckInPaidManually(
 }
 
 /**
+ * The demo clinic's stand-in for M-Pesa: the patient taps "Pay KES 100
+ * (simulated)" and the check-in is paid exactly as a real payment would be
+ * (same claimPaid: visit created, doctor assigned, live queue updated), but
+ * nothing is charged and no M-Pesa record is made. Only for the patient's own
+ * PENDING_PAYMENT check-in at a demo clinic; anything else is refused.
+ */
+export async function simulateCheckInPayment(checkInId: string, patientId: string): Promise<CheckIn> {
+  const checkIn = await prisma.checkIn.findFirst({ where: { id: checkInId, patientId } });
+  if (!checkIn) throw new Error('Check-in not found');
+  if (!(await isDemoClinic(checkIn.clinicId))) throw new SimulatedPaymentNotAllowedError();
+
+  const updated = await claimPaid(checkIn, ['PENDING_PAYMENT', 'NEEDS_REVIEW']);
+  if (!updated) throw new CheckInNotPendingError();
+
+  await recordAuditEvent({
+    actorType: 'PATIENT',
+    actorId: patientId,
+    action: 'CHECK_IN_PAID_SIMULATED',
+    entityType: 'CheckIn',
+    entityId: checkIn.id,
+    metadata: { demo: true },
+  });
+  logPaymentOutcome(checkIn.id, 'simulated', null, 'PAID');
+  return updated;
+}
+
+/** A simulated payment asked for at a real clinic. */
+export class SimulatedPaymentNotAllowedError extends Error {
+  constructor() {
+    super('Simulated payments are only available at demo clinics');
+    this.name = 'SimulatedPaymentNotAllowedError';
+  }
+}
+
+/**
  * Dev-only convenience for local testing without a real M-Pesa sandbox —
  * never used by the real, staff-audited manual payment confirmation feature
  * above (confirmCheckInPaidManually). Callers (scripts/devMarkCheckInPaid.ts)
@@ -565,6 +613,10 @@ export async function checkInPatientForAppointment(
     phoneNumberE164: appointment.phoneNumberE164,
     appointmentId: appointment.id,
   });
+  // A demo clinic has no M-Pesa: settle the fee as simulated straight away.
+  if (!result.wasAlreadyInitiated && result.checkIn.status === 'PENDING_PAYMENT' && (await isDemoClinic(clinicId))) {
+    result.checkIn = await simulateCheckInPayment(result.checkIn.id, appointment.patientId);
+  }
 
   await recordAuditEvent({
     actorType: 'STAFF',

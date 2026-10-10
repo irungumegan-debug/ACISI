@@ -5,7 +5,8 @@ import { findPatientByPhone, registerPatient } from '../../services/patientServi
 import { initiateCheckIn } from '../../services/checkInService';
 import { env } from '../../config/env';
 import { CONSENT_PROMPT_TEXT, CROSS_CLINIC_CONSENT_PROMPT_TEXT } from '../../config/constants';
-import { logger } from '../../utils/logger';
+import { errorSummary, logger } from '../../utils/logger';
+import { DemoBoundaryError } from '../../services/demoGuard';
 
 const CURRENT_YEAR = new Date().getFullYear();
 
@@ -158,7 +159,8 @@ export const checkinConfirm: UssdStateHandler = async (session, input) => {
       continueSession: false,
     };
   } catch (err) {
-    logger.error({ err, sessionId: session.sessionId }, 'Failed to initiate check-in');
+    if (err instanceof DemoBoundaryError) return { response: `END ${err.message}`, continueSession: false };
+    logger.error({ err: errorSummary(err), sessionId: session.sessionId }, 'Failed to initiate check-in');
     return { response: 'END We could not start the payment request. Please try again shortly.', continueSession: false };
   }
 };

@@ -80,7 +80,9 @@ describe('prepareDepartmentList (registration)', () => {
 
   it('rejects duplicate and badly formed codes, bad names and bad fees', () => {
     expect(() => prepareDepartmentList([{ name: 'A1', code: 'XY' }, { name: 'B1', code: 'xy' }])).toThrow('used twice');
-    expect(() => prepareDepartmentList([{ name: 'General', code: 'TOOLONG1' }])).toThrow('2–6 capital letters');
+    expect(() => prepareDepartmentList([{ name: 'General', code: 'TOOLONG1' }])).toThrow('1–6 capital letters');
+    // One-letter codes are fine (e.g. G for General).
+    expect(prepareDepartmentList([{ name: 'General', code: 'g' }])[0]!.code).toBe('G');
     expect(() => prepareDepartmentList([{ name: 'G' }])).toThrow('at least 2 characters');
     expect(() => prepareDepartmentList([{ name: 'General', consultationFeeKes: 99.5 }])).toThrow('whole number');
   });

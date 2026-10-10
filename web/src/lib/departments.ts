@@ -1,5 +1,5 @@
 /** Mirrors src/services/departmentService.ts so the form can suggest the same codes the server would. */
-export const CODE_PATTERN = /^[A-Z0-9]{2,6}$/;
+export const CODE_PATTERN = /^[A-Z0-9]{1,6}$/;
 
 export const SUGGESTED_DEPARTMENTS = ['General', 'Dental', 'Orthodontics', 'Gynecology', 'Paediatrics', 'Laboratory', 'Pharmacy', 'Eye Clinic'];
 

@@ -159,8 +159,9 @@ function CheckInPanel({ patientCode }: { patientCode: string }) {
   }, [clinicId]);
 
   // Polls the check-in while we wait for M-Pesa. Stops on PAID/FAILED, after
-  // PAYMENT_POLL_TIMEOUT_MS, or when the patient leaves this screen.
-  const waitingCheckInId = stage?.kind === 'waiting' ? stage.checkIn.checkInId : null;
+  // PAYMENT_POLL_TIMEOUT_MS, or when the patient leaves this screen. A demo
+  // clinic's simulated payment has nothing to wait for.
+  const waitingCheckInId = stage?.kind === 'waiting' && !stage.checkIn.simulatedPayment ? stage.checkIn.checkInId : null;
   useEffect(() => {
     if (!waitingCheckInId) return;
     let stopped = false;
@@ -226,6 +227,46 @@ function CheckInPanel({ patientCode }: { patientCode: string }) {
     }
   }
 
+  async function handleSimulatedPayment(checkInId: string): Promise<void> {
+    setError(null);
+    setSubmitting(true);
+    try {
+      const checkIn = await api.simulateCheckInPayment(checkInId);
+      if (checkIn.status === 'PAID') setStage({ kind: 'paid', checkIn, existing: false });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (stage?.kind === 'waiting' && stage.checkIn.simulatedPayment) {
+    const { checkIn } = stage;
+    return (
+      <div className="panel confirm" role="status" aria-live="polite">
+        <div className="badge">
+          <Smartphone size={28} aria-hidden />
+        </div>
+        <h2>Pay the check-in fee</h2>
+        <p>
+          {checkIn.clinicName} · {checkIn.departmentName}
+        </p>
+        <p className="demo-note">
+          <strong>Demo clinic:</strong> this payment is simulated. Nothing is charged and no M-Pesa prompt is sent.
+        </p>
+        {error && <p className="error-text">{error}</p>}
+        <button
+          className="btn btn-primary"
+          style={{ marginTop: 16 }}
+          disabled={submitting}
+          onClick={() => void handleSimulatedPayment(checkIn.checkInId)}
+        >
+          {submitting ? 'Paying…' : `Pay KES ${checkIn.amountKes} (simulated)`}
+        </button>
+      </div>
+    );
+  }
+
   if (stage?.kind === 'waiting') {
     return (
       <div className="panel confirm" role="status" aria-live="polite">
@@ -256,7 +297,10 @@ function CheckInPanel({ patientCode }: { patientCode: string }) {
         {checkIn.queuePosition !== null && (
           <p>{checkIn.queuePosition === 1 ? 'You’re next in line.' : `You’re number ${checkIn.queuePosition} in the queue.`}</p>
         )}
-        <p>Payment received. Show your patient ID at the front desk when you arrive.</p>
+        <p>
+          {checkIn.simulatedPayment ? 'Simulated payment recorded: nothing was charged.' : 'Payment received.'} Show your patient ID at the
+          front desk when you arrive.
+        </p>
       </div>
     );
   }

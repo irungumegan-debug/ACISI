@@ -147,10 +147,23 @@ model Clinic {
   /// signups, but never affects staff who already joined with it.
   inviteCode String   @unique
   isActive   Boolean  @default(true)
+  /// A demo clinic for showing ACISI to a prospective clinic (see
+  /// src/services/demoClinicService.ts and demoGuard.ts). Hidden from the
+  /// public clinic list and USSD (reachable only through its demo link),
+  /// left out of every owner-site total, serves only its own demo patients,
+  /// and never sends an SMS or M-Pesa prompt: payments are simulated.
+  isDemo     Boolean  @default(false)
+  /// Short slug for a demo clinic, e.g. "alina": the patient link is
+  /// acisi.co.ke/patient?demo=<key>. Set only when isDemo.
+  demoKey    String?  @unique
+  /// The parameters the demo was seeded with (name, location, departments,
+  /// logins), so `npm run demo -- reset <key>` can rebuild it. Only when isDemo.
+  demoConfig Json?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
   staff            Staff[]
+  demoPatients     Patient[]
   checkIns         CheckIn[]
   encounters       Encounter[]
   departments      Department[]
@@ -317,6 +330,11 @@ model Patient {
   /// behalf. Phone is E.164. Wiped on account deletion.
   nextOfKinName      String?
   nextOfKinPhone     String?
+  /// Set only on a demo clinic's fake patients: the demo clinic they belong
+  /// to. They can only check in or book there, never get an SMS or M-Pesa
+  /// prompt, and are removed with the demo. Real patients never have it.
+  demoClinicId       String?
+  demoClinic         Clinic?        @relation(fields: [demoClinicId], references: [id])
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt
 

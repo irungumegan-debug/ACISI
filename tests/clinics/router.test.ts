@@ -175,7 +175,7 @@ describe('POST /clinics/register', () => {
     expect(dup.body.error).toContain('GEN');
     const bad = await request(buildApp())
       .post('/clinics/register')
-      .send({ ...VALID, departments: [{ name: 'General', code: 'G' }] });
+      .send({ ...VALID, departments: [{ name: 'General', code: 'TOOLONG1' }] });
     expect(bad.status).toBe(400);
     expect(mockRegisterClinic).not.toHaveBeenCalled();
   });

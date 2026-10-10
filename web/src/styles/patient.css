@@ -421,6 +421,15 @@
   max-width: 40ch;
   color: var(--ink-500);
 }
+.patient-portal .confirm .demo-note {
+  margin: 14px auto 0;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  background: var(--gold-tint);
+  border: 1px dashed var(--gold-500);
+  color: var(--navy-900);
+  font-size: 14.5px;
+}
 .patient-portal .confirm .spin {
   animation: patient-spin 1s linear infinite;
 }

@@ -234,6 +234,9 @@ export class EncounterNotReadyForCheckoutError extends Error {
  * on file (re-checked here, not just trusted from the request, in case it
  * changed since the checkout screen loaded) AND email delivery is
  * configured at all. None of that ever gates or affects the SMS send.
+ *
+ * At a demo clinic nothing is sent at all: the summary is what the patient
+ * sees under "My records" in their ACISI account (see demoGuard.ts).
  */
 export async function checkoutEncounter(
   encounterId: string,
@@ -243,7 +246,7 @@ export async function checkoutEncounter(
 ): Promise<Encounter> {
   const encounter = await prisma.encounter.findFirst({
     where: { id: encounterId, clinicId },
-    include: { patient: { select: { email: true } } },
+    include: { patient: { select: { email: true } }, clinic: { select: { isDemo: true } } },
   });
   if (!encounter) {
     throw new Error('Visit not found');
@@ -266,6 +269,8 @@ export async function checkoutEncounter(
     entityId: encounter.id,
     metadata: { deliveryMethod },
   });
+
+  if (encounter.clinic.isDemo) return updated;
 
   await enqueueVisitSummarySms({ encounterId: encounter.id });
 
