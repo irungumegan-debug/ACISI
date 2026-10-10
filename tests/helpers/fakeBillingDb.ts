@@ -42,9 +42,12 @@ export function createFakeBillingDb() {
   };
   const PAYMENT_UNIQUE = ['idempotencyKey', 'mpesaReceiptNumber', 'mpesaCheckoutRequestId'];
 
+  const state = { demo: false };
   const db: any = {
     $executeRaw: async () => 0,
     $transaction: async (fn: (tx: any) => unknown) => fn(db),
+    // Every visit is at clinic-A; markDemo() makes it a demo clinic.
+    clinic: { findUnique: async () => ({ isDemo: state.demo }) },
     clinicPaymentSettings: { findUnique: async ({ where }: any) => settings.find((s) => s.clinicId === where.clinicId) ?? null },
     mpesaTransaction: { findUnique: async ({ where }: any) => mpesaTransactions.find((t) => t.mpesaReceiptNumber === where.mpesaReceiptNumber) ?? null },
     checkIn: { findUnique: async ({ where }: any) => manualFeeCheckIns.find((c) => c.manualMpesaCode === where.manualMpesaCode) ?? null },
@@ -64,7 +67,7 @@ export function createFakeBillingDb() {
         const encounter = encounters.find((e) => e.id === b.encounterId);
         return {
           ...b,
-          clinic: { name: encounter?.clinic.name },
+          clinic: { name: encounter?.clinic.name, isDemo: encounter?.clinic.isDemo ?? false },
           encounter: { ...encounter, patient: encounter?.patient },
           payments: payments.filter((p) => p.billId === b.id && matches(p, include.payments?.where)),
         };
@@ -161,13 +164,17 @@ export function createFakeBillingDb() {
     manualFeeCheckIns,
     encounters,
     settings,
+    /** Makes clinic-A a demo clinic (call before addVisit). */
+    markDemo() {
+      state.demo = true;
+    },
     addVisit(overrides: Partial<{ status: string; smsOptOut: boolean }> = {}) {
       const encounter = {
         id: id('enc'),
         clinicId: 'clinic-A',
         status: overrides.status ?? 'READY_FOR_CHECKOUT',
         patient: { id: 'p-1', phoneNumber: '+254712345678', patientCode: 'ACI-7F2K', smsOptOut: overrides.smsOptOut ?? false, deletedAt: null },
-        clinic: { name: 'Sunrise Family Clinic' },
+        clinic: { name: 'Sunrise Family Clinic', isDemo: state.demo },
       };
       encounters.push(encounter);
       return encounter;

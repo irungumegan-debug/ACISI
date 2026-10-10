@@ -24,7 +24,7 @@ import {
   DashboardSession,
   SESSION_COOKIE_NAME,
 } from './session';
-import { logger } from '../utils/logger';
+import { errorSummary, logger } from '../utils/logger';
 
 export interface AuthenticatedRequest extends Request {
   dashboardSession: DashboardSession;
@@ -158,7 +158,7 @@ authRouter.post('/forgot-pin', async (req, res) => {
     try {
       await requestStaffPinResetOtp(staff);
     } catch (err) {
-      logger.error({ err }, 'Failed to send staff PIN reset OTP');
+      logger.error({ err: errorSummary(err) }, 'Failed to send staff PIN reset OTP');
     }
   }
 

@@ -1,3 +1,5 @@
+import { currentDemoKey } from './demoLink';
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -66,6 +68,10 @@ export interface CheckInSummary {
   status: CheckInStatus;
   clinicName: string;
   departmentName: string;
+  /** ACISI's check-in fee for this visit, in KES. */
+  amountKes: number;
+  /** A demo clinic: no M-Pesa prompt, the patient taps a simulated payment (simulateCheckInPayment). */
+  simulatedPayment: boolean;
   /** 1 = next in line. Null when not known (not paid yet, or already with the doctor). */
   queuePosition: number | null;
 }
@@ -78,8 +84,10 @@ export interface StaffSessionSummary {
 
 export const api = {
   // ---- Clinics ----
+  /** Public clinic list; a demo link's key (see lib/demoLink.ts) lists just that demo clinic. */
   listClinics() {
-    return request<{ clinics: ClinicListItem[] }>('/clinics');
+    const demoKey = currentDemoKey();
+    return request<{ clinics: ClinicListItem[] }>(demoKey ? `/clinics?demo=${encodeURIComponent(demoKey)}` : '/clinics');
   },
 
   registerClinic(input: {
@@ -202,6 +210,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ clinicId, departmentId, privacyNoticeAcknowledged, identity }),
     });
+  },
+
+  /** Demo clinics only: pays the check-in fee by simulation. Nothing is charged. */
+  simulateCheckInPayment(checkInId: string) {
+    return request<CheckInSummary>(`/patients/checkin/${encodeURIComponent(checkInId)}/simulate-payment`, { method: 'POST' });
   },
 
   /** Polled after the M-Pesa prompt is sent, until the check-in is PAID or FAILED. */

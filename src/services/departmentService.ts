@@ -13,7 +13,7 @@ import { recordAuditEvent } from './auditService';
 export const DEPARTMENT_NAME_MAX = 60;
 export const MAX_DEPARTMENTS_PER_CLINIC = 50;
 export const MAX_DEPARTMENT_FEE_KES = 1_000_000;
-const CODE_PATTERN = /^[A-Z0-9]{2,6}$/;
+const CODE_PATTERN = /^[A-Z0-9]{1,6}$/;
 
 export class DepartmentError extends Error {
   constructor(
@@ -79,7 +79,7 @@ function assertValidName(name: string): void {
 }
 
 function assertValidCode(code: string): void {
-  if (!CODE_PATTERN.test(code)) throw new DepartmentError('Short codes are 2–6 capital letters or numbers, e.g. GEN or BRC');
+  if (!CODE_PATTERN.test(code)) throw new DepartmentError('Short codes are 1–6 capital letters or numbers, e.g. G or GEN');
 }
 
 function assertValidFee(fee: number | null | undefined): void {

@@ -66,13 +66,15 @@ ownerClinicsRouter.get('/', async (req, res) => {
       county: c.county,
       ussdCode: c.ussdCode,
       isActive: c.isActive,
+      isDemo: c.isDemo,
       createdAt: c.createdAt,
       doctorCount: doctors.get(c.id) ?? 0,
       staffCount: otherStaff.get(c.id) ?? 0,
       visitCount: visitTotal.get(c.id) ?? 0,
       visitsLast30Days: visitLast30.get(c.id) ?? 0,
-      revenueKes: revenueTotal.get(c.id) ?? 0,
-      revenueLast30DaysKes: revenueLast30.get(c.id) ?? 0,
+      // A demo clinic's check-in fees are simulated: never revenue.
+      revenueKes: c.isDemo ? 0 : (revenueTotal.get(c.id) ?? 0),
+      revenueLast30DaysKes: c.isDemo ? 0 : (revenueLast30.get(c.id) ?? 0),
     })),
   });
 });
@@ -129,8 +131,9 @@ ownerClinicsRouter.get('/:id', async (req, res) => {
     visitCount: visitsAll,
     visitsLast30Days: visits30,
     upcomingAppointments,
-    revenueKes: Number(revenueAll._sum.amountKes ?? 0),
-    revenueLast30DaysKes: Number(revenue30._sum.amountKes ?? 0),
+    // A demo clinic's check-in fees are simulated: never revenue.
+    revenueKes: clinic.isDemo ? 0 : Number(revenueAll._sum.amountKes ?? 0),
+    revenueLast30DaysKes: clinic.isDemo ? 0 : Number(revenue30._sum.amountKes ?? 0),
     departments: clinic.departments.map((d) => ({ id: d.id, name: d.name, code: d.code, isActive: d.isActive })),
     staff: clinic.staff.map((s) => ({
       id: s.id,

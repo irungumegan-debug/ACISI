@@ -260,8 +260,13 @@ export interface CheckoutView {
   encounterId: string;
   checkInId: string;
   visitStatus: EncounterStatus;
+  /** A demo clinic: M-Pesa requests are simulated (recorded at once, nothing charged) and no SMS is sent. */
+  isDemo: boolean;
   patient: { id: string; name: string; patientCode: string; phoneNumber: string; smsOptOut: boolean };
   departmentName: string;
+  /** What the doctor prescribed (never the diagnosis) and who signed it. */
+  prescription: string | null;
+  prescribedBy: string | null;
   /** The visit's department; its own fee (if set) pre-fills the consultation line. */
   department: { id: string; name: string; consultationFeeKes: number | null };
   settings: {

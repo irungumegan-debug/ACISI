@@ -400,3 +400,29 @@ describe('receipt SMS', () => {
     expect(mockSend).not.toHaveBeenCalled();
   });
 });
+
+describe('demo clinic checkout', () => {
+  beforeEach(() => mockDb.markDemo());
+
+  it('records "Request payment" as a simulated M-Pesa payment at once: no prompt, no SMS receipt', async () => {
+    const { clinicStkConfigured } = jest.requireMock('../../src/mpesa/clinicStk');
+    (clinicStkConfigured as jest.Mock).mockReturnValue(false); // works even with no Daraja set up
+    const { bill } = await billFor([1000, 450]);
+    const { payment } = await requestStkPayment({ ...base, billId: bill.id, idempotencyKey: key(), amountKes: 1450 });
+
+    expect(payment).toMatchObject({ status: 'SUCCEEDED', method: 'MPESA_STK', reference: 'SIMULATED', mpesaReceiptNumber: null });
+    expect(payment.resultDesc).toMatch(/Simulated.*nothing was charged/);
+    expect(billNow(bill.id)).toMatchObject({ status: 'PAID', paidKes: 1450 });
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(scheduleClinicStkStatusCheck).not.toHaveBeenCalled();
+    expect(mockSend).not.toHaveBeenCalled();
+    (clinicStkConfigured as jest.Mock).mockReturnValue(true);
+  });
+
+  it('never texts a receipt for cash at a demo clinic', async () => {
+    const { bill } = await billFor([1000]);
+    await recordPayment({ ...base, billId: bill.id, idempotencyKey: key(), method: 'CASH', tenderedKes: 1000 });
+    expect(billNow(bill.id).status).toBe('PAID');
+    expect(mockSend).not.toHaveBeenCalled();
+  });
+});

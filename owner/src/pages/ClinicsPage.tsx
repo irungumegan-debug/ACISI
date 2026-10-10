@@ -4,7 +4,7 @@ import { api, ClinicListItem } from '../lib/api';
 import { formatDate, formatKes } from '../lib/format';
 import { useDebounced } from '../lib/useDebounced';
 import { useLoad } from '../lib/useLoad';
-import { ActiveBadge, Card, Empty, ErrorText, Loading, PageHeader, SearchBox, TableWrap, td, th } from '../components/ui';
+import { ActiveBadge, Badge, Card, Empty, ErrorText, Loading, PageHeader, SearchBox, TableWrap, td, th } from '../components/ui';
 
 type SortKey = 'revenueKes' | 'revenueLast30DaysKes' | 'visitsLast30Days' | 'doctorCount' | 'createdAt' | 'name';
 
@@ -89,7 +89,10 @@ export function ClinicsPage() {
                     <td className={`${td} text-right tabular-nums`}>{c.staffCount}</td>
                     <td className={`${td} whitespace-nowrap`}>{formatDate(c.createdAt)}</td>
                     <td className={td}>
-                      <ActiveBadge isActive={c.isActive} />
+                      <span className="inline-flex flex-wrap gap-1">
+                        <ActiveBadge isActive={c.isActive} />
+                        {c.isDemo && <Badge tone="blue">Demo</Badge>}
+                      </span>
                     </td>
                   </tr>
                 ))}
