@@ -27,7 +27,7 @@ import {
   PatientSession,
   PATIENT_SESSION_COOKIE_NAME,
 } from './session';
-import { errorSummary, logger } from '../utils/logger';
+import { logger } from '../utils/logger';
 
 export interface AuthenticatedPatientRequest extends Request {
   patientSession: PatientSession;
@@ -229,7 +229,7 @@ portalAuthRouter.post('/forgot-pin', async (req, res) => {
     try {
       await requestPinResetOtp(patient);
     } catch (err) {
-      logger.error({ err: errorSummary(err) }, 'Failed to send PIN reset OTP');
+      logger.error({ err }, 'Failed to send PIN reset OTP');
     }
   }
 

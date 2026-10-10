@@ -10,7 +10,6 @@ import {
   listOwnAppointments,
   requestAppointment,
 } from '../services/appointmentService';
-import { DemoBoundaryError } from '../services/demoGuard';
 
 export const portalAppointmentsRouter = Router();
 
@@ -67,10 +66,6 @@ portalAppointmentsRouter.post('/', async (req, res) => {
   } catch (err) {
     if (err instanceof PastScheduledTimeError) {
       res.status(400).json({ error: err.message });
-      return;
-    }
-    if (err instanceof DemoBoundaryError) {
-      res.status(403).json({ error: err.message });
       return;
     }
     throw err;

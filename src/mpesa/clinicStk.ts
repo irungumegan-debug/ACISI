@@ -4,7 +4,6 @@ import { env } from '../config/env';
 import { redis } from '../config/redis';
 import { toDarajaFormat } from '../utils/phone';
 import { darajaTimestamp, logDarajaError } from './daraja';
-import { DemoRecipientError, isDemoRecipient } from '../services/demoGuard';
 
 /**
  * STK push for CLINIC checkout payments — money goes to the clinic, never to
@@ -63,8 +62,6 @@ export interface ClinicStkRequest {
 }
 
 export async function sendClinicStkPush(request: ClinicStkRequest): Promise<{ checkoutRequestId: string; merchantRequestId: string }> {
-  // Never prompt a demo clinic's fake patients or staff (see demoGuard.ts).
-  if (await isDemoRecipient(request.phoneNumberE164)) throw new DemoRecipientError();
   const timestamp = darajaTimestamp();
   const phone = toDarajaFormat(request.phoneNumberE164);
   const token = await getClinicAccessToken();

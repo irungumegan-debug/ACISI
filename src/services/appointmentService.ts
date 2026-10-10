@@ -2,7 +2,6 @@ import dayjs from 'dayjs';
 import { Appointment, AppointmentStatus } from '@prisma/client';
 import { prisma } from '../db/prisma';
 import { recordAuditEvent } from './auditService';
-import { assertDemoBoundary } from './demoGuard';
 
 /** Statuses from which an appointment can still be acted on — anything before its outcome is decided. */
 const OPEN_STATUSES: AppointmentStatus[] = ['REQUESTED', 'CONFIRMED'];
@@ -46,7 +45,6 @@ export async function requestAppointment(input: RequestAppointmentInput): Promis
   if (input.scheduledFor.getTime() <= Date.now()) {
     throw new PastScheduledTimeError();
   }
-  await assertDemoBoundary(input.patientId, input.clinicId);
 
   const appointment = await prisma.appointment.create({
     data: {

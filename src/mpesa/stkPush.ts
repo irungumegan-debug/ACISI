@@ -2,7 +2,6 @@ import { env } from '../config/env';
 import { toDarajaFormat } from '../utils/phone';
 import { darajaClient, darajaPassword, darajaTimestamp, logDarajaError } from './daraja';
 import { StkPushRequest, StkPushResponse } from './types';
-import { DemoRecipientError, isDemoRecipient } from '../services/demoGuard';
 
 /**
  * Triggers an M-Pesa STK push (Lipa Na M-Pesa Online) prompt on the
@@ -10,8 +9,6 @@ import { DemoRecipientError, isDemoRecipient } from '../services/demoGuard';
  * the *actual* payment result arrives later via the callback route, not here.
  */
 export async function initiateStkPush(request: StkPushRequest): Promise<StkPushResponse> {
-  // Never prompt a demo clinic's fake patients or staff (see demoGuard.ts).
-  if (await isDemoRecipient(request.phoneNumberE164)) throw new DemoRecipientError();
   const timestamp = darajaTimestamp();
   const password = darajaPassword(timestamp);
   const phone = toDarajaFormat(request.phoneNumberE164);

@@ -71,9 +71,8 @@ function describedCheckIn(overrides: Record<string, unknown> = {}) {
     id: 'ci-1',
     status: 'PENDING_PAYMENT',
     departmentId: 'dept-1',
-    clinic: { name: 'Sunrise Family Clinic', isDemo: false },
+    clinic: { name: 'Sunrise Family Clinic' },
     department: { name: 'General' },
-    amountKes: 100,
     encounter: null,
     createdAt: new Date(),
     ...overrides,
@@ -286,8 +285,6 @@ describe('web check-in: one check-in per clinic per day, and status polling', ()
       status: 'PENDING_PAYMENT',
       clinicName: 'Sunrise Family Clinic',
       departmentName: 'General',
-      amountKes: 100,
-      simulatedPayment: false,
       queuePosition: null,
       existing: false,
     });
@@ -346,8 +343,6 @@ describe('web check-in: one check-in per clinic per day, and status polling', ()
       status: 'FAILED',
       clinicName: 'Sunrise Family Clinic',
       departmentName: 'General',
-      amountKes: 100,
-      simulatedPayment: false,
       queuePosition: null,
     });
     expect(mockFindCheckIn.mock.calls[0][0].where).toEqual({ id: 'ci-1', patientId: 'patient-1' });

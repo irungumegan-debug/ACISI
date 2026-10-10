@@ -5,12 +5,6 @@ jest.mock('../../src/db/prisma', () => ({
 }));
 
 jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
-jest.mock('../../src/services/demoGuard', () => ({
-  ...jest.requireActual('../../src/services/demoGuard'),
-  // Real clinics and real patients: the demo rules are covered in demoGuard.test.ts.
-  assertDemoBoundary: jest.fn(),
-  isDemoClinic: jest.fn(async () => false),
-}));
 
 import { prisma } from '../../src/db/prisma';
 import { recordAuditEvent } from '../../src/services/auditService';

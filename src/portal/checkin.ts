@@ -3,14 +3,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db/prisma';
 import { requirePatientSession, AuthenticatedPatientRequest } from './auth';
-import {
-  CheckInNotPendingError,
-  initiateCheckIn,
-  queryCheckInPayment,
-  simulateCheckInPayment,
-  SimulatedPaymentNotAllowedError,
-} from '../services/checkInService';
-import { DemoBoundaryError } from '../services/demoGuard';
+import { initiateCheckIn, queryCheckInPayment } from '../services/checkInService';
 import { getOwnVisitHistory } from '../services/patientService';
 import { recordAuditEvent } from '../services/auditService';
 import { buildVisitRecordDataFromEncounter, renderVisitRecordPdf } from '../services/visitRecordDocument';
@@ -101,7 +94,7 @@ async function describeOwnCheckIn(checkInId: string, patientId: string) {
   const checkIn = await prisma.checkIn.findFirst({
     where: { id: checkInId, patientId },
     include: {
-      clinic: { select: { name: true, isDemo: true } },
+      clinic: { select: { name: true } },
       department: { select: { name: true } },
       encounter: {
         select: { id: true, clinicId: true, status: true, assignedDoctorId: true, createdAt: true },
@@ -114,9 +107,6 @@ async function describeOwnCheckIn(checkInId: string, patientId: string) {
     status: checkIn.status,
     clinicName: checkIn.clinic.name,
     departmentName: checkIn.department.name,
-    amountKes: Number(checkIn.amountKes),
-    /** A demo clinic: no M-Pesa prompt; the patient taps the simulated payment instead. */
-    simulatedPayment: checkIn.clinic.isDemo,
     queuePosition: checkIn.encounter ? await queuePositionFor(checkIn.encounter, checkIn.departmentId) : null,
   };
 }
@@ -215,23 +205,14 @@ portalCheckinRouter.post('/', async (req, res) => {
     });
   }
 
-  let checkIn;
-  try {
-    ({ checkIn } = await initiateCheckIn({
-      ussdSessionId: `WEB-${crypto.randomUUID()}`,
-      patientId: patient.id,
-      clinicId: clinic.id,
-      clinicName: clinic.name,
-      departmentId: department.id,
-      phoneNumberE164: patient.phoneNumber,
-    }));
-  } catch (err) {
-    if (err instanceof DemoBoundaryError) {
-      res.status(403).json({ error: err.message });
-      return;
-    }
-    throw err;
-  }
+  const { checkIn } = await initiateCheckIn({
+    ussdSessionId: `WEB-${crypto.randomUUID()}`,
+    patientId: patient.id,
+    clinicId: clinic.id,
+    clinicName: clinic.name,
+    departmentId: department.id,
+    phoneNumberE164: patient.phoneNumber,
+  });
 
   if (acknowledgmentRequired) {
     await recordLegalAcceptances(['PRIVACY_NOTICE'], 'PATIENT_WEB_CHECKIN', {
@@ -279,33 +260,6 @@ portalCheckinRouter.get('/:checkInId', async (req, res) => {
     }
   }
 
-  res.json(await describeOwnCheckIn(checkInId, patientId));
-});
-
-/**
- * Demo clinics only: the patient's simulated payment of the check-in fee
- * (see checkInService.simulateCheckInPayment). Nothing is charged. Refused
- * at a real clinic, and for anyone else's check-in (404).
- */
-portalCheckinRouter.post('/:checkInId/simulate-payment', async (req, res) => {
-  const { patientId } = (req as unknown as AuthenticatedPatientRequest).patientSession;
-  const checkInId = req.params.checkInId as string;
-  try {
-    await simulateCheckInPayment(checkInId, patientId);
-  } catch (err) {
-    if (err instanceof SimulatedPaymentNotAllowedError) {
-      res.status(403).json({ error: err.message });
-      return;
-    }
-    // Already paid (a double tap): just report where it stands.
-    if (!(err instanceof CheckInNotPendingError)) {
-      if (err instanceof Error && err.message === 'Check-in not found') {
-        res.status(404).json({ error: 'Check-in not found' });
-        return;
-      }
-      throw err;
-    }
-  }
   res.json(await describeOwnCheckIn(checkInId, patientId));
 });
 
