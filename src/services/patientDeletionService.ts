@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../db/prisma';
 import { smsClient } from '../config/africastalking';
 import { CONSENT_VERSION } from '../config/constants';
-import { errorSummary, logger } from '../utils/logger';
+import { logger } from '../utils/logger';
 import { recordAuditEvent } from './auditService';
 import { revokeSessionsFor } from './sessionRevocation';
 
@@ -141,6 +141,6 @@ export async function deletePatientAccount(patientId: string, actor: PatientDele
         'To use ACISI again, simply register as a new patient.',
     });
   } catch (err) {
-    logger.error({ err: errorSummary(err), patientId }, 'Failed to send account deletion confirmation SMS');
+    logger.error({ err, patientId }, 'Failed to send account deletion confirmation SMS');
   }
 }

@@ -55,50 +55,6 @@ Database migrations run automatically on start (`prisma migrate deploy`).
 If the service files in `deploy/` changed, copy them again (see "Install
 or update the backup job").
 
-## Demo clinics
-
-A demo clinic is ACISI dressed as a prospective clinic, e.g.
-"Alina Medical Centre – Hurlingham (Demo)", with its departments, doctors,
-front desk and a morning's queue of fake patients already in it. It lives
-in the live app but is walled off from real data:
-
-- Hidden from the public clinic list and USSD. Patients reach it only
-  through its demo link: `https://acisi.co.ke/patient?demo=<key>`, which
-  lists that one clinic and nothing else.
-- Payments are simulated: the KES 100 check-in fee and M-Pesa at checkout
-  are recorded with a "simulated" label. Nothing is charged, and no SMS or
-  M-Pesa prompt is ever sent to anyone.
-- Only its own demo patients (numbers 0700 000 xxx) can check in there, and
-  they can't check in anywhere else. Typing a real patient's number at its
-  front desk shows nothing.
-- Left out of every total on the owner site, and tagged "Demo" in the
-  clinic list.
-
-The commands run inside the app's own environment. `systemd-run` gives
-them the settings file without anyone being able to read it:
-
-```
-D() { sudo systemd-run --quiet --pipe --wait --uid=acisi -p EnvironmentFile=/etc/acisi/acisi.env -p WorkingDirectory=/opt/acisi/app --setenv=DEMO_PIN="$DEMO_PIN" /opt/acisi/app/node_modules/.bin/ts-node --transpile-only scripts/demoClinic.ts "$@"; }
-read -rsp "Demo PIN (6 digits, not a date or a sequence): " DEMO_PIN; echo
-
-# Create one (once). A department is "Name:CODE" or "Name:CODE:FEE".
-D seed --key alina --name "Alina Medical Centre" --location Hurlingham \
-  --departments "General Consultation:G,Paediatrics:P,Gynaecology & Antenatal:GY,Laboratory:L,Pharmacy:PH"
-
-D reset alina            # back to exactly as seeded: run this on the morning of each demo
-D show alina             # print the logins and demo patients again
-D list                   # every demo clinic
-D delete alina           # shows what would be removed
-D delete alina --yes     # removes it completely
-```
-
-`seed` and `reset` print the logins and demo patients. All of them share
-the PIN you typed. `reset` keeps the same PIN unless you type a new one
-(press Enter to keep it). The queue's waiting times count back from the
-moment you run `reset`, and the staff queue only shows today, so reset on
-the morning of the demo, not the night before. Sign in once with each login
-you'll use to accept the Terms; reset keeps that.
-
 ## Backups
 
 **What:** every night at about 02:00 EAT, `acisi-backup` writes two encrypted files to

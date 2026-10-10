@@ -16,28 +16,17 @@ export interface ClinicListItem {
  * All active clinics, ordered for the USSD selection menu. Fetched in full
  * and paginated in-memory by the caller — fine at MVP scale (dozens of
  * clinics); revisit with DB-level pagination if that grows into the hundreds.
- * Demo clinics are never listed: they're reached only through their demo
- * link (see findDemoClinicByKey).
  */
 export async function listActiveClinics(): Promise<ClinicListItem[]> {
   return prisma.clinic.findMany({
-    where: { isActive: true, isDemo: false },
+    where: { isActive: true },
     orderBy: { name: 'asc' },
     select: { id: true, name: true },
   });
 }
 
-/** The active demo clinic behind a demo link (acisi.co.ke/patient?demo=<key>), if any. */
-export async function findDemoClinicByKey(demoKey: string): Promise<ClinicListItem | null> {
-  return prisma.clinic.findFirst({
-    where: { demoKey, isDemo: true, isActive: true },
-    select: { id: true, name: true },
-  });
-}
-
-/** Staff signup by invite code. Demo clinics take no sign-ups: their logins come from the demo seed. */
 export async function findClinicByInviteCode(inviteCode: string): Promise<Clinic | null> {
-  return prisma.clinic.findFirst({ where: { inviteCode: inviteCode.trim().toUpperCase(), isDemo: false } });
+  return prisma.clinic.findUnique({ where: { inviteCode: inviteCode.trim().toUpperCase() } });
 }
 
 async function generateUniqueInviteCode(clinicName: string): Promise<string> {

@@ -1,7 +1,7 @@
 import { Bill, BillItemKind, ClinicPaymentSettings, Payment, PaymentMethod, Prisma } from '@prisma/client';
 import { prisma } from '../db/prisma';
 import { smsClient } from '../config/africastalking';
-import { errorSummary, logger } from '../utils/logger';
+import { logger } from '../utils/logger';
 import { InvalidPhoneNumberError, toE164 } from '../utils/phone';
 import { formatKenyaDate } from '../utils/kenyaTime';
 import { generateBillNumber } from '../utils/idCodes';
@@ -17,7 +17,6 @@ import {
 import { buildPaymentReceiptSms } from './smsTemplates';
 import { clinicStkConfigured, sendClinicStkPush } from '../mpesa/clinicStk';
 import { scheduleClinicStkStatusCheck } from '../jobs/queue';
-import { isDemoClinic } from './demoGuard';
 
 /**
  * Clinic checkout billing: the bill for a visit, and the payments against
@@ -91,16 +90,8 @@ export interface CheckoutView {
   encounterId: string;
   checkInId: string;
   visitStatus: string;
-  /** A demo clinic: M-Pesa requests are simulated and no SMS is ever sent (see demoGuard.ts). */
-  isDemo: boolean;
   patient: { id: string; name: string; patientCode: string; phoneNumber: string; smsOptOut: boolean };
   departmentName: string;
-  /**
-   * What the doctor prescribed and who signed it, so front desk can dispense
-   * and bill it. Never the diagnosis: that stays with the doctor.
-   */
-  prescription: string | null;
-  prescribedBy: string | null;
   /** The visit's department, with its own consultation fee if it has one (null: use the clinic default). */
   department: { id: string; name: string; consultationFeeKes: number | null };
   settings: {
@@ -110,7 +101,7 @@ export interface CheckoutView {
     mobileMoneyType: 'TILL' | 'PAYBILL' | null;
     mobileMoneyNumber: string | null;
     defaultConsultationFeeKes: number;
-    /** Whether "Request payment" (STK push) is set up on this server (always, simulated, at a demo clinic). */
+    /** Whether "Request payment" (STK push) is set up on this server. */
     stkAvailable: boolean;
   };
   bill: null | {
@@ -154,8 +145,6 @@ export async function getCheckoutView(encounterId: string, clinicId: string): Pr
     include: {
       patient: true,
       checkIn: { select: { department: { select: { id: true, name: true, consultationFeeKes: true } } } },
-      clinic: { select: { isDemo: true } },
-      consultedByStaff: { select: { name: true } },
       bill: {
         include: {
           items: { orderBy: { position: 'asc' } },
@@ -176,7 +165,6 @@ export async function getCheckoutView(encounterId: string, clinicId: string): Pr
     encounterId: encounter.id,
     checkInId: encounter.checkInId,
     visitStatus: encounter.status,
-    isDemo: encounter.clinic.isDemo,
     patient: {
       id: encounter.patient.id,
       name: `${encounter.patient.firstName} ${encounter.patient.lastName}`.trim(),
@@ -185,8 +173,6 @@ export async function getCheckoutView(encounterId: string, clinicId: string): Pr
       smsOptOut: encounter.patient.smsOptOut,
     },
     departmentName: encounter.checkIn.department.name,
-    prescription: encounter.prescription,
-    prescribedBy: encounter.consultedByStaff?.name ?? null,
     department: encounter.checkIn.department,
     settings: {
       acceptsCash: settings.acceptsCash,
@@ -195,7 +181,7 @@ export async function getCheckoutView(encounterId: string, clinicId: string): Pr
       mobileMoneyType: settings.mobileMoneyType,
       mobileMoneyNumber: settings.mobileMoneyNumber,
       defaultConsultationFeeKes: settings.defaultConsultationFeeKes,
-      stkAvailable: settings.acceptsMobileMoney && (encounter.clinic.isDemo || clinicStkConfigured()),
+      stkAvailable: settings.acceptsMobileMoney && clinicStkConfigured(),
     },
     bill: bill && {
       id: bill.id,
@@ -473,22 +459,15 @@ export function buildAccountReference(format: string | null, values: { patientCo
   return (ref || values.billNumber).slice(0, 12);
 }
 
-/** What a simulated M-Pesa payment at a demo clinic says, on screen and on the payment row. */
-export const SIMULATED_MPESA_DESC = 'Simulated M-Pesa payment (demo clinic): nothing was charged';
-
 /**
  * "Request payment": sends an M-Pesa prompt to the patient's phone paying
  * the CLINIC's till/paybill. The payment stays PENDING until Daraja's
  * callback (applyClinicStkResult) or the status check resolves it.
- *
- * At a demo clinic nothing is sent: the payment is recorded as succeeded
- * straight away and labelled simulated (SIMULATED_MPESA_DESC).
  */
 export async function requestStkPayment(
   input: PaymentBase & { amountKes: number; phone?: string },
 ): Promise<{ payment: Payment; bill: Bill }> {
-  const simulated = await isDemoClinic(input.clinicId);
-  if (!simulated && !clinicStkConfigured()) {
+  if (!clinicStkConfigured()) {
     throw new BillingError('M-Pesa requests are not set up on this server yet. Use "Enter M-Pesa code" instead.', 409);
   }
   const repeat = await prisma.payment.findUnique({ where: { idempotencyKey: input.idempotencyKey } });
@@ -522,35 +501,19 @@ export async function requestStkPayment(
         billId: bill.id,
         clinicId: input.clinicId,
         method: 'MPESA_STK',
-        status: simulated ? 'SUCCEEDED' : 'PENDING',
+        status: 'PENDING',
         amountKes: input.amountKes,
         phoneNumber,
         idempotencyKey: input.idempotencyKey,
         takenByStaffId: input.staffId,
-        ...(simulated ? { reference: 'SIMULATED', resultDesc: SIMULATED_MPESA_DESC, completedAt: new Date() } : {}),
       },
     });
-    const becamePaid = simulated ? (await recalculateBill(tx, bill.id)).becamePaid : false;
-    return { payment, settings, patientCode: encounter.patient.patientCode, billNumber: bill.billNumber, clinicName: encounter.clinic.name, becamePaid };
+    return { payment, settings, patientCode: encounter.patient.patientCode, billNumber: bill.billNumber, clinicName: encounter.clinic.name };
   }));
   if ('duplicateOf' in created) {
     return { payment: created.duplicateOf, bill: await prisma.bill.findUniqueOrThrow({ where: { id: created.duplicateOf.billId } }) };
   }
   const { payment, settings, patientCode, billNumber, clinicName } = created;
-
-  if (simulated) {
-    await recordAuditEvent({
-      actorType: 'STAFF',
-      actorId: input.staffId,
-      staffId: input.staffId,
-      action: 'MPESA_PAYMENT_SIMULATED',
-      entityType: 'Payment',
-      entityId: payment.id,
-      metadata: { billId: input.billId, amountKes: payment.amountKes, demo: true },
-    });
-    if (created.becamePaid) await sendPaidReceiptSms(payment.billId);
-    return { payment, bill: await prisma.bill.findUniqueOrThrow({ where: { id: payment.billId } }) };
-  }
 
   let sent: Payment;
   try {
@@ -570,7 +533,7 @@ export async function requestStkPayment(
     });
     await scheduleClinicStkStatusCheck({ paymentId: payment.id });
   } catch (err) {
-    logger.error({ err: errorSummary(err), paymentId: payment.id }, 'Clinic STK push failed to start');
+    logger.error({ err, paymentId: payment.id }, 'Clinic STK push failed to start');
     sent = await prisma.payment.update({
       where: { id: payment.id },
       data: { status: 'FAILED', resultDesc: 'Could not reach M-Pesa. Try again, or enter the M-Pesa code manually.' },
@@ -721,18 +684,13 @@ export async function sendPaidReceiptSms(billId: string): Promise<ReceiptSmsOutc
     const bill = await prisma.bill.findUniqueOrThrow({
       where: { id: billId },
       include: {
-        clinic: { select: { name: true, isDemo: true } },
+        clinic: { select: { name: true } },
         encounter: { include: { patient: { select: { id: true, phoneNumber: true, smsOptOut: true, deletedAt: true } } } },
         payments: { where: { status: 'SUCCEEDED' }, orderBy: { completedAt: 'asc' } },
       },
     });
     const patient = bill.encounter.patient;
     if (bill.paidKes <= 0) return 'already_sent'; // nothing was paid (KES 0 bill): no receipt to send
-    if (bill.clinic.isDemo) {
-      // A demo clinic never sends SMS; the receipt is on screen instead.
-      await recordAuditEvent({ actorType: 'SYSTEM', action: 'RECEIPT_SMS_SKIPPED_DEMO', entityType: 'Bill', entityId: bill.id });
-      return 'opted_out';
-    }
     if (patient.smsOptOut || patient.deletedAt) {
       await recordAuditEvent({ actorType: 'SYSTEM', action: 'RECEIPT_SMS_SKIPPED_OPT_OUT', entityType: 'Bill', entityId: bill.id });
       return 'opted_out';
@@ -750,8 +708,7 @@ export async function sendPaidReceiptSms(billId: string): Promise<ReceiptSmsOutc
     await recordAuditEvent({ actorType: 'SYSTEM', action: 'RECEIPT_SMS_SENT', entityType: 'Bill', entityId: bill.id });
     return 'sent';
   } catch (err) {
-    // errorSummary only: the provider's error can echo the phone number.
-    logger.error({ err: errorSummary(err), billId }, 'Failed to send paid receipt SMS');
+    logger.error({ err, billId }, 'Failed to send paid receipt SMS');
     return 'failed';
   }
 }

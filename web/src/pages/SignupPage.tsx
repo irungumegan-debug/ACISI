@@ -445,7 +445,7 @@ function departmentsProblem(list: DraftDepartment[]): string | null {
     if (names.has(nameKey(n))) return `"${n}" is listed twice.`;
     names.add(nameKey(n));
     const code = d.code.trim().toUpperCase();
-    if (!CODE_PATTERN.test(code)) return `The short code for ${n} must be 1–6 capital letters or numbers, e.g. G or GEN.`;
+    if (!CODE_PATTERN.test(code)) return `The short code for ${n} must be 2–6 capital letters or numbers, e.g. GEN.`;
     if (codes.has(code)) return `The short code ${code} is used twice.`;
     codes.add(code);
     if (d.fee.trim() && !/^\d{1,7}$/.test(d.fee.trim())) return `The fee for ${n} must be a whole number of KES.`;

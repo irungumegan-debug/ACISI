@@ -37,12 +37,6 @@ export function startVisitSummaryEmailWorker(): Worker<VisitSummaryEmailJobData>
         return;
       }
 
-      // A demo clinic's fake patients never get email (see demoGuard.ts).
-      if (encounter.clinic.isDemo || encounter.patient.demoClinicId) {
-        logger.info({ encounterId: job.data.encounterId }, 'Visit summary email skipped: demo clinic');
-        return;
-      }
-
       if (!encounter.patient.email) {
         // The checkout route only enqueues this when the patient has an
         // email on file — reaching here without one would mean it changed

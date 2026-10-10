@@ -181,7 +181,7 @@ export function DepartmentsSection({
       </div>
       <p className="text-xs text-ink-500">
         Departments with visits can&apos;t be deleted, only deactivated — so past records keep their department. Short codes are
-        1–6 capital letters or numbers, kept for future USSD check-in.
+        2–6 capital letters or numbers, kept for future USSD check-in.
       </p>
     </div>
   );
@@ -222,7 +222,7 @@ function DepartmentForm({
     const f = parseFee(fee);
     if (n.length < 2) return setProblem('Type a name of at least 2 characters.');
     if (takenNames.some((t) => nameKey(t) === nameKey(n))) return setProblem(`There is already a department called "${n}".`);
-    if (!CODE_PATTERN.test(c)) return setProblem('The short code must be 1–6 capital letters or numbers, e.g. G or BRC.');
+    if (!CODE_PATTERN.test(c)) return setProblem('The short code must be 2–6 capital letters or numbers, e.g. BRC.');
     if (takenCodes.some((t) => t.toUpperCase() === c)) return setProblem(`The short code ${c} is already used.`);
     if (f === undefined) return setProblem('The fee must be a whole number of KES, or left empty.');
     setProblem(null);

@@ -20,8 +20,6 @@ export interface ClinicListItem {
   county: string | null;
   ussdCode: string;
   isActive: boolean;
-  /** A demo clinic: left out of the platform totals on the overview. */
-  isDemo: boolean;
   createdAt: string;
   doctorCount: number;
   /** Active non-doctor staff (front desk, clinicians, admins). */

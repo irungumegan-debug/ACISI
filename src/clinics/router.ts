@@ -2,21 +2,15 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { InvalidPhoneNumberError, toE164 } from '../utils/phone';
 import { pinPolicyError } from '../utils/pinPolicy';
-import { findClinicByInviteCode, findDemoClinicByKey, listActiveClinics, registerClinic } from '../services/clinicService';
+import { findClinicByInviteCode, listActiveClinics, registerClinic } from '../services/clinicService';
 import { DepartmentError, listActiveDepartments, prepareDepartmentList } from '../services/departmentService';
 
 export const clinicsRouter = Router();
 
-/**
- * Used by the web check-in form (patient portal) to populate a clinic picker
- * — same list the USSD menu offers. With ?demo=<key> (from a demo link,
- * acisi.co.ke/patient?demo=<key>) only that demo clinic is listed, so a demo
- * never shows other clinics; demo clinics are never listed otherwise.
- */
-clinicsRouter.get('/', async (req, res) => {
-  const demoKey = typeof req.query.demo === 'string' ? req.query.demo.trim().toLowerCase() : '';
-  const demoClinic = /^[a-z0-9-]{2,40}$/.test(demoKey) ? await findDemoClinicByKey(demoKey) : null;
-  res.json({ clinics: demoClinic ? [demoClinic] : await listActiveClinics() });
+/** Used by the web check-in form (patient portal) to populate a clinic picker — same list the USSD menu offers. */
+clinicsRouter.get('/', async (_req, res) => {
+  const clinics = await listActiveClinics();
+  res.json({ clinics });
 });
 
 /** Used by the web check-in form (patient portal) to populate a department picker once a clinic is chosen. */

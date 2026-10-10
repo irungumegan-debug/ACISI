@@ -446,7 +446,6 @@ function PaymentPanel({ view, isAdmin, onChanged }: { view: CheckoutView; isAdmi
                 if (amountKes === null) return;
                 void run(async () => {
                   const res = await api.requestMpesa(bill.id, { amountKes, phone, idempotencyKey: attemptKey.current });
-                  if (res.status === 'SUCCEEDED') return `${res.resultDesc ?? 'M-Pesa payment recorded'}.`; // demo clinic: simulated
                   return res.status === 'PENDING'
                     ? 'Payment request sent. Ask the patient to enter their M-Pesa PIN.'
                     : { failed: res.resultDesc ?? 'The M-Pesa request could not be sent. Try again.' };
@@ -469,13 +468,7 @@ function PaymentPanel({ view, isAdmin, onChanged }: { view: CheckoutView; isAdmi
                 </div>
               </div>
               <button type="submit" disabled={busy || !!pending || amountKes === null} className={`${btn.gold} w-full sm:w-auto`}>
-                {busy
-                  ? 'Sending…'
-                  : view.isDemo
-                    ? 'Request payment (simulated)'
-                    : lastStk && lastStk.status !== 'SUCCEEDED' && lastStk.status !== 'PENDING'
-                      ? 'Retry payment request'
-                      : 'Request payment'}
+                {busy ? 'Sending…' : lastStk && lastStk.status !== 'SUCCEEDED' && lastStk.status !== 'PENDING' ? 'Retry payment request' : 'Request payment'}
               </button>
             </form>
           ) : (
@@ -771,34 +764,12 @@ export function CheckoutPage() {
           </div>
           <BillStatusChip status={bill?.status ?? null} />
         </div>
-        {view.isDemo && (
-          <p className="mt-3 flex items-start gap-2 rounded-xl border border-dashed border-gold-500 bg-gold-tint px-3.5 py-2.5 text-sm text-navy-900">
-            <Info size={16} aria-hidden className="mt-0.5 flex-none" />
-            <span>
-              <strong>Demo clinic.</strong> Payments go to the clinic&apos;s own till, separate from the ACISI check-in fee. Here M-Pesa is
-              simulated: nothing is charged and no SMS is sent.
-            </span>
-          </p>
-        )}
       </div>
 
       {!canBill ? (
         <p className="rounded-2xl border border-slate-200 bg-white p-5 text-sm text-ink-700 shadow-card print:hidden">The bill can be made once the doctor has finished with this patient.</p>
       ) : (
         <>
-          {view.prescription && (
-            <section className={`${sectionCard} print:hidden`} aria-label="Prescription">
-              <h2 className={`${sectionTitle} mb-3`}>
-                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-50 text-teal-700">
-                  <Pill size={18} aria-hidden />
-                </span>
-                Prescription
-                {view.prescribedBy && <span className="text-sm font-normal text-ink-500">from {view.prescribedBy}</span>}
-              </h2>
-              <p className="whitespace-pre-line text-[15px] text-ink-700">{view.prescription}</p>
-            </section>
-          )}
-
           <section className={`${sectionCard} print:hidden`}>
             <div className="mb-4 flex items-center justify-between">
               <h2 className={sectionTitle}>
@@ -885,13 +856,7 @@ export function CheckoutPage() {
                 <div>
                   <p className="font-display text-xl font-bold text-emerald-900">Fully paid.</p>
                   <p className="text-sm text-emerald-900">
-                    {view.isDemo
-                      ? 'Demo clinic: no SMS receipt is sent.'
-                      : view.patient.smsOptOut
-                        ? 'No SMS receipt (patient opted out).'
-                        : bill.receiptSmsSentAt
-                          ? 'SMS receipt sent.'
-                          : 'SMS receipt is being sent.'}
+                    {view.patient.smsOptOut ? 'No SMS receipt (patient opted out).' : bill.receiptSmsSentAt ? 'SMS receipt sent.' : 'SMS receipt is being sent.'}
                   </p>
                 </div>
               </div>
@@ -923,11 +888,7 @@ export function CheckoutPage() {
 
           {view.visitStatus === 'READY_FOR_CHECKOUT' && (
             <section className="flex flex-col gap-3 rounded-2xl bg-navy-900 p-5 text-white shadow-raised print:hidden sm:flex-row sm:items-center sm:justify-between sm:p-6">
-              <p className="text-[15px] text-slate-200">
-                {view.isDemo
-                  ? 'Finish the visit. The visit summary goes to the patient’s ACISI account (My records); in the demo no SMS is sent.'
-                  : 'Finish the visit and send the visit summary.'}
-              </p>
+              <p className="text-[15px] text-slate-200">Finish the visit and send the visit summary.</p>
               <button type="button" onClick={() => void finishCheckout()} disabled={finishing} className={btn.gold}>
                 {finishing ? 'Checking out…' : 'Complete checkout'}
               </button>
@@ -936,7 +897,6 @@ export function CheckoutPage() {
           {view.visitStatus === 'DONE' && (
             <p className="flex items-center gap-2 text-sm text-ink-500 print:hidden">
               <CircleCheckBig size={16} aria-hidden className="text-emerald-600" /> This visit is checked out.
-              {view.isDemo && ' The visit summary is in the patient’s ACISI account under My records.'}
             </p>
           )}
           {finishError && (
