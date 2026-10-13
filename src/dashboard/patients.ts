@@ -5,6 +5,13 @@ import { getScopedHistory } from '../services/patientService';
 import { recordAuditEvent } from '../services/auditService';
 import { z } from 'zod';
 import { clinicCanSeePatientWhere } from '../services/clinicPatientService';
+import {
+  approveRecordAccessWithCode,
+  approveRecordAccessWithPin,
+  RecordAccessError,
+  recordAccessStatus,
+  requestRecordAccess,
+} from '../services/recordAccessService';
 import { identityView, patientIdentityInputSchema, PatientIdentityError, preparePatientIdentity } from '../services/patientIdentity';
 
 export const patientsRouter = Router();
@@ -77,14 +84,22 @@ patientsRouter.get('/:id', async (req, res) => {
     actorType: 'STAFF',
     actorId: staffId,
     staffId,
+    clinicId,
+    patientId: patient.id,
     action: 'PATIENT_HISTORY_VIEWED',
     entityType: 'Patient',
     entityId: patient.id,
-    metadata: { viewedByClinicId: clinicId, channel: 'DASHBOARD' },
+    metadata: {
+      viewedByClinicId: clinicId,
+      channel: 'DASHBOARD',
+      // Whether records from other clinics were part of this view (only with the patient's approval).
+      includesOtherClinics: history.some((h) => !h.isOwnClinic),
+    },
   });
 
   res.json({
     id: patient.id,
+    patientCode: patient.patientCode,
     firstName: patient.firstName,
     lastName: patient.lastName,
     phoneNumber: patient.phoneNumber,
@@ -94,7 +109,57 @@ patientsRouter.get('/:id', async (req, res) => {
     ...identityView(patient),
     history,
     hasHiddenHistoryElsewhere,
+    recordAccess: hasHiddenHistoryElsewhere ? await recordAccessStatus(patient.id, clinicId) : null,
   });
+});
+
+function sendRecordAccessError(err: unknown, res: import('express').Response): boolean {
+  if (err instanceof RecordAccessError) {
+    res.status(err.status).json({ error: err.message });
+    return true;
+  }
+  return false;
+}
+
+/**
+ * "Request past records": texts the patient a code to read out at the desk.
+ * Front-desk roles only (the patient is standing there); the clinic and
+ * staff member always come from the session.
+ */
+patientsRouter.post('/:id/record-access/request', async (req, res) => {
+  const { clinicId, staffId, role } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  if (role === 'DOCTOR') {
+    res.status(403).json({ error: 'Ask the front desk to request past records' });
+    return;
+  }
+  try {
+    res.json(await requestRecordAccess(clinicId, staffId, req.params.id as string));
+  } catch (err) {
+    if (!sendRecordAccessError(err, res)) throw err;
+  }
+});
+
+const approveSchema = z.union([z.object({ code: z.string().trim().min(1).max(10) }), z.object({ pin: z.string().min(1).max(12) })]);
+
+/** The code the patient read out, or the patient's own PIN typed on this screen. */
+patientsRouter.post('/:id/record-access/approve', async (req, res) => {
+  const { clinicId, staffId, role } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  if (role === 'DOCTOR') {
+    res.status(403).json({ error: 'Ask the front desk to request past records' });
+    return;
+  }
+  const parsed = approveSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Enter the code from the SMS, or let the patient type their PIN' });
+    return;
+  }
+  try {
+    if ('code' in parsed.data) await approveRecordAccessWithCode(clinicId, staffId, req.params.id as string, parsed.data.code);
+    else await approveRecordAccessWithPin(clinicId, staffId, req.params.id as string, parsed.data.pin);
+    res.status(204).send();
+  } catch (err) {
+    if (!sendRecordAccessError(err, res)) throw err;
+  }
 });
 
 const smsPreferenceSchema = z.object({ smsOptOut: z.boolean() });

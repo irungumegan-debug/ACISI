@@ -83,8 +83,18 @@ export interface PatientDetail extends PatientIdentityRecord {
   dateOfBirth: string | null;
   sex: string;
   smsOptOut: boolean;
+  patientCode: string;
   history: VisitHistoryEntry[];
   hasHiddenHistoryElsewhere: boolean;
+  /** Set when records from other clinics are hidden: what the "Request past records" box needs. */
+  recordAccess: RecordAccessStatus | null;
+}
+
+export interface RecordAccessStatus {
+  /** A code was texted and can still be typed in until this time. */
+  pendingUntil: string | null;
+  patientHasPin: boolean;
+  smsOptOut: boolean;
 }
 
 export type CheckInStatus = 'PENDING_PAYMENT' | 'PAID' | 'FAILED' | 'CANCELLED' | 'NO_FEE' | 'NEEDS_REVIEW';
@@ -560,6 +570,13 @@ export const api = {
 
   getPatient(id: string) {
     return request<PatientDetail>(`/patients/${id}`);
+  },
+
+  requestPastRecords(patientId: string) {
+    return request<{ expiresAt: string }>(`/patients/${encodeURIComponent(patientId)}/record-access/request`, { method: 'POST' });
+  },
+  approvePastRecords(patientId: string, body: { code: string } | { pin: string }) {
+    return request<void>(`/patients/${encodeURIComponent(patientId)}/record-access/approve`, { method: 'POST', body: JSON.stringify(body) });
   },
 
   getTodayCheckIns() {

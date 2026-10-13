@@ -656,6 +656,76 @@ function RecordsPanel({ patientCode }: { patientCode: string }) {
   );
 }
 
+/**
+ * Which clinics can see this patient's records from other clinics (each one
+ * approved by the patient at its front desk), with a button to take access
+ * away. A clinic always sees the records it made itself.
+ */
+function SharingPanel() {
+  const [data, setData] = useState<Awaited<ReturnType<typeof api.getRecordAccess>> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = () =>
+    api
+      .getRecordAccess()
+      .then(setData)
+      .catch(() => setError('Could not load this. Try again.'));
+  useEffect(() => {
+    void load();
+  }, []);
+
+  async function revoke(fn: () => Promise<void>): Promise<void> {
+    setBusy(true);
+    setError(null);
+    try {
+      await fn();
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Something went wrong. Try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="panel">
+      <h2>Who can see your records</h2>
+      <p>
+        Each clinic always sees the records it made. Records from your <em>other</em> clinics are shared only with clinics you approved — by
+        giving them the code we texted you, or typing your PIN at their front desk.
+      </p>
+      {!data && !error && <p>Loading…</p>}
+      {data && data.clinics.length === 0 && !data.allClinicsFromSignup && <p>No clinic can see records from your other clinics.</p>}
+      {data && (
+        <ul className="access-list" style={{ listStyle: 'none', padding: 0 }}>
+          {data.allClinicsFromSignup && (
+            <li style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', padding: '10px 0', flexWrap: 'wrap' }}>
+              <span>
+                <strong>All clinics</strong> (you agreed to this when you signed up)
+              </span>
+              <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void revoke(() => api.revokeAllClinicsSharing())}>
+                Remove access
+              </button>
+            </li>
+          )}
+          {data.clinics.map((c) => (
+            <li key={c.clinicId} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', padding: '10px 0', flexWrap: 'wrap' }}>
+              <span>
+                <strong>{c.clinicName}</strong> — since {new Date(c.grantedAt).toLocaleDateString('en-KE', { day: 'numeric', month: 'short', year: 'numeric' })}
+              </span>
+              <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void revoke(() => api.revokeClinicAccess(c.clinicId))}>
+                Remove access
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {error && <p className="error-text">{error}</p>}
+    </div>
+  );
+}
+
 function AccountPanel({ patientCode }: { patientCode: string }) {
   const { logout } = usePatientAuth();
   const [confirming, setConfirming] = useState(false);
@@ -704,6 +774,7 @@ function AccountPanel({ patientCode }: { patientCode: string }) {
       <p className="lede">
         ACISI ID <strong>{patientCode}</strong>
       </p>
+      <SharingPanel />
       <div className="panel">
         <h2>Legal</h2>
         <p>How ACISI and your clinics use your data, and the terms you agreed to.</p>

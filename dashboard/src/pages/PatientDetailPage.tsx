@@ -2,15 +2,18 @@ import { FormEvent, useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Link, useParams } from 'react-router-dom';
 import { api, ApiError, PatientDetail, PatientIdentity, PatientIdentityRecord } from '../lib/api';
-import { ArrowLeft, Building2, CalendarDays, FileText, IdCard, Lock, MessageSquareOff, Phone, Stethoscope } from 'lucide-react';
+import { ArrowLeft, Building2, CalendarDays, FileText, IdCard, MessageSquareOff, Phone, Stethoscope } from 'lucide-react';
 import { Avatar, btn, Card, EmptyState, SkeletonList } from '../components/ui';
 import { ID_TYPE_LABEL, IdentityFields } from '../components/IdentityFields';
+import { RequestPastRecords } from '../components/RequestPastRecords';
 
 export function PatientDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [patient, setPatient] = useState<PatientDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [reloadKey, setReloadKey] = useState(0);
+  const { session } = useAuth();
 
   useEffect(() => {
     if (!id) return;
@@ -20,7 +23,7 @@ export function PatientDetailPage() {
       .then(setPatient)
       .catch((err: unknown) => setError(err instanceof ApiError ? err.message : 'Failed to load patient'))
       .finally(() => setLoading(false));
-  }, [id]);
+  }, [id, reloadKey]);
 
   if (loading) return <SkeletonList rows={3} label="Loading the patient" />;
 
@@ -49,6 +52,7 @@ export function PatientDetailPage() {
             {patient.firstName} {patient.lastName}
           </h1>
           <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-300">
+            <span className="font-mono text-gold-300">{patient.patientCode}</span>
             <span className="inline-flex items-center gap-1.5">
               <Phone size={14} aria-hidden className="text-gold-400" /> {patient.phoneNumber}
             </span>
@@ -100,11 +104,12 @@ export function PatientDetailPage() {
         </ol>
       )}
       {patient.hasHiddenHistoryElsewhere && (
-        <p className="mt-4 flex items-start gap-2 rounded-xl bg-cream-100 px-3.5 py-3 text-sm text-ink-500">
-          <Lock size={15} aria-hidden className="mt-0.5 flex-none" />
-          This patient has prior visits at other ACISI clinics, but they haven&apos;t consented to sharing that history
-          with this clinic.
-        </p>
+        <RequestPastRecords
+          patientId={patient.id}
+          status={patient.recordAccess}
+          canRequest={session?.role !== 'DOCTOR'}
+          onApproved={() => setReloadKey((k) => k + 1)}
+        />
       )}
       </Card>
     </div>

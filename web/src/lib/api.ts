@@ -185,6 +185,16 @@ export const api = {
   }) {
     return request<PatientSession>('/patients/setup/register', { method: 'POST', body: JSON.stringify(input) });
   },
+  /** Which clinics can see the patient's records from other clinics. */
+  getRecordAccess() {
+    return request<{ clinics: { clinicId: string; clinicName: string; grantedAt: string }[]; allClinicsFromSignup: boolean }>('/patients/record-access');
+  },
+  revokeClinicAccess(clinicId: string) {
+    return request<void>(`/patients/record-access/${encodeURIComponent(clinicId)}/revoke`, { method: 'POST' });
+  },
+  revokeAllClinicsSharing() {
+    return request<void>('/patients/record-access/all-clinics/revoke', { method: 'POST' });
+  },
   /** "I have saved my ACISI ID". */
   markPatientIdSaved() {
     return request<void>('/patients/id-saved', { method: 'POST' });

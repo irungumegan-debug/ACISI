@@ -120,6 +120,17 @@ export function buildQueueNextSms(clinicName: string): string {
   return `${before}${fitClinicName(clinicName, before.length + after.length)}${after}`;
 }
 
+/**
+ * Sent when a clinic presses "Request past records": "Sunrise Clinic is
+ * asking to see your ACISI records from other clinics. Your code is 482193.
+ * Only share it if you agree." Always one SMS (a long clinic name is
+ * shortened, never the code).
+ */
+export function buildRecordAccessCodeSms(clinicName: string, code: string): string {
+  const after = ` is asking to see your ACISI records from other clinics. Your code is ${code}. Only share it if you agree.`;
+  return `${fitClinicName(clinicName, after.length)}${after}`;
+}
+
 /** 1500 -> "1,500" (integer KES only — no floating point anywhere in money). */
 export function formatKes(amountKes: number): string {
   return String(Math.trunc(amountKes)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');

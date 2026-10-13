@@ -9,6 +9,13 @@ jest.mock('../../src/dashboard/session', () => ({
 
 jest.mock('../../src/services/patientService', () => ({ getScopedHistory: jest.fn() }));
 jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
+jest.mock('../../src/services/recordAccessService', () => ({
+  ...jest.requireActual('../../src/services/recordAccessService'),
+  recordAccessStatus: jest.fn(async () => ({ pendingUntil: null, patientHasPin: true, smsOptOut: false })),
+  requestRecordAccess: jest.fn(),
+  approveRecordAccessWithCode: jest.fn(),
+  approveRecordAccessWithPin: jest.fn(),
+}));
 
 jest.mock('../../src/db/prisma', () => ({
   prisma: { patient: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn() } },
@@ -75,6 +82,7 @@ describe('GET /patients/:id', () => {
     expect(res.status).toBe(200);
     expect(mockGetScopedHistory).toHaveBeenCalledWith('patient-1', 'clinic-A');
     expect(res.body.hasHiddenHistoryElsewhere).toBe(true);
+    expect(res.body.recordAccess).toEqual({ pendingUntil: null, patientHasPin: true, smsOptOut: false });
   });
 });
 
@@ -126,5 +134,33 @@ describe('PATCH /patients/:id/details (ID document and next of kin)', () => {
     mockLoadSession.mockResolvedValue({ ...SESSION, role: 'DOCTOR' });
     const res = await withCookie(request(buildApp()).patch('/patients/patient-1/details').send({ nextOfKinName: 'Peter Otieno' }));
     expect(res.status).toBe(403);
+  });
+});
+
+describe('Request past records routes', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const svc = jest.requireMock('../../src/services/recordAccessService') as Record<string, jest.Mock>;
+
+  it('are refused to doctors (the front desk asks, with the patient present)', async () => {
+    mockLoadSession.mockResolvedValue({ ...SESSION, role: 'DOCTOR' });
+    expect((await withCookie(request(buildApp()).post('/patients/patient-1/record-access/request'))).status).toBe(403);
+    expect((await withCookie(request(buildApp()).post('/patients/patient-1/record-access/approve').send({ code: '123456' }))).status).toBe(403);
+    expect(svc.requestRecordAccess).not.toHaveBeenCalled();
+  });
+
+  it('use the clinic and staff member from the session', async () => {
+    mockLoadSession.mockResolvedValue(SESSION);
+    svc.requestRecordAccess!.mockResolvedValue({ expiresAt: new Date() });
+    await withCookie(request(buildApp()).post('/patients/patient-1/record-access/request').send({ clinicId: 'clinic-EVIL' }));
+    expect(svc.requestRecordAccess).toHaveBeenCalledWith(SESSION.clinicId, SESSION.staffId, 'patient-1');
+  });
+
+  it('approve with a code or with the patient PIN', async () => {
+    mockLoadSession.mockResolvedValue(SESSION);
+    expect((await withCookie(request(buildApp()).post('/patients/patient-1/record-access/approve').send({ code: '482193' }))).status).toBe(204);
+    expect(svc.approveRecordAccessWithCode).toHaveBeenCalledWith(SESSION.clinicId, SESSION.staffId, 'patient-1', '482193');
+    expect((await withCookie(request(buildApp()).post('/patients/patient-1/record-access/approve').send({ pin: '730194' }))).status).toBe(204);
+    expect(svc.approveRecordAccessWithPin).toHaveBeenCalledWith(SESSION.clinicId, SESSION.staffId, 'patient-1', '730194');
+    expect((await withCookie(request(buildApp()).post('/patients/patient-1/record-access/approve').send({}))).status).toBe(400);
   });
 });

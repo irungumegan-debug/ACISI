@@ -122,6 +122,8 @@ export async function getEncounterForDoctor(
     actorType: 'STAFF',
     actorId: viewingStaffId,
     staffId: viewingStaffId,
+    clinicId,
+    patientId: encounter.patientId,
     action: 'PATIENT_HISTORY_VIEWED',
     entityType: 'Patient',
     entityId: encounter.patientId,

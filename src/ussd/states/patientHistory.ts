@@ -1,6 +1,6 @@
 import { UssdStateHandler } from '../types';
 import { InvalidPhoneNumberError, toE164 } from '../../utils/phone';
-import { findPatientByPhone, getPortableHistory, hasActiveDataSharingConsent } from '../../services/patientService';
+import { clinicHasRecordAccess, findPatientsByPhone, getPortableHistory } from '../../services/patientService';
 import { recordAuditEvent } from '../../services/auditService';
 import { formatVisitHistoryLines } from '../formatting';
 
@@ -15,14 +15,21 @@ export const staffHistoryEnterPhone: UssdStateHandler = async (session, input) =
     throw err;
   }
 
-  const patient = await findPatientByPhone(patientPhone);
-  if (!patient) {
+  const patients = await findPatientsByPhone(patientPhone);
+  if (patients.length === 0) {
     return { response: 'END No ACISI record found for that number.', continueSession: false };
   }
+  if (patients.length > 1) {
+    return { response: 'END Several patients share this number. Look them up on the ACISI console instead.', continueSession: false };
+  }
+  const patient = patients[0] as (typeof patients)[number];
 
-  const hasConsent = await hasActiveDataSharingConsent(patient.id);
+  const hasConsent = await clinicHasRecordAccess(patient.id, session.data.clinicId as string);
   if (!hasConsent) {
-    return { response: 'END This patient has not consented to cross-clinic record sharing.', continueSession: false };
+    return {
+      response: 'END This patient has not approved your clinic seeing their records. Use "Request past records" on the ACISI console.',
+      continueSession: false,
+    };
   }
 
   const history = await getPortableHistory(patient.id);
@@ -31,6 +38,8 @@ export const staffHistoryEnterPhone: UssdStateHandler = async (session, input) =
     actorType: 'STAFF',
     actorId: session.data.staffId as string,
     staffId: session.data.staffId as string,
+    clinicId: session.data.clinicId as string,
+    patientId: patient.id,
     action: 'PATIENT_HISTORY_VIEWED',
     entityType: 'Patient',
     entityId: patient.id,

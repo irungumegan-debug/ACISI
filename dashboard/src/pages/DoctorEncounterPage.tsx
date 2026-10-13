@@ -147,8 +147,8 @@ export function DoctorEncounterPage() {
         {encounter.hasHiddenHistoryElsewhere && (
           <p className="mt-3 flex items-start gap-2 rounded-xl bg-cream-200/60 px-3.5 py-3 text-sm text-ink-500">
             <Lock size={15} aria-hidden className="mt-0.5 flex-none" />
-            This patient has prior visits at other ACISI clinics, but they haven&apos;t consented to sharing that history
-            with this clinic.
+            This patient has records at other ACISI clinics. They stay hidden until the patient agrees to share them with your clinic —
+            the front desk can request them with the patient present.
           </p>
         )}
       </div>

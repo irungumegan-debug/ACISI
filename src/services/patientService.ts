@@ -206,6 +206,24 @@ export async function registerPatient(input: RegisterPatientInput): Promise<Pati
   return patient;
 }
 
+/**
+ * Whether `clinicId` may see this patient's records from OTHER clinics (its
+ * own records it always sees). The latest CLINIC_RECORD_ACCESS row for that
+ * clinic decides — granted when the patient approves a "Request past
+ * records" (see recordAccessService), revoked from the portal. Patients who
+ * said yes to the old "share with all clinics" question before per-clinic
+ * approval existed keep that answer until they revoke it.
+ */
+export async function clinicHasRecordAccess(patientId: string, clinicId: string): Promise<boolean> {
+  const perClinic = await prisma.consent.findFirst({
+    where: { patientId, type: 'CLINIC_RECORD_ACCESS', clinicId },
+    orderBy: { createdAt: 'desc' },
+  });
+  if (perClinic) return perClinic.granted;
+  return hasActiveDataSharingConsent(patientId);
+}
+
+/** The old, platform-wide "share with all clinics" answer. Use clinicHasRecordAccess for access decisions. */
 export async function hasActiveDataSharingConsent(patientId: string): Promise<boolean> {
   const latest = await prisma.consent.findFirst({
     where: { patientId, type: 'CROSS_CLINIC_RECORD_SHARING' },
@@ -286,7 +304,7 @@ export interface ScopedHistoryEntry {
 
 export interface ScopedHistory {
   history: ScopedHistoryEntry[];
-  /** True when the patient has encounters at other clinics that exist but aren't shown, because they haven't consented to cross-clinic sharing. */
+  /** True when the patient has encounters at other clinics that exist but aren't shown, because they haven't approved this clinic's access. */
   hasHiddenHistoryElsewhere: boolean;
 }
 
@@ -295,8 +313,8 @@ export interface ScopedHistory {
  * clinic, a doctor) gets to see for a given patient: this clinic's own
  * encounters are always visible (it's the clinic's own data about its own
  * patient, not cross-clinic sharing), other clinics' encounters only if the
- * patient has an active CROSS_CLINIC_RECORD_SHARING consent — otherwise the
- * caller just learns that hidden history exists, never its contents.
+ * patient approved this clinic's access (clinicHasRecordAccess) — otherwise
+ * the caller just learns that hidden history exists, never its contents.
  * Excludes `excludeEncounterId` so a caller can pass "the encounter I'm
  * already looking at" and get the *other* history around it.
  */
@@ -314,7 +332,7 @@ export async function getScopedHistory(
 
   const ownClinicEntries = encounters.filter((e) => e.clinicId === viewingClinicId);
   const otherClinicEntries = encounters.filter((e) => e.clinicId !== viewingClinicId);
-  const hasConsent = otherClinicEntries.length > 0 ? await hasActiveDataSharingConsent(patientId) : true;
+  const hasConsent = otherClinicEntries.length > 0 ? await clinicHasRecordAccess(patientId, viewingClinicId) : true;
 
   const visible = hasConsent ? [...ownClinicEntries, ...otherClinicEntries] : ownClinicEntries;
   visible.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
