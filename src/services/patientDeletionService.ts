@@ -4,6 +4,7 @@ import { smsClient } from '../config/africastalking';
 import { CONSENT_VERSION } from '../config/constants';
 import { logger } from '../utils/logger';
 import { recordAuditEvent } from './auditService';
+import { removeStoredFile } from './fileStorageService';
 import { revokeSessionsFor } from './sessionRevocation';
 
 export class PatientNotFoundError extends Error {
@@ -97,6 +98,23 @@ export async function deletePatientAccount(patientId: string, actor: PatientDele
       },
     });
 
+    // Every clinic's approval to see records from other clinics ends too.
+    const clinicGrants = await tx.consent.findMany({
+      where: { patientId, type: 'CLINIC_RECORD_ACCESS', clinicId: { not: null } },
+      select: { clinicId: true },
+      distinct: ['clinicId'],
+    });
+    for (const g of clinicGrants) {
+      await tx.consent.create({
+        data: { patientId, clinicId: g.clinicId, type: 'CLINIC_RECORD_ACCESS', granted: false, channel, version: CONSENT_VERSION },
+      });
+    }
+
+    // Files the patient uploaded themselves are theirs: removed. Files a
+    // clinic uploaded stay with that clinic, like its visit records.
+    const ownFiles = await tx.patientFile.findMany({ where: { patientId, uploadedByType: 'PATIENT' }, select: { storageName: true } });
+    await tx.patientFile.deleteMany({ where: { patientId, uploadedByType: 'PATIENT' } });
+
     await tx.appointment.updateMany({
       where: { patientId, status: { in: ['REQUESTED', 'CONFIRMED'] } },
       data: { status: 'CANCELLED', cancelledByType: actor.type, cancelledAt: now },
@@ -117,8 +135,10 @@ export async function deletePatientAccount(patientId: string, actor: PatientDele
       });
     }
 
-    return { phoneNumber: patient.phoneNumber };
+    return { phoneNumber: patient.phoneNumber, ownFiles };
   });
+
+  for (const f of original.ownFiles) await removeStoredFile(f.storageName);
 
   await revokeSessionsFor(`patient:${patientId}`);
 

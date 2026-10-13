@@ -69,6 +69,8 @@ const envSchema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
+  /** Shared secret for POST /api/sms/inbound?token=… (set it, and the same in the AT callback URL). */
+  SMS_INBOUND_TOKEN: z.string().min(16).optional(),
 
   // --- Uploaded patient files ---
   // A private directory on this server's own disk (never under the web

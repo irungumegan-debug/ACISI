@@ -12,6 +12,8 @@ export interface Overview {
   visits: { total: number; last30Days: number };
   upcomingAppointments: number;
   revenueKes: { total: number; last30Days: number };
+  /** Uploaded patient files and the server disk they're stored on (disk is null if it couldn't be read). */
+  storage: { filesBytes: number; fileCount: number; disk: { totalBytes: number; freeBytes: number } | null };
 }
 
 export interface ClinicListItem {

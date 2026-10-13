@@ -24,6 +24,11 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/opt/acisi
+# Uploaded patient files (FILE_STORAGE_DIR, default /var/lib/acisi/uploads):
+# systemd creates /var/lib/acisi owned by the acisi user, mode 0700, and
+# makes it writable despite ProtectSystem=strict. Never under the web root.
+StateDirectory=acisi
+StateDirectoryMode=0700
 
 [Install]
 WantedBy=multi-user.target

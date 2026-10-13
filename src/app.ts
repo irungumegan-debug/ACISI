@@ -17,6 +17,7 @@ import { ownerRouter } from './owner/router';
 import { requestLogger } from './middleware/requestLogger';
 import { errorHandler } from './middleware/errorHandler';
 import { logger } from './utils/logger';
+import { smsInboundRouter } from './sms/inbound';
 
 export function createApp(): Express {
   const app = express();
@@ -43,6 +44,7 @@ export function createApp(): Express {
   app.use('/api/patients', portalRouter);
   app.use('/api/clinics', clinicsRouter);
   app.use('/api/owner', ownerRouter);
+  app.use('/api/sms', smsInboundRouter);
 
   // Three separate SPA builds, served statically from this same
   // process/origin — no CORS needed, and session cookies work the same way

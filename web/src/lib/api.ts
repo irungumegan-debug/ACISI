@@ -60,6 +60,15 @@ export interface PhonePerson {
   hasPin?: boolean;
 }
 
+export interface PatientFileItem {
+  id: string;
+  categoryLabel: string;
+  documentDate: string;
+  note: string | null;
+  mimeType: string;
+  patientUploaded: boolean;
+}
+
 export type PatientLoginResult = PatientSession | { choose: PhonePerson[] };
 
 export type AppointmentStatus = 'REQUESTED' | 'CONFIRMED' | 'CANCELLED' | 'COMPLETED';
@@ -194,6 +203,25 @@ export const api = {
   },
   revokeAllClinicsSharing() {
     return request<void>('/patients/record-access/all-clinics/revoke', { method: 'POST' });
+  },
+  getMyFiles() {
+    return request<{ files: PatientFileItem[] }>('/patients/files');
+  },
+  async uploadMyFile(file: File, meta: { category: string; documentDate: string; note: string }) {
+    const form = new FormData();
+    form.append('category', meta.category);
+    form.append('documentDate', meta.documentDate);
+    if (meta.note.trim()) form.append('note', meta.note.trim());
+    form.append('file', file);
+    const res = await fetch('/api/patients/files', { method: 'POST', credentials: 'include', body: form });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ error: res.statusText }));
+      throw new ApiError(body.error ?? 'Upload failed. Please try again.', res.status, body);
+    }
+    return (await res.json()) as PatientFileItem;
+  },
+  myFileUrl(fileId: string) {
+    return `/api/patients/files/${encodeURIComponent(fileId)}`;
   },
   /** "I have saved my ACISI ID". */
   markPatientIdSaved() {

@@ -2,7 +2,8 @@ jest.mock('../../src/db/prisma', () => {
   const tx = {
     patient: { findUnique: jest.fn(), update: jest.fn() },
     otp: { deleteMany: jest.fn() },
-    consent: { create: jest.fn() },
+    consent: { create: jest.fn(), findMany: jest.fn(async () => []) },
+    patientFile: { findMany: jest.fn(async () => []), deleteMany: jest.fn() },
     appointment: { updateMany: jest.fn() },
     mpesaTransaction: { findMany: jest.fn(), update: jest.fn() },
   };
@@ -11,6 +12,7 @@ jest.mock('../../src/db/prisma', () => {
 jest.mock('../../src/config/africastalking', () => ({ smsClient: { send: jest.fn() } }));
 jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
 jest.mock('../../src/services/sessionRevocation', () => ({ revokeSessionsFor: jest.fn() }));
+jest.mock('../../src/services/fileStorageService', () => ({ removeStoredFile: jest.fn() }));
 
 import { prisma } from '../../src/db/prisma';
 import { smsClient } from '../../src/config/africastalking';
@@ -144,5 +146,23 @@ describe('deletePatientAccount', () => {
     tx.patient!.findUnique!.mockResolvedValueOnce(null);
     await expect(deletePatientAccount('p-1', { type: 'PATIENT' })).rejects.toBeInstanceOf(PatientNotFoundError);
     expect(tx.patient!.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('deletePatientAccount: files and clinic approvals', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { removeStoredFile } = jest.requireMock('../../src/services/fileStorageService') as { removeStoredFile: jest.Mock };
+
+  it("removes the patient's own uploads (rows and bytes) and withdraws every clinic's access; clinic uploads stay", async () => {
+    tx.patient!.findUnique!.mockResolvedValue(PATIENT);
+    tx.mpesaTransaction!.findMany!.mockResolvedValue([]);
+    tx.patientFile!.findMany!.mockResolvedValue([{ storageName: 'a'.repeat(48) }]);
+    tx.consent!.findMany!.mockResolvedValue([{ clinicId: 'clinic-A' }, { clinicId: 'clinic-B' }]);
+    await deletePatientAccount(PATIENT.id, { type: 'PATIENT' });
+    expect(tx.patientFile!.deleteMany).toHaveBeenCalledWith({ where: { patientId: PATIENT.id, uploadedByType: 'PATIENT' } });
+    expect(removeStoredFile).toHaveBeenCalledWith('a'.repeat(48));
+    for (const clinicId of ['clinic-A', 'clinic-B']) {
+      expect(tx.consent!.create).toHaveBeenCalledWith({ data: expect.objectContaining({ clinicId, type: 'CLINIC_RECORD_ACCESS', granted: false }) });
+    }
   });
 });

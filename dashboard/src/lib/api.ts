@@ -90,6 +90,22 @@ export interface PatientDetail extends PatientIdentityRecord {
   recordAccess: RecordAccessStatus | null;
 }
 
+export type FileCategory = 'XRAY' | 'CT_SCAN' | 'MRI' | 'ULTRASOUND' | 'LAB_REPORT' | 'PREVIOUS_RECORDS' | 'OTHER';
+
+export interface PatientFileItem {
+  id: string;
+  category: FileCategory;
+  categoryLabel: string;
+  documentDate: string;
+  note: string | null;
+  mimeType: string;
+  sizeBytes: number;
+  pageCount: number | null;
+  patientUploaded: boolean;
+  fromThisClinic: boolean;
+  uploadedAt: string;
+}
+
 export interface RecordAccessStatus {
   /** A code was texted and can still be typed in until this time. */
   pendingUntil: string | null;
@@ -570,6 +586,30 @@ export const api = {
 
   getPatient(id: string) {
     return request<PatientDetail>(`/patients/${id}`);
+  },
+
+  listPatientFiles(patientId: string) {
+    return request<{ files: PatientFileItem[]; hiddenCount: number }>(`/files/patient/${encodeURIComponent(patientId)}`);
+  },
+  uploadPatientFile(patientId: string, file: File, meta: { category: FileCategory; documentDate: string; note: string }) {
+    const form = new FormData();
+    form.append('category', meta.category);
+    form.append('documentDate', meta.documentDate);
+    if (meta.note.trim()) form.append('note', meta.note.trim());
+    form.append('file', file);
+    return upload<PatientFileItem>(`/files/patient/${encodeURIComponent(patientId)}`, form);
+  },
+  /** Photos of a paper file, combined by the server into one PDF under "Previous records". */
+  uploadPatientPhotos(patientId: string, photos: File[], meta: { documentDate: string; note: string }) {
+    const form = new FormData();
+    form.append('documentDate', meta.documentDate);
+    if (meta.note.trim()) form.append('note', meta.note.trim());
+    for (const p of photos) form.append('photos', p);
+    return upload<PatientFileItem>(`/files/patient/${encodeURIComponent(patientId)}/photos`, form);
+  },
+  /** Opens through the logged-in route; the server checks access every time. */
+  patientFileUrl(fileId: string) {
+    return `/api/staff/files/${encodeURIComponent(fileId)}`;
   },
 
   requestPastRecords(patientId: string) {

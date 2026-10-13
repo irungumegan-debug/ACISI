@@ -4,6 +4,7 @@ import { api, ApiError, EncounterDetail } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { ArrowLeft, Building2, FileText, Lock, NotebookPen, Phone, Pill, ShieldCheck, Stethoscope } from 'lucide-react';
 import { Avatar, btn, EmptyState, field, SkeletonList, StatusBadge } from '../components/ui';
+import { PatientFiles } from '../components/PatientFiles';
 
 const textarea = `${field.input} min-h-36 resize-y py-3 text-base leading-relaxed sm:text-[15px]`;
 
@@ -151,6 +152,9 @@ export function DoctorEncounterPage() {
             the front desk can request them with the patient present.
           </p>
         )}
+        <div className="mt-6">
+          <PatientFiles patientId={encounter.patientId} />
+        </div>
       </div>
 
       <div className="order-1 h-fit rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card sm:p-7 lg:order-2">

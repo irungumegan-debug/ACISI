@@ -4,7 +4,7 @@ import { formatKes } from '../lib/format';
 import { useLoad } from '../lib/useLoad';
 import { ErrorText, Loading, PageHeader } from '../components/ui';
 import type { LucideIcon } from 'lucide-react';
-import { ArrowRight, Building2, CalendarDays, ClipboardList, Stethoscope, UsersRound, Wallet } from 'lucide-react';
+import { ArrowRight, Building2, CalendarDays, ClipboardList, HardDrive, Stethoscope, UsersRound, Wallet } from 'lucide-react';
 
 const TONES = {
   gold: { strip: 'bg-gold-500', circle: 'bg-gold-tint text-gold-700' },
@@ -61,6 +61,28 @@ function Stat({
     <div className={cls}>{body}</div>
   );
 }
+/** 1536 -> "1.5 KB", 3.2e9 -> "3.0 GB". */
+function formatBytes(bytes: number): string {
+  const units = ['bytes', 'KB', 'MB', 'GB', 'TB'];
+  let n = bytes;
+  let i = 0;
+  while (n >= 1024 && i < units.length - 1) {
+    n /= 1024;
+    i++;
+  }
+  return i === 0 ? `${n} bytes` : `${n.toFixed(1)} ${units[i]}`;
+}
+
+/** "3.0 GB of files · disk 62% full, 18.4 GB free" — amber once the disk is 80% full. */
+function storageStat(s: { filesBytes: number; fileCount: number; disk: { totalBytes: number; freeBytes: number } | null }) {
+  if (!s.disk) return { value: formatBytes(s.filesBytes), detail: `${s.fileCount.toLocaleString()} files · disk size unknown`, tone: 'teal' as const };
+  const usedPct = Math.round(((s.disk.totalBytes - s.disk.freeBytes) / s.disk.totalBytes) * 100);
+  return {
+    value: formatBytes(s.filesBytes),
+    detail: `${s.fileCount.toLocaleString()} files · server disk ${usedPct}% full, ${formatBytes(s.disk.freeBytes)} free${usedPct >= 80 ? ' — time to upgrade the disk' : ''}`,
+    tone: usedPct >= 80 ? ('amber' as const) : ('teal' as const),
+  };
+}
 
 export function OverviewPage() {
   const { data, error, loading } = useLoad(() => api.overview(), []);
@@ -102,6 +124,7 @@ export function OverviewPage() {
             detail={`${data.visits.last30Days} in the last 30 days`}
           />
           <Stat icon={CalendarDays} tone="amber" label="Upcoming appointments" value={data.upcomingAppointments.toLocaleString()} />
+          <Stat icon={HardDrive} label="Uploaded files" {...storageStat(data.storage)} />
           <Stat
             hero
             icon={Wallet}

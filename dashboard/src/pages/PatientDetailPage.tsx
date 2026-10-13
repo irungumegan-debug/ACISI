@@ -6,6 +6,7 @@ import { ArrowLeft, Building2, CalendarDays, FileText, IdCard, MessageSquareOff,
 import { Avatar, btn, Card, EmptyState, SkeletonList } from '../components/ui';
 import { ID_TYPE_LABEL, IdentityFields } from '../components/IdentityFields';
 import { RequestPastRecords } from '../components/RequestPastRecords';
+import { PatientFiles } from '../components/PatientFiles';
 
 export function PatientDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -68,6 +69,8 @@ export function PatientDetailPage() {
       <SmsPreference patientId={patient.id} initial={patient.smsOptOut} onChange={(smsOptOut) => setPatient({ ...patient, smsOptOut })} />
 
       <IdentityCard patient={patient} onSaved={(saved) => setPatient({ ...patient, ...saved })} />
+
+      <PatientFiles key={`${patient.id}-${reloadKey}`} patientId={patient.id} />
 
       <Card title="Visit history" icon={FileText}>
       {patient.history.length === 0 && !patient.hasHiddenHistoryElsewhere ? (
