@@ -6,6 +6,7 @@ import { comparePin, findActiveStaffById } from './staffService';
 import { emailConfigured } from '../config/email';
 import { enqueueVisitSummaryEmail, enqueueVisitSummarySms } from '../jobs/queue';
 import { logger } from '../utils/logger';
+import { notifyNextInQueueAfter } from './queueSmsService';
 
 export type CheckoutDeliveryMethod = 'sms' | 'sms_and_email';
 
@@ -111,6 +112,8 @@ export async function getEncounterForDoctor(
   const currentStatus: EncounterStatus = encounter.status === 'WAITING' ? 'IN_CONSULTATION' : encounter.status;
   if (encounter.status === 'WAITING') {
     await prisma.encounter.update({ where: { id: encounter.id }, data: { status: 'IN_CONSULTATION' } });
+    // Someone else may now be first in line: text them if they're a walk-in (best effort, not awaited).
+    void notifyNextInQueueAfter(encounter.id);
   }
 
   const patient = await prisma.patient.findUniqueOrThrow({ where: { id: encounter.patientId } });

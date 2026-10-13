@@ -2,17 +2,17 @@ import crypto from 'node:crypto';
 import dayjs from 'dayjs';
 import { Patient, Prisma, Sex } from '@prisma/client';
 import { prisma } from '../db/prisma';
-import { smsClient } from '../config/africastalking';
 import { CONSENT_VERSION } from '../config/constants';
-import { logger } from '../utils/logger';
 import { InvalidPhoneNumberError, toE164 } from '../utils/phone';
 import { recordAuditEvent } from './auditService';
-import { findPatientByPhone, registerPatient } from './patientService';
+import { findPatientsByPhone, registerPatient } from './patientService';
 import { findActiveDepartment } from './departmentService';
 import { assignDoctorForCheckIn } from './doctorAssignmentService';
 import { findArrivalMatch, markAppointmentCompleted } from './appointmentService';
 import { publishWalkInCheckedIn } from './realtimeEvents';
-import { buildWalkInInviteSms } from './smsTemplates';
+import { buildQueueJoinSms } from './smsTemplates';
+import { sendSms } from './smsSender';
+import { lookupPatients, PatientMatch, PatientRegistryError } from './clinicPatientService';
 import { recordLegalAcceptances, walkInNeedsPrivacyAck } from './legalService';
 import { PatientIdentityError, PatientIdentityInput, preparePatientIdentity } from './patientIdentity';
 import { parseDateOfBirth, splitFullName } from '../utils/patientInput';
@@ -55,64 +55,56 @@ export function normalizeWalkInPhone(raw: string): string {
   }
 }
 
-export interface WalkInLookupResult {
-  phoneNumber: string;
-  patient: {
-    id: string;
-    name: string;
-    patientCode: string;
-    /** Most recent visit at *this* clinic only — never another clinic's history. */
-    lastVisitAt: Date | null;
-    /**
-     * Whether an ID document / next of kin is already on file. Only yes/no:
-     * a phone lookup can find a patient this clinic has never seen, so the
-     * details themselves are never shown here.
-     */
-    hasIdOnFile: boolean;
-    hasNextOfKinOnFile: boolean;
-  } | null;
+export interface WalkInPatientMatch extends PatientMatch {
+  /**
+   * Whether an ID document / next of kin is already on file. Only yes/no:
+   * a lookup can find a patient this clinic has never seen, so the details
+   * themselves are never shown here.
+   */
+  hasIdOnFile: boolean;
+  hasNextOfKinOnFile: boolean;
   /**
    * Whether the front desk must confirm the patient was told about the
-   * Privacy Notice: always for a new patient, otherwise at their first
-   * walk-in at this clinic or when the notice's version has changed.
+   * Privacy Notice: at their first walk-in at this clinic, or when the
+   * notice's version has changed.
    */
   privacyNoticeAckRequired: boolean;
 }
 
-/** Step 1 of the walk-in flow: is there already a patient with this phone number? */
-export async function lookupWalkInPatient(rawPhone: string, clinicId: string, staffId: string): Promise<WalkInLookupResult> {
-  const phoneNumber = normalizeWalkInPhone(rawPhone);
-  const patient = await findPatientByPhone(phoneNumber);
-  if (!patient) return { phoneNumber, patient: null, privacyNoticeAckRequired: true };
+export interface WalkInLookupResult {
+  query: string;
+  kind: 'phone' | 'patientCode';
+  /** Set when the search was a phone number — what a new patient would be registered under. */
+  phoneNumber: string | null;
+  /** Everyone found. A phone can hold several patients (a parent and children); staff pick one. */
+  patients: WalkInPatientMatch[];
+}
 
-  const lastVisit = await prisma.encounter.findFirst({
-    where: { patientId: patient.id, clinicId },
-    orderBy: { createdAt: 'desc' },
-    select: { createdAt: true },
+/** Step 1 of the walk-in flow: find the patient(s) by phone number or ACISI ID. */
+export async function lookupWalkInPatient(rawQuery: string, clinicId: string, staffId: string): Promise<WalkInLookupResult> {
+  let found;
+  try {
+    found = await lookupPatients(rawQuery, clinicId, staffId);
+  } catch (err) {
+    if (err instanceof PatientRegistryError) throw new WalkInError(err.message, err.status);
+    throw err;
+  }
+  const details = await prisma.patient.findMany({
+    where: { id: { in: found.patients.map((p) => p.id) } },
+    select: { id: true, idNumber: true, nextOfKinName: true, nextOfKinPhone: true },
   });
-
-  await recordAuditEvent({
-    actorType: 'STAFF',
-    actorId: staffId,
-    staffId,
-    action: 'WALK_IN_PATIENT_LOOKED_UP',
-    entityType: 'Patient',
-    entityId: patient.id,
-    metadata: { clinicId },
-  });
-
-  return {
-    phoneNumber,
-    patient: {
-      id: patient.id,
-      name: `${patient.firstName} ${patient.lastName}`.trim(),
-      patientCode: patient.patientCode,
-      lastVisitAt: lastVisit?.createdAt ?? null,
-      hasIdOnFile: Boolean(patient.idNumber),
-      hasNextOfKinOnFile: Boolean(patient.nextOfKinName || patient.nextOfKinPhone),
-    },
-    privacyNoticeAckRequired: await walkInNeedsPrivacyAck(patient.id, clinicId),
-  };
+  const byId = new Map(details.map((d) => [d.id, d]));
+  const patients: WalkInPatientMatch[] = [];
+  for (const p of found.patients) {
+    const d = byId.get(p.id);
+    patients.push({
+      ...p,
+      hasIdOnFile: Boolean(d?.idNumber),
+      hasNextOfKinOnFile: Boolean(d?.nextOfKinName || d?.nextOfKinPhone),
+      privacyNoticeAckRequired: await walkInNeedsPrivacyAck(p.id, clinicId),
+    });
+  }
+  return { query: found.query, kind: found.kind, phoneNumber: found.phoneNumber, patients };
 }
 
 export interface NewWalkInPatientDetails {
@@ -129,12 +121,20 @@ export interface NewWalkInPatientDetails {
 export interface WalkInCheckInInput {
   clinicId: string;
   staffId: string;
-  phone: string;
+  /**
+   * The patient staff picked from the lookup (the normal path, required
+   * when several patients share a phone). When absent, `phone` is used to
+   * find the only patient on it, or to register `newPatient`.
+   */
+  patientId?: string;
+  /** Staff confirmed the patient's name and date of birth with them. Required with `patientId`. */
+  identityConfirmed?: boolean;
+  phone?: string;
   departmentId: string;
   reasonForVisit: string;
   /** Only used when no patient exists for `phone`; an existing record is always reused, never overwritten. */
   newPatient?: NewWalkInPatientDetails;
-  /** "Patient agreed to receive SMS from the clinic" — off unless staff tick it. */
+  /** "Patient agreed to receive SMS from the clinic" — recorded as consent; off unless staff tick it. */
   smsConsent: boolean;
   /**
    * "Patient does not want SMS" — no receipts, visit summaries or invites.
@@ -189,7 +189,11 @@ async function findOrCreatePatient(
   details: NewWalkInPatientDetails | undefined,
   privacyNoticeExplained: boolean,
 ): Promise<{ patient: Patient; isNew: boolean }> {
-  const existing = await findPatientByPhone(phoneNumber);
+  const onPhone = await findPatientsByPhone(phoneNumber);
+  if (onPhone.length > 1) {
+    throw new WalkInError('Several patients share this phone number. Search again and pick the right person.', 409);
+  }
+  const existing = onPhone[0];
   if (existing) return { patient: existing, isNew: false };
 
   if (!details) {
@@ -213,17 +217,16 @@ async function findOrCreatePatient(
       firstName,
       lastName,
       dateOfBirth: resolveDateOfBirth(details),
+      dateOfBirthEstimated: !details.dateOfBirth && details.age !== undefined,
       sex: details.sex ?? 'UNKNOWN',
       consentChannel: 'STAFF_ASSISTED',
-      // Cross-clinic sharing stays off by default; the patient can opt in later.
-      crossClinicConsent: false,
     });
     return { patient, isNew: true };
   } catch (err) {
     // Another check-in registered this phone number a moment ago: reuse that
     // record rather than failing or creating a second patient.
     if ((err as { code?: string })?.code === 'P2002') {
-      const raced = await findPatientByPhone(phoneNumber);
+      const [raced] = await findPatientsByPhone(phoneNumber);
       if (raced) return { patient: raced, isNew: false };
     }
     throw err;
@@ -231,39 +234,37 @@ async function findOrCreatePatient(
 }
 
 /**
- * Africa's Talking resolves even when it rejects a recipient (bad number,
- * no credit, blacklisted), reporting it per recipient instead. Treat the
- * send as failed unless a recipient was actually accepted.
+ * Sends the walk-in "you are number N in the queue" SMS, once, unless the
+ * patient doesn't want SMS. Someone already first in line won't also get a
+ * "you're next" SMS. Never throws: a failed SMS must not undo the check-in.
  */
-function smsWasAccepted(response: unknown): boolean {
-  const recipients = (response as { SMSMessageData?: { Recipients?: { status?: string; statusCode?: number }[] } })
-    ?.SMSMessageData?.Recipients;
-  if (!Array.isArray(recipients)) return true;
-  return recipients.some((r) => r.status === 'Success' || (r.statusCode !== undefined && r.statusCode >= 100 && r.statusCode <= 102));
-}
-
-/**
- * Sends the one-off "check in from home next time" invite. Only ever called
- * after the patient's SMS consent has been recorded. Never throws: a failed
- * SMS must not undo or block the check-in, it's just reported back.
- */
-async function sendWalkInInvite(patient: Patient, clinicName: string, staffId: string): Promise<WalkInSmsOutcome> {
-  try {
-    const response = await smsClient.send({ to: [patient.phoneNumber], message: buildWalkInInviteSms(clinicName) });
-    if (!smsWasAccepted(response)) throw new Error('SMS rejected by provider');
+async function sendQueueJoinSms(
+  patient: Pick<Patient, 'id' | 'phoneNumber'>,
+  encounterId: string,
+  clinic: { id: string; name: string },
+  queuePosition: number,
+  staffId: string,
+): Promise<WalkInSmsOutcome> {
+  const now = new Date();
+  const claimed = await prisma.encounter.updateMany({
+    where: { id: encounterId, queueJoinSmsAt: null },
+    data: { queueJoinSmsAt: now, ...(queuePosition <= 1 ? { queueNextSmsAt: now } : {}) },
+  });
+  if (claimed.count === 0) return 'not_requested';
+  const ok = await sendSms(patient.phoneNumber, buildQueueJoinSms(clinic.name, queuePosition), { purpose: 'queue-join', patientId: patient.id });
+  if (ok) {
     await recordAuditEvent({
       actorType: 'STAFF',
       actorId: staffId,
       staffId,
-      action: 'WALK_IN_INVITE_SMS_SENT',
-      entityType: 'Patient',
-      entityId: patient.id,
+      clinicId: clinic.id,
+      patientId: patient.id,
+      action: 'QUEUE_JOIN_SMS_SENT',
+      entityType: 'Encounter',
+      entityId: encounterId,
     });
-    return 'sent';
-  } catch (err) {
-    logger.error({ err, patientId: patient.id }, 'Failed to send walk-in invite SMS');
-    return 'failed';
   }
+  return ok ? 'sent' : 'failed';
 }
 
 /**
@@ -275,7 +276,10 @@ async function sendWalkInInvite(patient: Patient, clinicName: string, staffId: s
  * the consent is recorded and the invite sent afterwards.
  */
 export async function checkInWalkIn(input: WalkInCheckInInput): Promise<WalkInCheckInResult> {
-  const phoneNumber = normalizeWalkInPhone(input.phone);
+  if (!input.patientId && !input.phone) throw new WalkInError('Find the patient first', 400);
+  if (input.patientId && !input.identityConfirmed) {
+    throw new WalkInError("Confirm the patient's name and date of birth with them before adding them to the queue", 400);
+  }
   if (input.smsConsent && input.smsOptOut) {
     throw new WalkInError('Choose either "agreed to receive SMS" or "does not want SMS", not both', 400);
   }
@@ -298,7 +302,15 @@ export async function checkInWalkIn(input: WalkInCheckInInput): Promise<WalkInCh
   if (!department) throw new WalkInError('Choose a department', 400);
 
   const privacyNoticeExplained = Boolean(input.privacyNoticeExplained);
-  const { patient, isNew } = await findOrCreatePatient(phoneNumber, input.newPatient, privacyNoticeExplained);
+  let resolved: { patient: Patient; isNew: boolean };
+  if (input.patientId) {
+    const picked = await prisma.patient.findFirst({ where: { id: input.patientId, deletedAt: null } });
+    if (!picked) throw new WalkInError('Patient not found', 404);
+    resolved = { patient: picked, isNew: false };
+  } else {
+    resolved = await findOrCreatePatient(normalizeWalkInPhone(input.phone as string), input.newPatient, privacyNoticeExplained);
+  }
+  const { patient, isNew } = resolved;
   const privacyNoticeAckRequired = isNew || (await walkInNeedsPrivacyAck(patient.id, input.clinicId));
   if (privacyNoticeAckRequired && !privacyNoticeExplained) {
     throw new WalkInError(PRIVACY_NOTICE_REQUIRED_MESSAGE, 400);
@@ -356,6 +368,11 @@ export async function checkInWalkIn(input: WalkInCheckInInput): Promise<WalkInCh
         visitReason: reasonForVisit,
       },
     });
+    await tx.clinicPatient.upsert({
+      where: { clinicId_patientId: { clinicId: input.clinicId, patientId: patient.id } },
+      create: { clinicId: input.clinicId, patientId: patient.id, source: 'VISIT', addedByStaffId: input.staffId },
+      update: {},
+    });
     if (input.smsOptOut || (input.smsConsent && patient.smsOptOut)) {
       await tx.patient.update({
         where: { id: patient.id },
@@ -387,6 +404,8 @@ export async function checkInWalkIn(input: WalkInCheckInInput): Promise<WalkInCh
     actorType: 'STAFF',
     actorId: input.staffId,
     staffId: input.staffId,
+    clinicId: input.clinicId,
+    patientId: patient.id,
     action: 'WALK_IN_CHECKED_IN',
     entityType: 'CheckIn',
     entityId: checkInId,
@@ -413,7 +432,12 @@ export async function checkInWalkIn(input: WalkInCheckInInput): Promise<WalkInCh
     },
   });
 
-  const sms: WalkInSmsOutcome = input.smsConsent ? await sendWalkInInvite(patient, clinic.name, input.staffId) : 'not_requested';
+  // The patient's SMS preference after this check-in (ticking either box updates it above).
+  const wantsSms = input.smsOptOut ? false : input.smsConsent ? true : !patient.smsOptOut;
+  const position = Math.max(queuePosition, 1);
+  const sms: WalkInSmsOutcome = wantsSms
+    ? await sendQueueJoinSms(patient, encounterId, { id: input.clinicId, name: clinic.name }, position, input.staffId)
+    : 'not_requested';
 
   return {
     checkInId,
@@ -423,7 +447,7 @@ export async function checkInWalkIn(input: WalkInCheckInInput): Promise<WalkInCh
     patientCode: patient.patientCode,
     isNewPatient: isNew,
     departmentName: department.name,
-    queuePosition: Math.max(queuePosition, 1),
+    queuePosition: position,
     sms,
   };
 }

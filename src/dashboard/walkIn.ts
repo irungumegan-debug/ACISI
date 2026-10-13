@@ -31,16 +31,16 @@ function sendWalkInError(err: unknown, res: Response): boolean {
   return false;
 }
 
-/** Step 1: look a patient up by phone number (any Kenyan format). */
+/** Step 1: look the patient(s) up by phone number (any Kenyan format) or ACISI ID. */
 walkInRouter.get('/lookup', async (req, res) => {
-  const phone = typeof req.query.phone === 'string' ? req.query.phone : '';
-  if (!phone.trim()) {
-    res.status(400).json({ error: 'Enter a phone number' });
+  const q = typeof req.query.q === 'string' ? req.query.q : typeof req.query.phone === 'string' ? req.query.phone : '';
+  if (!q.trim()) {
+    res.status(400).json({ error: 'Enter a phone number or ACISI ID' });
     return;
   }
   const { clinicId, staffId } = (req as AuthenticatedRequest).dashboardSession;
   try {
-    res.json(await lookupWalkInPatient(phone, clinicId, staffId));
+    res.json(await lookupWalkInPatient(q, clinicId, staffId));
   } catch (err) {
     if (!sendWalkInError(err, res)) throw err;
   }
@@ -55,7 +55,11 @@ const newPatientSchema = z.object({
 });
 
 const checkInSchema = z.object({
-  phone: z.string().trim().min(1, 'Enter a phone number').max(20),
+  /** The patient picked from the lookup — the normal path. */
+  patientId: z.string().trim().min(1).max(64).optional(),
+  /** "I confirmed the patient's name and date of birth with them." Required with patientId. */
+  identityConfirmed: z.boolean().default(false),
+  phone: z.string().trim().min(1, 'Enter a phone number').max(20).optional(),
   departmentId: z.string().trim().min(1, 'Choose a department'),
   reasonForVisit: z.string().trim().min(2, 'Enter the reason for the visit').max(200, 'Keep the reason under 200 characters'),
   newPatient: newPatientSchema.optional(),
@@ -69,7 +73,7 @@ const checkInSchema = z.object({
 
 /** Step 2: add the patient (found or newly registered) to today's queue. No fee, no payment prompt. */
 walkInRouter.post('/', async (req, res) => {
-  const parsed = checkInSchema.safeParse(req.body);
+  const parsed = checkInSchema.refine((b) => b.patientId || b.phone, { message: 'Find the patient first' }).safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid request' });
     return;

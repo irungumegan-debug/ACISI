@@ -5,20 +5,34 @@ jest.mock('../../src/db/prisma', () => {
     checkIn: { findFirst: jest.fn(), create: jest.fn() },
     consent: { create: jest.fn() },
     patient: { update: jest.fn() },
+    clinicPatient: { upsert: jest.fn() },
   };
   return {
     prisma: {
       $transaction: jest.fn(async (fn: (t: typeof tx) => unknown) => fn(tx)),
       clinic: { findUnique: jest.fn() },
-      encounter: { findFirst: jest.fn(), count: jest.fn() },
+      encounter: { findFirst: jest.fn(), count: jest.fn(), groupBy: jest.fn(), updateMany: jest.fn() },
       checkIn: { groupBy: jest.fn() },
+      patient: { findMany: jest.fn(), findFirst: jest.fn() },
       __tx: tx,
     },
   };
 });
 jest.mock('../../src/config/africastalking', () => ({ smsClient: { send: jest.fn() } }));
 jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
-jest.mock('../../src/services/patientService', () => ({ findPatientByPhone: jest.fn(), registerPatient: jest.fn() }));
+jest.mock('../../src/services/patientService', () => {
+  // Most tests think in terms of "the patient on this phone"; findPatientsByPhone wraps that one.
+  const findPatientByPhone = jest.fn();
+  return {
+    findPatientByPhone,
+    findPatientsByPhone: jest.fn(async (phone: string) => {
+      const p = await findPatientByPhone(phone);
+      return p ? [p] : [];
+    }),
+    findPatientByCode: jest.fn(),
+    registerPatient: jest.fn(),
+  };
+});
 jest.mock('../../src/services/departmentService', () => ({ findActiveDepartment: jest.fn() }));
 jest.mock('../../src/services/doctorAssignmentService', () => ({ assignDoctorForCheckIn: jest.fn() }));
 jest.mock('../../src/services/appointmentService', () => ({ findArrivalMatch: jest.fn(), markAppointmentCompleted: jest.fn() }));
@@ -30,13 +44,14 @@ jest.mock('../../src/jobs/queue', () => ({ enqueueSmsReceipt: jest.fn() }));
 
 import { prisma } from '../../src/db/prisma';
 import { smsClient } from '../../src/config/africastalking';
-import { findPatientByPhone, registerPatient } from '../../src/services/patientService';
+import { findPatientByCode, findPatientByPhone, findPatientsByPhone, registerPatient } from '../../src/services/patientService';
 import { findActiveDepartment } from '../../src/services/departmentService';
 import { assignDoctorForCheckIn } from '../../src/services/doctorAssignmentService';
 import { findArrivalMatch, markAppointmentCompleted } from '../../src/services/appointmentService';
 import { publishWalkInCheckedIn } from '../../src/services/realtimeEvents';
 import { recordLegalAcceptances, walkInNeedsPrivacyAck } from '../../src/services/legalService';
 import { initiateStkPush } from '../../src/mpesa/stkPush';
+import { notifyNextInQueue } from '../../src/services/queueSmsService';
 import { enqueueSmsReceipt } from '../../src/jobs/queue';
 import {
   checkInWalkIn,
@@ -78,6 +93,12 @@ beforeEach(() => {
   (findArrivalMatch as jest.Mock).mockResolvedValue(null);
   (prisma.encounter.count as jest.Mock).mockResolvedValue(3);
   mockFindPatient.mockResolvedValue(PATIENT);
+  (prisma.patient.findMany as jest.Mock).mockImplementation(async () => {
+    const p = await mockFindPatient();
+    return p ? [p] : [];
+  });
+  (prisma.encounter.groupBy as jest.Mock).mockResolvedValue([]);
+  (prisma.encounter.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
   (walkInNeedsPrivacyAck as jest.Mock).mockResolvedValue(false);
   tx.encounter!.findFirst!.mockResolvedValue(null);
   tx.checkIn!.findFirst!.mockResolvedValue(null);
@@ -106,36 +127,47 @@ describe('phone normalisation', () => {
 
   it('searches by the normalised number whatever format staff typed', async () => {
     await lookupWalkInPatient('254712345678', 'clinic-A', 'staff-1');
-    expect(mockFindPatient).toHaveBeenCalledWith('+254712345678');
+    expect(findPatientsByPhone).toHaveBeenCalledWith('+254712345678');
   });
 });
 
 describe('lookupWalkInPatient', () => {
   it('returns the existing patient with their last visit at this clinic only', async () => {
-    (prisma.encounter.findFirst as jest.Mock).mockResolvedValue({ createdAt: new Date('2026-09-20T10:00:00Z') });
+    (prisma.encounter.groupBy as jest.Mock).mockResolvedValue([{ patientId: 'p-1', _max: { createdAt: new Date('2026-09-20T10:00:00Z') } }]);
     const result = await lookupWalkInPatient('0712345678', 'clinic-A', 'staff-1');
-    expect(result).toEqual({
+    expect(result).toMatchObject({
+      query: '+254712345678',
+      kind: 'phone',
       phoneNumber: '+254712345678',
-      patient: {
-        id: 'p-1',
-        name: 'Jane Wanjiru',
-        patientCode: 'ACI-7F2K',
-        lastVisitAt: new Date('2026-09-20T10:00:00Z'),
-        hasIdOnFile: false,
-        hasNextOfKinOnFile: false,
-      },
-      privacyNoticeAckRequired: false,
+      patients: [
+        {
+          id: 'p-1',
+          name: 'Jane Wanjiru',
+          patientCode: 'ACI-7F2K',
+          lastVisitAt: new Date('2026-09-20T10:00:00Z'),
+          hasIdOnFile: false,
+          hasNextOfKinOnFile: false,
+          privacyNoticeAckRequired: false,
+        },
+      ],
     });
-    expect(prisma.encounter.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { patientId: 'p-1', clinicId: 'clinic-A' } }));
+    expect(prisma.encounter.groupBy).toHaveBeenCalledWith(expect.objectContaining({ where: { patientId: { in: ['p-1'] }, clinicId: 'clinic-A' } }));
   });
 
-  it('returns no patient when the phone number is new', async () => {
+  it('returns nobody when the phone number is new', async () => {
     mockFindPatient.mockResolvedValue(null);
     expect(await lookupWalkInPatient('0799000111', 'clinic-A', 'staff-1')).toEqual({
+      query: '+254799000111',
+      kind: 'phone',
       phoneNumber: '+254799000111',
-      patient: null,
-      privacyNoticeAckRequired: true,
+      patients: [],
     });
+  });
+
+  it('finds a patient by ACISI ID', async () => {
+    (findPatientByCode as jest.Mock).mockResolvedValue(PATIENT);
+    const result = await lookupWalkInPatient('ACI-7F2K', 'clinic-A', 'staff-1');
+    expect(result).toMatchObject({ kind: 'patientCode', phoneNumber: null, patients: [{ id: 'p-1' }] });
   });
 });
 
@@ -159,9 +191,9 @@ describe('finding or creating the patient', () => {
       firstName: 'Amina',
       lastName: 'Achieng Otieno',
       dateOfBirth: new Date(Date.UTC(new Date().getUTCFullYear() - 34, 0, 1)),
+      dateOfBirthEstimated: true,
       sex: 'FEMALE',
       consentChannel: 'STAFF_ASSISTED',
-      crossClinicConsent: false,
     });
     expect(result).toMatchObject({ patientId: 'p-new', isNewPatient: true });
   });
@@ -260,39 +292,106 @@ describe('no ACISI fee for walk-ins', () => {
   });
 });
 
-describe('SMS invite', () => {
-  it('sends nothing and records no consent when the box is not ticked', async () => {
-    const result = await checkInWalkIn(input({ smsConsent: false }));
-    expect(mockSend).not.toHaveBeenCalled();
-    expect(tx.consent!.create).not.toHaveBeenCalled();
-    expect(result.sms).toBe('not_requested');
+describe('queue SMS', () => {
+  it('sends one "you are number N" SMS on joining, with no department name', async () => {
+    const result = await checkInWalkIn(input());
+    expect(mockSend).toHaveBeenCalledTimes(1);
+    expect(mockSend).toHaveBeenCalledWith({
+      to: ['+254712345678'],
+      message: 'You are number 3 in the queue at Sunrise Family Clinic. Next time, check in from home at acisi.co.ke/patient',
+    });
+    expect(mockSend.mock.calls[0][0].message).not.toContain('General');
+    expect(result.sms).toBe('sent');
+    // Claimed before sending, so it can never go out twice.
+    expect(prisma.encounter.updateMany).toHaveBeenCalledWith({ where: { id: 'enc-1', queueJoinSmsAt: null }, data: { queueJoinSmsAt: expect.any(Date) } });
   });
 
-  it('records the consent with a timestamped row, then sends exactly one invite', async () => {
-    const result = await checkInWalkIn(input({ smsConsent: true }));
+  it('marks someone already first in line so they never also get "you\'re next"', async () => {
+    (prisma.encounter.count as jest.Mock).mockResolvedValue(1);
+    await checkInWalkIn(input());
+    expect(prisma.encounter.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { queueJoinSmsAt: expect.any(Date), queueNextSmsAt: expect.any(Date) } }),
+    );
+  });
+
+  it('records SMS consent when the box is ticked, before sending', async () => {
+    await checkInWalkIn(input({ smsConsent: true }));
     expect(tx.consent!.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ patientId: 'p-1', type: 'SMS_CLINIC_MESSAGES', granted: true, channel: 'STAFF_ASSISTED' }),
     });
     expect(tx.consent!.create!.mock.invocationCallOrder[0]!).toBeLessThan(mockSend.mock.invocationCallOrder[0]!);
     expect(mockSend).toHaveBeenCalledTimes(1);
-    expect(mockSend).toHaveBeenCalledWith({
-      to: ['+254712345678'],
-      message: 'Welcome to Sunrise Family Clinic. Next time, skip the queue: check in from home at acisi.co.ke/patient',
-    });
-    expect(result.sms).toBe('sent');
   });
 
   it('still completes the check-in when the SMS fails, and reports the failure', async () => {
     mockSend.mockRejectedValue(new Error('Africa\'s Talking unreachable'));
-    const result = await checkInWalkIn(input({ smsConsent: true }));
+    const result = await checkInWalkIn(input());
     expect(result).toMatchObject({ checkInId: 'ci-1', sms: 'failed' });
     expect(tx.checkIn!.create).toHaveBeenCalledTimes(1);
-    expect(tx.consent!.create).toHaveBeenCalledTimes(1);
   });
 
   it('treats a recipient rejected by the provider as a failure', async () => {
     mockSend.mockResolvedValue({ SMSMessageData: { Recipients: [{ status: 'InsufficientBalance', statusCode: 405 }] } });
-    expect((await checkInWalkIn(input({ smsConsent: true }))).sms).toBe('failed');
+    expect((await checkInWalkIn(input())).sms).toBe('failed');
+  });
+
+  it('sends nothing to a patient who opted out earlier', async () => {
+    mockFindPatient.mockResolvedValue({ ...PATIENT, smsOptOut: true });
+    expect((await checkInWalkIn(input())).sms).toBe('not_requested');
+    expect(mockSend).not.toHaveBeenCalled();
+  });
+});
+
+describe('picking a patient on a shared phone', () => {
+  it('requires staff to confirm name and date of birth', async () => {
+    (prisma.patient.findFirst as jest.Mock).mockResolvedValue(PATIENT);
+    await expect(checkInWalkIn(input({ phone: undefined, patientId: 'p-1' }))).rejects.toMatchObject({ status: 400 });
+    expect(tx.checkIn!.create).not.toHaveBeenCalled();
+    await checkInWalkIn(input({ phone: undefined, patientId: 'p-1', identityConfirmed: true }));
+    expect(tx.checkIn!.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses to guess when only a shared phone is given', async () => {
+    (findPatientsByPhone as jest.Mock).mockResolvedValueOnce([PATIENT, { ...PATIENT, id: 'p-2' }]);
+    await expect(checkInWalkIn(input())).rejects.toMatchObject({ status: 409 });
+  });
+
+  it('links the patient to the clinic as part of the check-in', async () => {
+    await checkInWalkIn(input());
+    expect(tx.clinicPatient!.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ create: expect.objectContaining({ clinicId: 'clinic-A', patientId: 'p-1', source: 'VISIT' }) }),
+    );
+  });
+});
+
+describe('"you\'re next" SMS', () => {
+  const NEXT = {
+    id: 'enc-9',
+    queueJoinSmsAt: new Date(),
+    queueNextSmsAt: null,
+    checkIn: { source: 'WALK_IN' },
+    patient: { id: 'p-9', phoneNumber: '+254700000009', smsOptOut: false, deletedAt: null },
+    clinic: { name: 'Sunrise Family Clinic' },
+  };
+
+  it('texts the walk-in now first in line, once', async () => {
+    (prisma.encounter.findFirst as jest.Mock).mockResolvedValue(NEXT);
+    await notifyNextInQueue('clinic-A', 'dept-general');
+    expect(mockSend).toHaveBeenCalledWith({ to: ['+254700000009'], message: "You're next at Sunrise Family Clinic. Please stay near reception." });
+    (prisma.encounter.updateMany as jest.Mock).mockResolvedValue({ count: 0 });
+    await notifyNextInQueue('clinic-A', 'dept-general');
+    expect(mockSend).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['a remote check-in', { checkIn: { source: 'REMOTE' } }],
+    ['someone already told', { queueNextSmsAt: new Date() }],
+    ['someone who got no join SMS', { queueJoinSmsAt: null }],
+    ['someone who opted out', { patient: { ...NEXT.patient, smsOptOut: true } }],
+  ])('sends nothing to %s', async (_l, overrides) => {
+    (prisma.encounter.findFirst as jest.Mock).mockResolvedValue({ ...NEXT, ...overrides });
+    await notifyNextInQueue('clinic-A', 'dept-general');
+    expect(mockSend).not.toHaveBeenCalled();
   });
 });
 
@@ -358,7 +457,7 @@ describe('Privacy Notice checkbox at walk-in check-in', () => {
   it("tells the front desk to ask at the patient's first walk-in at this clinic", async () => {
     mockNeedsAck.mockResolvedValue(true);
     const result = await lookupWalkInPatient('0712345678', 'clinic-A', 'staff-1');
-    expect(result.privacyNoticeAckRequired).toBe(true);
+    expect(result.patients[0]?.privacyNoticeAckRequired).toBe(true);
     expect(mockNeedsAck).toHaveBeenCalledWith('p-1', 'clinic-A');
   });
 
@@ -438,7 +537,7 @@ describe('ID document and next of kin at walk-in check-in', () => {
   it('lookup only says whether details are on file, never what they are', async () => {
     mockFindPatient.mockResolvedValue({ ...PATIENT, idType: 'PASSPORT', idNumber: 'AK123456', nextOfKinName: 'Peter', nextOfKinPhone: null });
     const result = await lookupWalkInPatient('0712345678', 'clinic-A', 'staff-1');
-    expect(result.patient).toMatchObject({ hasIdOnFile: true, hasNextOfKinOnFile: true });
+    expect(result.patients[0]).toMatchObject({ hasIdOnFile: true, hasNextOfKinOnFile: true });
     expect(JSON.stringify(result)).not.toContain('AK123456');
   });
 });

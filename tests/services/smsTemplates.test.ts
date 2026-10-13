@@ -1,34 +1,15 @@
 import {
+  buildQueueJoinSms,
+  buildQueueNextSms,
   buildRegistrationSms,
   appendIfNoExtraPart,
   buildPaymentReceiptSms,
   buildVisitSummarySms,
-  buildWalkInInviteSms,
   formatKes,
   PRIVACY_NOTICE_SMS_LINE,
   SINGLE_SMS_MAX_CHARS,
   smsPartCount,
 } from '../../src/services/smsTemplates';
-
-describe('buildWalkInInviteSms', () => {
-  it('uses the agreed wording and the patient check-in page', () => {
-    expect(buildWalkInInviteSms('Sunrise Family Clinic')).toBe(
-      'Welcome to Sunrise Family Clinic. Next time, skip the queue: check in from home at acisi.co.ke/patient',
-    );
-  });
-
-  it('shortens a long clinic name instead of splitting into two SMS', () => {
-    const sms = buildWalkInInviteSms('The Very Long Name Of A Community Health Centre And Maternity Wing Serving Nairobi County And Surrounds');
-    expect(sms.length).toBeLessThanOrEqual(SINGLE_SMS_MAX_CHARS);
-    expect(sms).toMatch(/^Welcome to The Very Long Name.*\.\.\.\. Next time, skip the queue: check in from home at acisi\.co\.ke\/patient$/);
-  });
-
-  it('keeps to plain characters so the SMS is not forced into the 70-character mode', () => {
-    const sms = buildWalkInInviteSms('St. Mary’s Clinic – Nyeri 🏥');
-    expect(sms).toMatch(/^[\x20-\x7E]+$/);
-    expect(sms).toContain("St. Mary's Clinic - Nyeri.");
-  });
-});
 
 describe('formatKes', () => {
   it.each([
@@ -180,5 +161,19 @@ describe('buildRegistrationSms', () => {
 
   it('never contains medical wording', () => {
     expect(buildRegistrationSms('Sunrise', { replyStop: true })).not.toMatch(/health|medical|treat|diagnos/i);
+  });
+});
+
+describe('walk-in queue SMS', () => {
+  it('gives the place in the queue, with the check-in-from-home line when it fits', () => {
+    expect(buildQueueJoinSms('Sunrise Clinic', 3)).toBe('You are number 3 in the queue at Sunrise Clinic. Next time, check in from home at acisi.co.ke/patient');
+    expect(buildQueueNextSms('Sunrise Clinic')).toBe("You're next at Sunrise Clinic. Please stay near reception.");
+  });
+
+  it('is always one SMS, whatever the clinic name', () => {
+    const name = 'St. Mary’s Clinic – Nyeri 🏥 '.repeat(8);
+    for (const msg of [buildQueueJoinSms(name, 12), buildQueueNextSms(name)]) {
+      expect(smsPartCount(msg)).toBe(1);
+    }
   });
 });

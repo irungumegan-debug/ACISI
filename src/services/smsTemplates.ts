@@ -64,31 +64,6 @@ export function toSmsSafe(text: string): string {
     .trim();
 }
 
-/**
- * The one-off invite sent to a walk-in patient who agreed to SMS from the
- * clinic: "Welcome to [Clinic]. Next time, skip the queue: check in from
- * home at acisi.co.ke/patient". Always a single SMS — if the clinic name
- * would push it past 160 characters, the clinic name is shortened rather
- * than the message being split in two.
- *
- * TODO: Add USSD code to invite once live shortcode is active (planned Dec
- * 2026 / early 2027; see "Planned features" in CLAUDE.md). The USSD code is
- * already available as env.AT_USSD_SERVICE_CODE — add it as e.g.
- * "... at acisi.co.ke/patient or dial *384*123#", and keep the clinic-name
- * shortening below so the total still fits one SMS.
- */
-export function buildWalkInInviteSms(clinicName: string): string {
-  const before = 'Welcome to ';
-  const after = `. Next time, skip the queue: check in from home at ${PATIENT_CHECKIN_URL}`;
-  const room = SINGLE_SMS_MAX_CHARS - before.length - after.length;
-
-  let name = toSmsSafe(clinicName) || 'the clinic';
-  if (name.length > room) {
-    name = name.slice(0, room - 3).trimEnd() + '...';
-  }
-  return `${before}${name}${after}`;
-}
-
 /** Shortens a clinic name so `before + name + after` fits one SMS, or leaves it alone. */
 function fitClinicName(clinicName: string, fixedLength: number): string {
   const room = SINGLE_SMS_MAX_CHARS - fixedLength;
@@ -103,6 +78,15 @@ function fitClinicName(clinicName: string, fixedLength: number): string {
 export const REPLY_STOP_SMS_LINE = 'Reply STOP to opt out.';
 
 /**
+ * TODO: Add the USSD code once the live shortcode is active (planned Dec
+ * 2026 / early 2027; see "Planned features" in CLAUDE.md). It's already
+ * available as env.AT_USSD_SERVICE_CODE. Add it to the "check in from home"
+ * line of buildRegistrationSms and buildQueueJoinSms (e.g. "... at
+ * acisi.co.ke or dial *384*123#") — fitClinicName / appendIfNoExtraPart
+ * keep each message to one SMS.
+ */
+
+/**
  * Sent once when a clinic adds a patient (or presses "Send invitations" for
  * imported patients): "You're registered with [Clinic] on ACISI. Check in
  * from home next time at acisi.co.ke." Always one SMS — a long clinic name
@@ -112,6 +96,27 @@ export const REPLY_STOP_SMS_LINE = 'Reply STOP to opt out.';
 export function buildRegistrationSms(clinicName: string, opts: { replyStop: boolean }): string {
   const before = "You're registered with ";
   const after = ` on ACISI. Check in from home next time at acisi.co.ke.${opts.replyStop ? ` ${REPLY_STOP_SMS_LINE}` : ''}`;
+  return `${before}${fitClinicName(clinicName, before.length + after.length)}${after}`;
+}
+
+/**
+ * Walk-in queue SMS, sent on joining: "You are number 3 in the queue at
+ * Sunrise Clinic." plus "Next time, check in from home at acisi.co.ke"
+ * when that still fits one SMS. The department name is deliberately left
+ * out — like the visit summary, a department (e.g. "Gynecology") can say
+ * more about the visit than the patient would want on their phone.
+ */
+export function buildQueueJoinSms(clinicName: string, position: number): string {
+  const before = `You are number ${Math.max(1, Math.trunc(position))} in the queue at `;
+  const after = '.';
+  const message = `${before}${fitClinicName(clinicName, before.length + after.length)}${after}`;
+  return appendIfNoExtraPart(message, ' ', `Next time, check in from home at ${PATIENT_CHECKIN_URL}`);
+}
+
+/** Walk-in queue SMS, sent once when they reach the front of the line: "You're next at Sunrise Clinic. Please stay near reception." */
+export function buildQueueNextSms(clinicName: string): string {
+  const before = "You're next at ";
+  const after = '. Please stay near reception.';
   return `${before}${fitClinicName(clinicName, before.length + after.length)}${after}`;
 }
 

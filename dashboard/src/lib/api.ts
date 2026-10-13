@@ -181,25 +181,28 @@ export interface DepartmentOption {
   name: string;
 }
 
-export interface WalkInLookup {
-  phoneNumber: string;
-  patient: {
-    id: string;
-    name: string;
-    patientCode: string;
-    lastVisitAt: string | null;
-    /** Only whether they're on file — the details aren't shown at lookup. */
-    hasIdOnFile: boolean;
-    hasNextOfKinOnFile: boolean;
-  } | null;
-  /** The Privacy Notice box is needed: a new patient, their first walk-in at this clinic, or a new notice version. */
+export interface WalkInPatientMatch extends PatientMatch {
+  /** Only whether they're on file — the details aren't shown at lookup. */
+  hasIdOnFile: boolean;
+  hasNextOfKinOnFile: boolean;
+  /** The Privacy Notice box is needed: their first walk-in at this clinic, or a new notice version. */
   privacyNoticeAckRequired: boolean;
+}
+
+export interface WalkInLookup {
+  query: string;
+  kind: 'phone' | 'patientCode';
+  phoneNumber: string | null;
+  patients: WalkInPatientMatch[];
 }
 
 export type Sex = 'MALE' | 'FEMALE' | 'OTHER' | 'UNKNOWN';
 
 export interface WalkInRequest {
-  phone: string;
+  /** The patient picked from the lookup. */
+  patientId: string;
+  /** Staff confirmed the patient's name and date of birth with them. */
+  identityConfirmed: boolean;
   departmentId: string;
   reasonForVisit: string;
   smsConsent: boolean;
@@ -208,13 +211,6 @@ export interface WalkInRequest {
   privacyNoticeExplained: boolean;
   /** Optional; empty fields leave what's on file alone. */
   identity?: PatientIdentity;
-  newPatient?: {
-    fullName: string;
-    dateOfBirth?: string;
-    age?: number;
-    sex?: Sex;
-    registrationConsent: boolean;
-  };
 }
 
 export interface WalkInResult {
@@ -527,7 +523,7 @@ export const api = {
     return res.json() as Promise<{ departments: DepartmentOption[] }>;
   },
   lookupWalkIn(phone: string) {
-    return request<WalkInLookup>(`/walk-in/lookup?phone=${encodeURIComponent(phone)}`);
+    return request<WalkInLookup>(`/walk-in/lookup?q=${encodeURIComponent(phone)}`);
   },
   checkInWalkIn(body: WalkInRequest) {
     return request<WalkInResult>('/walk-in', { method: 'POST', body: JSON.stringify(body) });
