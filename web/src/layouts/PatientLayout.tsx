@@ -80,8 +80,55 @@ function AcceptTermsPanel({ onAccepted }: { onAccepted: () => void }) {
   );
 }
 
+/**
+ * Shown once, right after the patient sets their PIN (and to anyone who
+ * hasn't confirmed it yet): their ACISI ID, with a required "I have saved
+ * my ACISI ID" box before the portal opens.
+ */
+function SaveIdPanel({ patientCode, onSaved }: { patientCode: string; onSaved: () => void }) {
+  const [ticked, setTicked] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit(e: FormEvent): Promise<void> {
+    e.preventDefault();
+    if (!ticked) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await api.markPatientIdSaved();
+      onSaved();
+    } catch {
+      setError('Something went wrong. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <form className="panel" onSubmit={(e) => void handleSubmit(e)}>
+      <p className="lede">Your ACISI ID:</p>
+      <p className="patient-id" style={{ fontSize: '2rem', letterSpacing: '0.08em' }}>
+        {patientCode}
+      </p>
+      <p>
+        Save this ID somewhere safe, such as a note on your phone or a photo. You&apos;ll need it to log in, check in at clinics, and recover your
+        account. You can share your ACISI ID with your clinic, but never share your PIN with anyone, including ACISI staff.
+      </p>
+      <label className="legal-check">
+        <input type="checkbox" required checked={ticked} onChange={(e) => setTicked(e.target.checked)} />
+        <span>I have saved my ACISI ID</span>
+      </label>
+      {error && <p className="error-text">{error}</p>}
+      <button type="submit" className="btn btn-primary" disabled={!ticked || submitting}>
+        {submitting ? 'Saving…' : 'Continue'}
+      </button>
+    </form>
+  );
+}
+
 export function PatientLayout() {
-  const { session, loading, logout } = usePatientAuth();
+  const { session, loading, logout, setSession } = usePatientAuth();
   const location = useLocation();
   // null while checking; 'error' shows a retry rather than letting anyone past unchecked.
   const [termsStatus, setTermsStatus] = useState<'required' | 'accepted' | 'error' | null>(null);
@@ -132,12 +179,14 @@ export function PatientLayout() {
             {greeting()}, {session.firstName}
           </p>
           <p className="who">
-            Patient ID <span className="who-code">{session.patientCode}</span>
+            ACISI ID <span className="who-code">{session.patientCode}</span>
           </p>
         </div>
       </header>
       <main className="patient-main">
-        {termsStatus === 'accepted' ? (
+        {session.idSaved === false ? (
+          <SaveIdPanel patientCode={session.patientCode} onSaved={() => setSession({ ...session, idSaved: true })} />
+        ) : termsStatus === 'accepted' ? (
           <Outlet />
         ) : termsStatus === 'required' ? (
           <AcceptTermsPanel onAccepted={() => setTermsStatus('accepted')} />

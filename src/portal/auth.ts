@@ -1,25 +1,28 @@
 import { NextFunction, Request, Response, Router } from 'express';
+import { Patient } from '@prisma/client';
 import { z } from 'zod';
 import { redis } from '../config/redis';
 import {
   LOGIN_RATE_LIMIT_MAX_ATTEMPTS,
   LOGIN_RATE_LIMIT_WINDOW_SECONDS,
   DASHBOARD_SESSION_TTL_SECONDS,
-  OTP_REQUEST_RATE_LIMIT_MAX_ATTEMPTS,
-  OTP_REQUEST_RATE_LIMIT_WINDOW_SECONDS,
+  PATIENT_LONG_SESSION_TTL_SECONDS,
+  PATIENT_OTP_MAX_SENDS_PER_IP_PER_HOUR,
 } from '../config/constants';
-import { InvalidPhoneNumberError, toE164 } from '../utils/phone';
-import { pinPolicyError } from '../utils/pinPolicy';
 import {
-  findPatientByPhoneOrCode,
-  registerPatient,
-  setPatientPin,
-  verifyPatientPin,
-} from '../services/patientService';
-import { requestPinResetOtp, verifyPinResetOtp } from '../services/otpService';
+  completeSelfSignup,
+  completeSetupWithPin,
+  confirmPatientPin,
+  loginWithPin,
+  markIdSaved,
+  PatientAuthError,
+  requestPatientOtp,
+  selectSetupPerson,
+  startSetupFlow,
+  verifySetupDateOfBirth,
+} from '../services/patientAuthService';
 import { deletePatientAccount, PatientNotFoundError } from '../services/patientDeletionService';
 import { prisma } from '../db/prisma';
-import { revokeSessionsFor } from '../services/sessionRevocation';
 import {
   createPatientSession,
   destroyPatientSession,
@@ -56,136 +59,183 @@ async function clearAttempts(prefix: string, identifier: string): Promise<void> 
 
 export const portalAuthRouter = Router();
 
-const registerSchema = z.object({
-  firstName: z.string().min(1),
-  lastName: z.string().min(1),
-  phoneNumber: z.string().min(1),
-  dateOfBirth: z.string().optional(),
-  sex: z.enum(['MALE', 'FEMALE', 'OTHER', 'UNKNOWN']).optional(),
-  pin: z.string().min(1),
-  crossClinicConsent: z.boolean().optional(),
-  /** "I accept the Terms of Service and have read the Privacy Notice" — required. */
-  acceptLegal: z.boolean().optional(),
-  // Optional — many patients won't have one, and nothing else in the
-  // product depends on it (no email login, no email OTP). Only ever used
-  // later for the staff-initiated visit-summary email at checkout.
-  email: z.string().email('Please enter a valid email address').optional().or(z.literal('')),
-});
-
-portalAuthRouter.post('/register', async (req, res) => {
-  const parsed = registerSchema.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: 'Please fill in all required fields with a valid PIN' });
-    return;
+function sendAuthError(err: unknown, res: Response): boolean {
+  if (err instanceof PatientAuthError) {
+    res.status(err.status).json({ error: err.message, ...(err.details ?? {}) });
+    return true;
   }
+  return false;
+}
 
-  let phoneE164: string;
-  try {
-    phoneE164 = toE164(parsed.data.phoneNumber);
-  } catch (err) {
-    if (err instanceof InvalidPhoneNumberError) {
-      res.status(400).json({ error: 'Invalid phone number' });
-      return;
-    }
-    throw err;
-  }
-
-  const pinError = pinPolicyError(parsed.data.pin, { phoneNumber: phoneE164 });
-  if (pinError) {
-    res.status(400).json({ error: pinError });
-    return;
-  }
-
-  if (parsed.data.acceptLegal !== true) {
-    res.status(400).json({ error: 'Please accept the Terms of Service and Privacy Notice to create your account' });
-    return;
-  }
-
-  const patient = await registerPatient({
-    phoneNumberE164: phoneE164,
-    firstName: parsed.data.firstName,
-    lastName: parsed.data.lastName,
-    dateOfBirth: parsed.data.dateOfBirth ? new Date(parsed.data.dateOfBirth) : undefined,
-    sex: parsed.data.sex ?? 'UNKNOWN',
-    consentChannel: 'PORTAL',
-    crossClinicConsent: parsed.data.crossClinicConsent ?? false,
-    pin: parsed.data.pin,
-    email: parsed.data.email || undefined,
-    acceptedTermsAndPrivacyNotice: true,
-  }).catch((err) => {
-    if (err?.code === 'P2002') return null;
-    throw err;
-  });
-
-  if (!patient) {
-    res.status(409).json({ error: 'An account with that phone number already exists' });
-    return;
-  }
-
-  const token = await createPatientSession({
-    patientId: patient.id,
-    patientCode: patient.patientCode,
-    firstName: patient.firstName,
-  });
-
+/** Sets the session cookie: 8 hours, or 30 days with "keep me signed in" (personal devices). */
+async function startSession(req: Request, res: Response, patient: Patient, keepSignedIn: boolean, issuedAfter = 0): Promise<void> {
+  const ttl = keepSignedIn ? PATIENT_LONG_SESSION_TTL_SECONDS : DASHBOARD_SESSION_TTL_SECONDS;
+  const token = await createPatientSession({ patientId: patient.id, patientCode: patient.patientCode, firstName: patient.firstName }, ttl, issuedAfter);
   res.cookie(PATIENT_SESSION_COOKIE_NAME, token, {
     httpOnly: true,
-    // req.secure (not env.NODE_ENV, which Railway never sets to
-    // 'production') reflects whether this request actually arrived over
-    // HTTPS, via the trust proxy setting in app.ts honoring
-    // X-Forwarded-Proto from the platform's TLS-terminating edge proxy.
+    // req.secure (not env.NODE_ENV) reflects whether this request actually
+    // arrived over HTTPS, via the trust proxy setting in app.ts honoring
+    // X-Forwarded-Proto from the TLS-terminating proxy in front of us.
     secure: req.secure,
     sameSite: 'lax',
-    maxAge: DASHBOARD_SESSION_TTL_SECONDS * 1000,
+    maxAge: ttl * 1000,
   });
+}
 
-  res.status(201).json({ patientCode: patient.patientCode, firstName: patient.firstName });
-});
+function sessionBody(patient: Patient) {
+  return { patientCode: patient.patientCode, firstName: patient.firstName, idSaved: Boolean(patient.idSavedAt) };
+}
 
 const loginSchema = z.object({
-  identifier: z.string().min(1),
-  pin: z.string().min(1),
+  identifier: z.string().trim().min(1).max(40),
+  pin: z.string().max(12),
+  /** Set when the PIN matched several people on a shared phone and the patient picked one. */
+  patientId: z.string().max(64).optional(),
+  keepSignedIn: z.boolean().default(false),
 });
 
+/** Everyday login: phone number or ACISI ID + 6-digit PIN. No SMS. */
 portalAuthRouter.post('/login', async (req, res) => {
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: 'Phone number/patient ID and PIN are required' });
+    res.status(400).json({ error: 'Phone number or ACISI ID, and PIN, are required' });
     return;
   }
+  try {
+    const result = await loginWithPin(parsed.data.identifier, parsed.data.pin, { patientId: parsed.data.patientId });
+    if (result.kind === 'choose') {
+      res.json({ choose: result.people });
+      return;
+    }
+    await startSession(req, res, result.patient, parsed.data.keepSignedIn);
+    res.json(sessionBody(result.patient));
+  } catch (err) {
+    if (!sendAuthError(err, res)) throw err;
+  }
+});
 
-  const identifier = parsed.data.identifier.trim();
+/** Per-IP cap across all phone numbers, so the OTP endpoint can't be used to run up the SMS bill. */
+async function ipOverOtpLimit(req: Request): Promise<boolean> {
+  const k = `portal:otp_ip:${req.ip ?? 'unknown'}`;
+  const count = await redis.incr(k);
+  if (count === 1) await redis.expire(k, 60 * 60);
+  return count > PATIENT_OTP_MAX_SENDS_PER_IP_PER_HOUR;
+}
 
-  if (await isRateLimited('login_attempts', identifier, LOGIN_RATE_LIMIT_MAX_ATTEMPTS)) {
-    res.status(429).json({ error: 'Too many failed attempts. Try again in a few minutes.' });
+const otpRequestSchema = z.object({ phone: z.string().trim().min(1).max(20), purpose: z.enum(['login', 'reset']) });
+
+/**
+ * Sends the one-time code: "login" for a first login (or signup), "reset"
+ * for a forgotten PIN. The answer is the same whether or not an account
+ * exists for the number.
+ */
+portalAuthRouter.post('/otp/request', async (req, res) => {
+  const parsed = otpRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Enter your phone number' });
     return;
   }
-
-  const patient = await findPatientByPhoneOrCode(identifier);
-  const isValid = patient ? await verifyPatientPin(patient, parsed.data.pin) : false;
-
-  if (!patient || !isValid) {
-    await recordAttempt('login_attempts', identifier, LOGIN_RATE_LIMIT_WINDOW_SECONDS);
-    res.status(401).json({ error: 'Invalid phone number/patient ID or PIN' });
+  if (await ipOverOtpLimit(req)) {
+    res.status(429).json({ error: 'Too many codes requested. Try again later.' });
     return;
   }
+  try {
+    await requestPatientOtp(parsed.data.phone, parsed.data.purpose);
+    res.json({ message: 'If this number can use ACISI, we sent a 6-digit code by SMS. It expires in 5 minutes.' });
+  } catch (err) {
+    if (!sendAuthError(err, res)) throw err;
+  }
+});
 
-  await clearAttempts('login_attempts', identifier);
+const otpVerifySchema = otpRequestSchema.extend({ code: z.string().trim().min(1).max(10) });
 
-  const token = await createPatientSession({
-    patientId: patient.id,
-    patientCode: patient.patientCode,
-    firstName: patient.firstName,
-  });
+/** Checks the code and starts the short setup flow; returns who is on this phone. */
+portalAuthRouter.post('/otp/verify', async (req, res) => {
+  const parsed = otpVerifySchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Enter the 6-digit code from the SMS' });
+    return;
+  }
+  try {
+    res.json(await startSetupFlow(parsed.data.phone, parsed.data.purpose, parsed.data.code));
+  } catch (err) {
+    if (!sendAuthError(err, res)) throw err;
+  }
+});
 
-  res.cookie(PATIENT_SESSION_COOKIE_NAME, token, {
-    httpOnly: true,
-    secure: req.secure,
-    sameSite: 'lax',
-    maxAge: DASHBOARD_SESSION_TTL_SECONDS * 1000,
-  });
+const flowSchema = z.object({ flowToken: z.string().max(80) });
 
-  res.json({ patientCode: patient.patientCode, firstName: patient.firstName });
+portalAuthRouter.post('/setup/select', async (req, res) => {
+  const parsed = flowSchema.extend({ patientId: z.string().max(64) }).safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Choose who you are' });
+    return;
+  }
+  try {
+    await selectSetupPerson(parsed.data.flowToken, parsed.data.patientId);
+    res.status(204).send();
+  } catch (err) {
+    if (!sendAuthError(err, res)) throw err;
+  }
+});
+
+portalAuthRouter.post('/setup/verify-dob', async (req, res) => {
+  const parsed = flowSchema.extend({ dateOfBirth: z.string().max(10) }).safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Enter your date of birth' });
+    return;
+  }
+  try {
+    await verifySetupDateOfBirth(parsed.data.flowToken, parsed.data.dateOfBirth);
+    res.status(204).send();
+  } catch (err) {
+    if (!sendAuthError(err, res)) throw err;
+  }
+});
+
+const setPinSchema = flowSchema.extend({ pin: z.string().max(12), pinConfirm: z.string().max(12), keepSignedIn: z.boolean().default(false) });
+
+/** Sets the PIN (first login or forgot PIN) and logs the patient in. The screen then shows their ACISI ID. */
+portalAuthRouter.post('/setup/set-pin', async (req, res) => {
+  const parsed = setPinSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Enter your new PIN twice' });
+    return;
+  }
+  try {
+    const { patient, revokedAt } = await completeSetupWithPin(parsed.data.flowToken, parsed.data.pin, parsed.data.pinConfirm);
+    await startSession(req, res, patient, parsed.data.keepSignedIn, revokedAt);
+    res.json(sessionBody(patient));
+  } catch (err) {
+    if (!sendAuthError(err, res)) throw err;
+  }
+});
+
+const signupSchema = setPinSchema.extend({
+  firstName: z.string().trim().min(1).max(50),
+  lastName: z.string().trim().min(1).max(50),
+  dateOfBirth: z.string().max(10),
+  sex: z.enum(['MALE', 'FEMALE', 'OTHER']),
+  /** "I accept the Terms of Service and have read the Privacy Notice" — required. */
+  acceptLegal: z.boolean().default(false),
+  // Optional — only ever used for the staff-initiated visit-summary email at checkout.
+  email: z.string().email('Please enter a valid email address').optional().or(z.literal('')),
+});
+
+/** Self-signup on the portal, after the phone number was confirmed by OTP. */
+portalAuthRouter.post('/setup/register', async (req, res) => {
+  const parsed = signupSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Please fill in all required fields' });
+    return;
+  }
+  try {
+    const patient = await completeSelfSignup(parsed.data.flowToken, parsed.data);
+    await startSession(req, res, patient, parsed.data.keepSignedIn);
+    res.status(201).json(sessionBody(patient));
+  } catch (err) {
+    if (!sendAuthError(err, res)) throw err;
+  }
 });
 
 portalAuthRouter.post('/logout', async (req, res) => {
@@ -197,90 +247,16 @@ portalAuthRouter.post('/logout', async (req, res) => {
   res.status(204).send();
 });
 
-portalAuthRouter.get('/me', requirePatientSession, (req, res) => {
-  res.json((req as AuthenticatedPatientRequest).patientSession);
+portalAuthRouter.get('/me', requirePatientSession, async (req, res) => {
+  const session = (req as AuthenticatedPatientRequest).patientSession;
+  const patient = await prisma.patient.findFirst({ where: { id: session.patientId, deletedAt: null }, select: { idSavedAt: true } });
+  res.json({ ...session, idSaved: Boolean(patient?.idSavedAt) });
 });
 
-const forgotPinSchema = z.object({ identifier: z.string().min(1) });
-
-/**
- * Always returns the same generic response whether or not the identifier
- * matched a patient — same no-enumeration principle as the staff dashboard
- * login. Real "forgot PIN" also bootstraps a first PIN for a patient who
- * registered via USSD and never set one, per the identity model.
- */
-portalAuthRouter.post('/forgot-pin', async (req, res) => {
-  const parsed = forgotPinSchema.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: 'Phone number or patient ID is required' });
-    return;
-  }
-
-  const identifier = parsed.data.identifier.trim();
-
-  if (await isRateLimited('otp_requests', identifier, OTP_REQUEST_RATE_LIMIT_MAX_ATTEMPTS)) {
-    res.status(429).json({ error: 'Too many requests. Try again in a few minutes.' });
-    return;
-  }
-  await recordAttempt('otp_requests', identifier, OTP_REQUEST_RATE_LIMIT_WINDOW_SECONDS);
-
-  const patient = await findPatientByPhoneOrCode(identifier);
-  if (patient) {
-    try {
-      await requestPinResetOtp(patient);
-    } catch (err) {
-      logger.error({ err }, 'Failed to send PIN reset OTP');
-    }
-  }
-
-  res.json({ message: 'If that account exists, we sent a one-time code by SMS.' });
-});
-
-const resetPinSchema = z.object({
-  identifier: z.string().min(1),
-  code: z.string().min(1),
-  newPin: z.string().min(1),
-});
-
-portalAuthRouter.post('/reset-pin', async (req, res) => {
-  const parsed = resetPinSchema.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: 'A valid code and new PIN are required' });
-    return;
-  }
-
-  const patient = await findPatientByPhoneOrCode(parsed.data.identifier.trim());
-  if (!patient) {
-    res.status(400).json({ error: 'Invalid code' });
-    return;
-  }
-
-  // Checked before the code, so a rejected PIN doesn't use up the
-  // one-time code — the patient can fix the PIN and resubmit.
-  const pinError = pinPolicyError(parsed.data.newPin, { phoneNumber: patient.phoneNumber });
-  if (pinError) {
-    res.status(400).json({ error: pinError });
-    return;
-  }
-
-  const isValid = await verifyPinResetOtp(patient.id, parsed.data.code.trim());
-  if (!isValid) {
-    res.status(400).json({ error: 'Invalid or expired code' });
-    return;
-  }
-
-  await setPatientPin(patient.id, parsed.data.newPin);
-
-  // Unlock automatically: clear the failed-login counter for every form of
-  // identifier they might log in with (it's keyed by what was typed), and
-  // log out any existing sessions, since the old PIN may be what someone
-  // else was using.
-  for (const id of new Set([parsed.data.identifier.trim(), patient.patientCode, patient.phoneNumber])) {
-    await clearAttempts('login_attempts', id);
-  }
-  await revokeSessionsFor(`patient:${patient.id}`);
-
-  res.json({ message: 'PIN updated. You can now log in with your new PIN.' });
+/** The patient ticked "I have saved my ACISI ID" on the screen shown after setting their PIN. */
+portalAuthRouter.post('/id-saved', requirePatientSession, async (req, res) => {
+  await markIdSaved((req as AuthenticatedPatientRequest).patientSession.patientId);
+  res.status(204).send();
 });
 
 const deleteAccountSchema = z.object({ pin: z.string().min(1) });
@@ -305,9 +281,14 @@ portalAuthRouter.post('/account/delete', requirePatientSession, async (req, res)
     return;
   }
 
-  const patient = await prisma.patient.findFirst({ where: { id: patientId, deletedAt: null } });
-  const isValid = patient ? await verifyPatientPin(patient, parsed.data.pin) : false;
-  if (!patient || !isValid) {
+  let isValid: boolean;
+  try {
+    isValid = await confirmPatientPin(patientId, parsed.data.pin);
+  } catch (err) {
+    if (sendAuthError(err, res)) return;
+    throw err;
+  }
+  if (!isValid) {
     await recordAttempt('delete_attempts', patientId, LOGIN_RATE_LIMIT_WINDOW_SECONDS);
     res.status(401).json({ error: 'Incorrect PIN' });
     return;

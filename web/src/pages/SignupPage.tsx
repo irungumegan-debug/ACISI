@@ -1,8 +1,8 @@
 import { FormEvent, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
-import { usePatientAuth } from '../context/PatientAuthContext';
 import { AuthShell, RoleCard } from '../components/AuthShell';
+import { PatientCodeFlow } from '../components/PatientCodeFlow';
 import { Check, Plus, X } from 'lucide-react';
 import { CODE_PATTERN, cleanName, nameKey, SUGGESTED_DEPARTMENTS, suggestCode } from '../lib/departments';
 import { legalBoxSatisfied, PRIVACY_PATH, TERMS_PATH } from '../lib/legal';
@@ -43,7 +43,7 @@ export function SignupPage() {
     <AuthShell>
 
         {step.kind === 'picker' && <RolePicker onPick={(kind) => setStep({ kind } as Step)} />}
-        {step.kind === 'patient' && <PatientSignupForm onBack={() => setStep({ kind: 'picker' })} />}
+        {step.kind === 'patient' && <PatientCodeFlow mode="signup" onBack={() => setStep({ kind: 'picker' })} />}
         {step.kind === 'doctor' && (
           <StaffSignupForm role="DOCTOR" onBack={() => setStep({ kind: 'picker' })} onDone={(staffCode) => setStep({ kind: 'staff-confirm', staffCode })} />
         )}
@@ -80,107 +80,6 @@ function RolePicker({ onPick }: { onPick: (kind: 'patient' | 'doctor' | 'staff' 
         <RoleCard role="clinic" title="Register your clinic" sub="First time on ACISI? Start here as clinic admin" onPick={() => onPick('clinic')} />
       </div>
     </>
-  );
-}
-
-function PatientSignupForm({ onBack }: { onBack: () => void }) {
-  const navigate = useNavigate();
-  const { setSession } = usePatientAuth();
-  const [fullName, setFullName] = useState('');
-  const [phoneNumber, setPhoneNumber] = useState('');
-  const [dateOfBirth, setDateOfBirth] = useState('');
-  const [email, setEmail] = useState('');
-  const [pin, setPin] = useState('');
-  const [crossClinicConsent, setCrossClinicConsent] = useState(false);
-  const [acceptLegal, setAcceptLegal] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-
-  async function handleSubmit(e: FormEvent): Promise<void> {
-    e.preventDefault();
-    setError(null);
-
-    const parts = fullName.trim().split(/\s+/);
-    if (parts.length < 2) {
-      setError('Please enter both first and last name.');
-      return;
-    }
-    if (!legalBoxSatisfied(true, acceptLegal)) {
-      setError('Please accept the Terms of Service and Privacy Notice to create your account.');
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      const session = await api.registerPatient({
-        firstName: parts[0] as string,
-        lastName: parts.slice(1).join(' '),
-        phoneNumber,
-        dateOfBirth: dateOfBirth || undefined,
-        email: email || undefined,
-        pin,
-        crossClinicConsent,
-        acceptLegal,
-      });
-      // Same fix as patient login: update PatientAuthContext's session
-      // directly (registration already returns it) before navigating
-      // client-side — PatientLayout's guard reads context state, not a
-      // fresh fetch, and this stays within the same SPA so there's no
-      // reload to trigger that fetch for us.
-      setSession(session);
-      navigate('/patient', { replace: true });
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.');
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <form className="auth-form" onSubmit={(e) => void handleSubmit(e)}>
-      <button type="button" className="auth-back" onClick={onBack}>
-        &larr; Back
-      </button>
-      <h1 className="auth-h1">Patient sign up</h1>
-      <p className="auth-sub">Takes a minute. You&apos;ll get a patient ID once you&apos;re done.</p>
-
-      <div className="field">
-        <label>Full name</label>
-        <input type="text" required placeholder="Lisa Jane" value={fullName} onChange={(e) => setFullName(e.target.value)} />
-      </div>
-      <div className="field">
-        <label>Phone number</label>
-        <input type="tel" required placeholder="07XX XXX XXX" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} />
-      </div>
-      <div className="field">
-        <label>Date of birth</label>
-        <input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} />
-      </div>
-      <div className="field">
-        <label>Email (optional)</label>
-        <input
-          type="email"
-          placeholder="you@example.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
-      </div>
-      <div className="field">
-        <label>Create a PIN</label>
-        <input type="password" inputMode="numeric" required minLength={6} maxLength={6} pattern="\d{6}" placeholder="6-digit PIN" value={pin} onChange={(e) => setPin(e.target.value)} />
-        <p className="field-hint">6 digits. Avoid birthdays, your phone number, and easy patterns like 123456 or 111111.</p>
-      </div>
-      <label style={{ display: 'flex', gap: 8, fontSize: 13, color: 'var(--ink-dim)', marginBottom: 16, alignItems: 'flex-start' }}>
-        <input type="checkbox" checked={crossClinicConsent} onChange={(e) => setCrossClinicConsent(e.target.checked)} style={{ width: 'auto', marginTop: 3 }} />
-        <span>Share my records with other ACISI-connected clinics too (optional — off by default, you can check in elsewhere either way).</span>
-      </label>
-      <AcceptLegalCheckbox checked={acceptLegal} onChange={setAcceptLegal} />
-
-      {error && <p className="auth-error">{error}</p>}
-      <button className="auth-submit" type="submit" disabled={submitting || !acceptLegal}>
-        {submitting ? 'Creating account…' : 'Create account'}
-      </button>
-    </form>
   );
 }
 

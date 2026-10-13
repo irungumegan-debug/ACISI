@@ -5,6 +5,11 @@ import { UssdSessionContext } from '../../src/ussd/types';
 // Redis/BullMQ clients that would otherwise try to connect during tests.
 jest.mock('../../src/services/patientService', () => ({
   findPatientByPhone: jest.fn(),
+  // Shared-phone lookups wrap the single-patient mock: "the patient on this phone" or nobody.
+  findPatientsByPhone: jest.fn(async (phone: string) => {
+    const p = await jest.requireMock('../../src/services/patientService').findPatientByPhone(phone);
+    return p ? [p] : [];
+  }),
   registerPatient: jest.fn(),
 }));
 jest.mock('../../src/services/checkInService', () => ({ initiateCheckIn: jest.fn() }));
@@ -30,6 +35,11 @@ function freshSession(): UssdSessionContext {
 
 beforeEach(() => {
   jest.resetAllMocks();
+  // Shared-phone lookups wrap the single-patient mock: "the patient on this phone" or nobody.
+  (jest.requireMock('../../src/services/patientService').findPatientsByPhone as jest.Mock).mockImplementation(async (phone: string) => {
+    const p = await jest.requireMock('../../src/services/patientService').findPatientByPhone(phone);
+    return p ? [p] : [];
+  });
 });
 
 describe('proceedToPatientLookup', () => {

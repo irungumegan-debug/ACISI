@@ -16,6 +16,16 @@ export const PIN_LENGTH = 6;
 export interface PinContext {
   /** The account's phone number, in any format — its last six digits are refused. */
   phoneNumber?: string | null;
+  /** The patient's date of birth — refused as DDMMYY, YYMMDD and MMDDYY (any date is refused anyway; this names the reason). */
+  dateOfBirth?: Date | null;
+}
+
+/** The patient's date of birth written as DDMMYY, YYMMDD and MMDDYY. */
+export function dateOfBirthPins(dob: Date): string[] {
+  const dd = String(dob.getUTCDate()).padStart(2, '0');
+  const mm = String(dob.getUTCMonth() + 1).padStart(2, '0');
+  const yy = String(dob.getUTCFullYear() % 100).padStart(2, '0');
+  return [`${dd}${mm}${yy}`, `${yy}${mm}${dd}`, `${mm}${dd}${yy}`];
 }
 
 function daysInMonth(month: number, twoOrFourDigitYear?: number): number {
@@ -61,6 +71,9 @@ function isSequential(pin: string): boolean {
 export function pinPolicyError(pin: string, context: PinContext = {}): string | null {
   if (!new RegExp(`^\\d{${PIN_LENGTH}}$`).test(pin)) {
     return `Your PIN must be exactly ${PIN_LENGTH} digits.`;
+  }
+  if (context.dateOfBirth && dateOfBirthPins(context.dateOfBirth).includes(pin)) {
+    return 'That PIN is your date of birth, which is easy to guess. Choose something else.';
   }
   if (isRepeating(pin) || isSequential(pin)) {
     return 'That PIN is too easy to guess. Avoid repeated or sequential digits like 111111 or 123456.';

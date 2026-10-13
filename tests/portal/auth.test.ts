@@ -38,36 +38,39 @@ jest.mock('../../src/config/redis', () => ({
   },
 }));
 
-jest.mock('../../src/services/patientService', () => ({
-  findPatientByPhoneOrCode: jest.fn(),
-  registerPatient: jest.fn(),
-  verifyPatientPin: jest.fn(),
-  setPatientPin: jest.fn(),
+jest.mock('../../src/portal/session', () => ({
+  ...jest.requireActual('../../src/portal/session'),
+  createPatientSession: jest.fn(async () => 'session-token'),
+  loadPatientSession: jest.fn(),
 }));
-
-jest.mock('../../src/services/otpService', () => ({
-  requestPinResetOtp: jest.fn(),
-  verifyPinResetOtp: jest.fn(),
+jest.mock('../../src/services/patientAuthService', () => ({
+  ...jest.requireActual('../../src/services/patientAuthService'),
+  loginWithPin: jest.fn(),
+  requestPatientOtp: jest.fn(),
+  startSetupFlow: jest.fn(),
+  selectSetupPerson: jest.fn(),
+  verifySetupDateOfBirth: jest.fn(),
+  completeSetupWithPin: jest.fn(),
+  completeSelfSignup: jest.fn(),
+  markIdSaved: jest.fn(),
 }));
+jest.mock('../../src/db/prisma', () => ({ prisma: { patient: { findFirst: jest.fn() } } }));
 
+import { createPatientSession, loadPatientSession } from '../../src/portal/session';
 import {
-  findPatientByPhoneOrCode,
-  registerPatient,
-  verifyPatientPin,
-  setPatientPin,
-} from '../../src/services/patientService';
-import { requestPinResetOtp, verifyPinResetOtp } from '../../src/services/otpService';
+  completeSelfSignup,
+  completeSetupWithPin,
+  loginWithPin,
+  markIdSaved,
+  PatientAuthError,
+  requestPatientOtp,
+  startSetupFlow,
+} from '../../src/services/patientAuthService';
+import { prisma } from '../../src/db/prisma';
 import { portalAuthRouter } from '../../src/portal/auth';
-import { LOGIN_RATE_LIMIT_MAX_ATTEMPTS } from '../../src/config/constants';
+import { DASHBOARD_SESSION_TTL_SECONDS, PATIENT_LONG_SESSION_TTL_SECONDS } from '../../src/config/constants';
 
-const mockFindPatient = findPatientByPhoneOrCode as jest.Mock;
-const mockRegisterPatient = registerPatient as jest.Mock;
-const mockVerifyPin = verifyPatientPin as jest.Mock;
-const mockSetPin = setPatientPin as jest.Mock;
-const mockRequestOtp = requestPinResetOtp as jest.Mock;
-const mockVerifyOtp = verifyPinResetOtp as jest.Mock;
-
-const PATIENT = { id: 'patient-1', patientCode: 'ACI-7F2K', firstName: 'Jane', phoneNumber: '+254712345678' };
+const PATIENT = { id: 'patient-1', patientCode: 'ACS-48217', firstName: 'Jane', phoneNumber: '+254712345678', idSavedAt: null };
 
 function buildApp() {
   const app = express();
@@ -77,215 +80,128 @@ function buildApp() {
   return app;
 }
 
+const cookieMaxAge = (res: request.Response) => Number(/Max-Age=(\d+)/.exec(String(res.headers['set-cookie']?.[0]))?.[1]);
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockRedisStore.clear();
 });
 
-describe('POST /patients/register', () => {
-  it('rejects a PIN that is not 6 digits', async () => {
-    const res = await request(buildApp()).post('/patients/register').send({
-      firstName: 'Jane',
-      lastName: 'Wanjiru',
-      phoneNumber: '0712345678',
-      pin: '12',
-    });
-    expect(res.status).toBe(400);
-  });
-
-  it('creates an account and returns the generated patient code', async () => {
-    mockRegisterPatient.mockResolvedValue(PATIENT);
-    const res = await request(buildApp()).post('/patients/register').send({
-      firstName: 'Jane',
-      lastName: 'Wanjiru',
-      phoneNumber: '0712345678',
-      pin: '730194',
-      crossClinicConsent: false,
-      acceptLegal: true,
-    });
-
-    expect(res.status).toBe(201);
-    expect(res.body.patientCode).toBe('ACI-7F2K');
-    expect(mockRegisterPatient).toHaveBeenCalledWith(
-      expect.objectContaining({ crossClinicConsent: false, pin: '730194' }),
-    );
-    expect(res.headers['set-cookie']?.[0]).toContain('acisi_patient_session=');
-  });
-
-  it('returns 409 on a duplicate phone number', async () => {
-    mockRegisterPatient.mockRejectedValue({ code: 'P2002' });
-    const res = await request(buildApp()).post('/patients/register').send({
-      firstName: 'Jane',
-      lastName: 'Wanjiru',
-      phoneNumber: '0712345678',
-      pin: '730194',
-      acceptLegal: true,
-    });
-    expect(res.status).toBe(409);
-  });
-
-  it('registers successfully with no email at all — it stays fully optional', async () => {
-    mockRegisterPatient.mockResolvedValue(PATIENT);
-    const res = await request(buildApp()).post('/patients/register').send({
-      firstName: 'Jane',
-      lastName: 'Wanjiru',
-      phoneNumber: '0712345678',
-      pin: '730194',
-      acceptLegal: true,
-    });
-
-    expect(res.status).toBe(201);
-    expect(mockRegisterPatient).toHaveBeenCalledWith(expect.objectContaining({ email: undefined }));
-  });
-
-  it('passes a provided email through to registerPatient', async () => {
-    mockRegisterPatient.mockResolvedValue(PATIENT);
-    const res = await request(buildApp()).post('/patients/register').send({
-      firstName: 'Jane',
-      lastName: 'Wanjiru',
-      phoneNumber: '0712345678',
-      pin: '730194',
-      email: 'jane@example.com',
-      acceptLegal: true,
-    });
-
-    expect(res.status).toBe(201);
-    expect(mockRegisterPatient).toHaveBeenCalledWith(expect.objectContaining({ email: 'jane@example.com' }));
-  });
-
-  it('cannot create an account without accepting the Terms of Service and Privacy Notice', async () => {
-    for (const extra of [{}, { acceptLegal: false }]) {
-      const res = await request(buildApp())
-        .post('/patients/register')
-        .send({ firstName: 'Jane', lastName: 'Wanjiru', phoneNumber: '0712345678', pin: '730194', ...extra });
-      expect(res.status).toBe(400);
-      expect(res.body.error).toContain('Terms of Service');
-    }
-    expect(mockRegisterPatient).not.toHaveBeenCalled();
-  });
-
-  it('records the acceptance with the new account when the box is ticked', async () => {
-    mockRegisterPatient.mockResolvedValue(PATIENT);
-    const res = await request(buildApp())
-      .post('/patients/register')
-      .send({ firstName: 'Jane', lastName: 'Wanjiru', phoneNumber: '0712345678', pin: '730194', acceptLegal: true });
-    expect(res.status).toBe(201);
-    expect(mockRegisterPatient).toHaveBeenCalledWith(expect.objectContaining({ acceptedTermsAndPrivacyNotice: true }));
-  });
-
-  it('rejects a malformed email', async () => {
-    const res = await request(buildApp()).post('/patients/register').send({
-      firstName: 'Jane',
-      lastName: 'Wanjiru',
-      phoneNumber: '0712345678',
-      pin: '730194',
-      email: 'not-an-email',
-    });
-
-    expect(res.status).toBe(400);
-    expect(mockRegisterPatient).not.toHaveBeenCalled();
-  });
-});
-
 describe('POST /patients/login', () => {
-  it('returns the same 401 for an unknown identifier as for a wrong PIN', async () => {
-    mockFindPatient.mockResolvedValue(null);
-    const res = await request(buildApp()).post('/patients/login').send({ identifier: 'ACI-9999', pin: '730194' });
-    expect(res.status).toBe(401);
-  });
-
-  it('logs in with a phone number or patient code plus PIN', async () => {
-    mockFindPatient.mockResolvedValue(PATIENT);
-    mockVerifyPin.mockResolvedValue(true);
-
-    const res = await request(buildApp()).post('/patients/login').send({ identifier: 'ACI-7F2K', pin: '730194' });
-
+  it('logs in with phone or ACISI ID + PIN, for 8 hours by default', async () => {
+    (loginWithPin as jest.Mock).mockResolvedValue({ kind: 'ok', patient: PATIENT });
+    const res = await request(buildApp()).post('/patients/login').send({ identifier: 'ACS-48217', pin: '730194' });
     expect(res.status).toBe(200);
-    expect(res.body.patientCode).toBe('ACI-7F2K');
-    expect(res.headers['set-cookie']?.[0]).toContain('acisi_patient_session=');
+    expect(res.body).toEqual({ patientCode: 'ACS-48217', firstName: 'Jane', idSaved: false });
+    expect(res.headers['set-cookie']?.[0]).toMatch(/acisi_patient_session=session-token.*HttpOnly/);
+    expect(cookieMaxAge(res)).toBe(DASHBOARD_SESSION_TTL_SECONDS);
+    expect(createPatientSession).toHaveBeenCalledWith(expect.anything(), DASHBOARD_SESSION_TTL_SECONDS, 0);
   });
 
-  it('rate-limits after repeated failed attempts', async () => {
-    mockFindPatient.mockResolvedValue(null);
-    const app = buildApp();
+  it('"Keep me signed in" gives a 30-day session', async () => {
+    (loginWithPin as jest.Mock).mockResolvedValue({ kind: 'ok', patient: PATIENT });
+    const res = await request(buildApp()).post('/patients/login').send({ identifier: 'ACS-48217', pin: '730194', keepSignedIn: true });
+    expect(cookieMaxAge(res)).toBe(PATIENT_LONG_SESSION_TTL_SECONDS);
+    expect(createPatientSession).toHaveBeenCalledWith(expect.anything(), PATIENT_LONG_SESSION_TTL_SECONDS, 0);
+  });
 
-    for (let i = 0; i < LOGIN_RATE_LIMIT_MAX_ATTEMPTS; i++) {
-      const res = await request(app).post('/patients/login').send({ identifier: 'ACI-7F2K', pin: 'wrong' });
-      expect(res.status).toBe(401);
+  it('asks which person when the PIN matches several on a shared phone, without logging anyone in', async () => {
+    (loginWithPin as jest.Mock).mockResolvedValue({ kind: 'choose', people: [{ id: 'a', displayName: 'Jane W.' }, { id: 'b', displayName: 'Brian K.' }] });
+    const res = await request(buildApp()).post('/patients/login').send({ identifier: '0712345678', pin: '730194' });
+    expect(res.body).toEqual({ choose: [{ id: 'a', displayName: 'Jane W.' }, { id: 'b', displayName: 'Brian K.' }] });
+    expect(res.headers['set-cookie']).toBeUndefined();
+  });
+
+  it('passes the person picked back to the PIN check', async () => {
+    (loginWithPin as jest.Mock).mockResolvedValue({ kind: 'ok', patient: PATIENT });
+    await request(buildApp()).post('/patients/login').send({ identifier: '0712345678', pin: '730194', patientId: 'b' });
+    expect(loginWithPin).toHaveBeenCalledWith('0712345678', '730194', { patientId: 'b' });
+  });
+
+  it.each([
+    [401, new PatientAuthError('Wrong phone number / ACISI ID or PIN', 401)],
+    [429, new PatientAuthError('Too many wrong PINs', 429, { reason: 'locked' })],
+  ])('returns %i from the PIN check', async (status, err) => {
+    (loginWithPin as jest.Mock).mockRejectedValue(err);
+    const res = await request(buildApp()).post('/patients/login').send({ identifier: 'ACS-48217', pin: '000000' });
+    expect(res.status).toBe(status);
+    expect(res.headers['set-cookie']).toBeUndefined();
+  });
+});
+
+describe('POST /patients/otp/request', () => {
+  it('gives the same answer whether or not the number has an account', async () => {
+    const res = await request(buildApp()).post('/patients/otp/request').send({ phone: '0712345678', purpose: 'login' });
+    expect(res.status).toBe(200);
+    expect(res.body.message).toMatch(/If this number can use ACISI/);
+    expect(requestPatientOtp).toHaveBeenCalledWith('0712345678', 'login');
+  });
+
+  it('caps sends per IP across all numbers', async () => {
+    for (let i = 0; i < 10; i++) {
+      expect((await request(buildApp()).post('/patients/otp/request').send({ phone: `07123456${String(i).padStart(2, '0')}`, purpose: 'login' })).status).toBe(200);
     }
-
-    const res = await request(app).post('/patients/login').send({ identifier: 'ACI-7F2K', pin: 'wrong' });
+    const res = await request(buildApp()).post('/patients/otp/request').send({ phone: '0712345699', purpose: 'login' });
     expect(res.status).toBe(429);
+    expect(requestPatientOtp).toHaveBeenCalledTimes(10);
+  });
+
+  it('rejects an unknown purpose', async () => {
+    expect((await request(buildApp()).post('/patients/otp/request').send({ phone: '0712345678', purpose: 'anything' })).status).toBe(400);
   });
 });
 
-describe('POST /patients/forgot-pin', () => {
-  it('always returns a generic success message, requesting an OTP only when the account exists', async () => {
-    mockFindPatient.mockResolvedValueOnce(null);
-    const missRes = await request(buildApp()).post('/patients/forgot-pin').send({ identifier: '0700000000' });
-    expect(missRes.status).toBe(200);
-    expect(mockRequestOtp).not.toHaveBeenCalled();
-
-    mockFindPatient.mockResolvedValueOnce(PATIENT);
-    const hitRes = await request(buildApp()).post('/patients/forgot-pin').send({ identifier: 'ACI-7F2K' });
-    expect(hitRes.status).toBe(200);
-    expect(mockRequestOtp).toHaveBeenCalledWith(PATIENT);
-  });
-});
-
-describe('POST /patients/reset-pin', () => {
-  it('rejects an invalid or expired code', async () => {
-    mockFindPatient.mockResolvedValue(PATIENT);
-    mockVerifyOtp.mockResolvedValue(false);
-
-    const res = await request(buildApp())
-      .post('/patients/reset-pin')
-      .send({ identifier: 'ACI-7F2K', code: '000000', newPin: '730194' });
-
-    expect(res.status).toBe(400);
-    expect(mockSetPin).not.toHaveBeenCalled();
+describe('the setup flow', () => {
+  it('returns the people on the phone after a good code', async () => {
+    (startSetupFlow as jest.Mock).mockResolvedValue({ flowToken: 'f'.repeat(64), people: [{ id: 'p', displayName: 'Jane W.', hasPin: false }] });
+    const res = await request(buildApp()).post('/patients/otp/verify').send({ phone: '0712345678', purpose: 'login', code: '123456' });
+    expect(res.body.people).toHaveLength(1);
   });
 
-  it('sets the new PIN on a valid code', async () => {
-    mockFindPatient.mockResolvedValue(PATIENT);
-    mockVerifyOtp.mockResolvedValue(true);
-
+  it('logs the patient in once the PIN is set, issued after the revocation of older sessions', async () => {
+    (completeSetupWithPin as jest.Mock).mockResolvedValue({ patient: PATIENT, revokedAt: 12345 });
     const res = await request(buildApp())
-      .post('/patients/reset-pin')
-      .send({ identifier: 'ACI-7F2K', code: '123456', newPin: '730194' });
-
+      .post('/patients/setup/set-pin')
+      .send({ flowToken: 'f'.repeat(64), pin: '730194', pinConfirm: '730194', keepSignedIn: true });
     expect(res.status).toBe(200);
-    expect(mockSetPin).toHaveBeenCalledWith('patient-1', '730194');
+    expect(res.body.idSaved).toBe(false);
+    expect(createPatientSession).toHaveBeenCalledWith(expect.anything(), PATIENT_LONG_SESSION_TTL_SECONDS, 12345);
   });
 
-  it('automatically unlocks a patient who was locked out, under every identifier they log in with', async () => {
-    const app = buildApp();
-    mockFindPatient.mockResolvedValue(PATIENT);
-    mockVerifyPin.mockResolvedValue(false);
-    for (const identifier of ['ACI-7F2K', '+254712345678']) {
-      for (let i = 0; i < LOGIN_RATE_LIMIT_MAX_ATTEMPTS; i++) {
-        await request(app).post('/patients/login').send({ identifier, pin: '0000' });
-      }
+  it('self-signup goes through the same flow', async () => {
+    (completeSelfSignup as jest.Mock).mockResolvedValue(PATIENT);
+    const res = await request(buildApp()).post('/patients/setup/register').send({
+      flowToken: 'f'.repeat(64),
+      firstName: 'Jane',
+      lastName: 'Wanjiru',
+      dateOfBirth: '1990-03-15',
+      sex: 'FEMALE',
+      pin: '730194',
+      pinConfirm: '730194',
+      acceptLegal: true,
+    });
+    expect(res.status).toBe(201);
+  });
+
+  it('the old routes that skipped phone confirmation are gone', async () => {
+    for (const path of ['/patients/register', '/patients/forgot-pin', '/patients/reset-pin']) {
+      expect((await request(buildApp()).post(path).send({})).status).toBe(404);
     }
-    mockVerifyPin.mockResolvedValue(true);
-    expect((await request(app).post('/patients/login').send({ identifier: 'ACI-7F2K', pin: '730194' })).status).toBe(429);
+  });
+});
 
-    mockVerifyOtp.mockResolvedValue(true);
-    await request(app).post('/patients/reset-pin').send({ identifier: 'ACI-7F2K', code: '123456', newPin: '730194' });
-
-    expect((await request(app).post('/patients/login').send({ identifier: 'ACI-7F2K', pin: '730194' })).status).toBe(200);
-    expect((await request(app).post('/patients/login').send({ identifier: '+254712345678', pin: '730194' })).status).toBe(200);
+describe('ACISI ID saved', () => {
+  it('/me says whether the patient ticked "I have saved my ACISI ID"', async () => {
+    (loadPatientSession as jest.Mock).mockResolvedValue({ patientId: 'patient-1', patientCode: 'ACS-48217', firstName: 'Jane' });
+    (prisma.patient.findFirst as jest.Mock).mockResolvedValue({ idSavedAt: new Date() });
+    const res = await request(buildApp()).get('/patients/me').set('Cookie', 'acisi_patient_session=t');
+    expect(res.body).toMatchObject({ patientCode: 'ACS-48217', idSaved: true });
   });
 
-  it("refuses an easy-to-guess PIN without using up the patient's one-time code", async () => {
-    mockFindPatient.mockResolvedValue(PATIENT);
-    const res = await request(buildApp())
-      .post('/patients/reset-pin')
-      .send({ identifier: 'ACI-7F2K', code: '123456', newPin: '150390' });
-
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/looks like a date/);
-    expect(mockVerifyOtp).not.toHaveBeenCalled();
-    expect(mockSetPin).not.toHaveBeenCalled();
+  it('records the tick', async () => {
+    (loadPatientSession as jest.Mock).mockResolvedValue({ patientId: 'patient-1', patientCode: 'ACS-48217', firstName: 'Jane' });
+    const res = await request(buildApp()).post('/patients/id-saved').set('Cookie', 'acisi_patient_session=t');
+    expect(res.status).toBe(204);
+    expect(markIdSaved).toHaveBeenCalledWith('patient-1');
   });
 });

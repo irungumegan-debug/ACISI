@@ -21,10 +21,20 @@ function key(token: string): string {
   return `${SESSION_KEY_PREFIX}${token}`;
 }
 
-/** Same opaque-token-in-Redis pattern as the staff dashboard session (src/dashboard/session.ts). */
-export async function createPatientSession(session: PatientSession): Promise<string> {
+/**
+ * Same opaque-token-in-Redis pattern as the staff dashboard session
+ * (src/dashboard/session.ts). Lasts 8 hours, or `ttlSeconds` ("keep me
+ * signed in": 30 days on a personal device).
+ */
+export async function createPatientSession(
+  session: PatientSession,
+  ttlSeconds: number = DASHBOARD_SESSION_TTL_SECONDS,
+  /** A revocation marker this session must come after (see revokeSessionsFor). */
+  issuedAfter = 0,
+): Promise<string> {
   const token = crypto.randomBytes(32).toString('hex');
-  await redis.set(key(token), JSON.stringify({ ...session, issuedAt: Date.now() }), 'EX', DASHBOARD_SESSION_TTL_SECONDS);
+  const issuedAt = Math.max(Date.now(), issuedAfter + 1);
+  await redis.set(key(token), JSON.stringify({ ...session, issuedAt }), 'EX', ttlSeconds);
   return token;
 }
 

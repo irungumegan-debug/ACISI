@@ -21,6 +21,7 @@ jest.mock('../../src/db/prisma', () => {
 jest.mock('../../src/config/africastalking', () => ({ smsClient: { send: jest.fn() } }));
 jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
 jest.mock('../../src/services/patientService', () => {
+  const { DuplicatePatientError } = jest.requireActual('../../src/services/patientService');
   // Most tests think in terms of "the patient on this phone"; findPatientsByPhone wraps that one.
   const findPatientByPhone = jest.fn();
   return {
@@ -31,6 +32,7 @@ jest.mock('../../src/services/patientService', () => {
     }),
     findPatientByCode: jest.fn(),
     registerPatient: jest.fn(),
+    DuplicatePatientError,
   };
 });
 jest.mock('../../src/services/departmentService', () => ({ findActiveDepartment: jest.fn() }));
@@ -44,7 +46,7 @@ jest.mock('../../src/jobs/queue', () => ({ enqueueSmsReceipt: jest.fn() }));
 
 import { prisma } from '../../src/db/prisma';
 import { smsClient } from '../../src/config/africastalking';
-import { findPatientByCode, findPatientByPhone, findPatientsByPhone, registerPatient } from '../../src/services/patientService';
+import { DuplicatePatientError, findPatientByCode, findPatientByPhone, findPatientsByPhone, registerPatient } from '../../src/services/patientService';
 import { findActiveDepartment } from '../../src/services/departmentService';
 import { assignDoctorForCheckIn } from '../../src/services/doctorAssignmentService';
 import { findArrivalMatch, markAppointmentCompleted } from '../../src/services/appointmentService';
@@ -213,8 +215,8 @@ describe('finding or creating the patient', () => {
   });
 
   it('reuses the record if someone else registered the same phone a moment earlier (no duplicate)', async () => {
-    mockFindPatient.mockResolvedValueOnce(null).mockResolvedValueOnce(PATIENT);
-    mockRegister.mockRejectedValue(Object.assign(new Error('unique'), { code: 'P2002' }));
+    mockFindPatient.mockResolvedValueOnce(null);
+    mockRegister.mockRejectedValue(new DuplicatePatientError(PATIENT as never));
     const result = await checkInWalkIn(input({ newPatient: { fullName: 'Jane Wanjiru', registrationConsent: true } }));
     expect(result).toMatchObject({ patientId: 'p-1', isNewPatient: false });
     expect(tx.checkIn!.create).toHaveBeenCalledTimes(1);

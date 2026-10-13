@@ -1,5 +1,5 @@
 import { ENTER_SENTINEL, UssdSessionContext, UssdStateHandler, UssdStateName, UssdStateResult } from './types';
-import { mainMenu } from './states/mainMenu';
+import { mainMenu, myRecordsEnterPin, myRecordsSelectPerson } from './states/mainMenu';
 import {
   checkinConfirm,
   checkinConsent,
@@ -7,6 +7,7 @@ import {
   checkinNewPatientDob,
   checkinNewPatientName,
   checkinNewPatientSex,
+  checkinSelectPerson,
 } from './states/patientCheckIn';
 import { checkinSelectClinic } from './states/clinicSelect';
 import { checkinSelectDepartment } from './states/departmentSelect';
@@ -22,7 +23,10 @@ const registry: Record<UssdStateName, UssdStateHandler> = {
   CHECKIN_NEW_PATIENT_DOB: checkinNewPatientDob,
   CHECKIN_NEW_PATIENT_SEX: checkinNewPatientSex,
   CHECKIN_CROSS_CLINIC_CONSENT: checkinCrossClinicConsent,
+  CHECKIN_SELECT_PERSON: checkinSelectPerson,
   CHECKIN_CONFIRM: checkinConfirm,
+  MY_RECORDS_SELECT_PERSON: myRecordsSelectPerson,
+  MY_RECORDS_ENTER_PIN: myRecordsEnterPin,
   STAFF_ENTER_CODE: staffEnterCode,
   STAFF_ENTER_PIN: staffEnterPin,
   STAFF_MENU: staffMenu,

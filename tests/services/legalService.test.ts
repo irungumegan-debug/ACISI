@@ -1,6 +1,7 @@
 jest.mock('../../src/db/prisma', () => {
   const tx = {
-    patient: { create: jest.fn() },
+    $executeRaw: jest.fn(),
+    patient: { create: jest.fn(), findMany: jest.fn(async () => []) },
     consent: { create: jest.fn() },
     clinic: { create: jest.fn() },
     department: { createMany: jest.fn() },

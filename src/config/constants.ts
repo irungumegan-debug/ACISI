@@ -41,10 +41,31 @@ export const OWNER_PASSWORD_MIN_LENGTH = 12;
 export const LOGIN_RATE_LIMIT_MAX_ATTEMPTS = 5;
 export const LOGIN_RATE_LIMIT_WINDOW_SECONDS = 15 * 60;
 
-/** Patient PIN-reset OTP: how long a code is valid, and how many guesses it tolerates. */
+/** Staff PIN-reset OTP: how long a code is valid. (Patients use PATIENT_OTP_TTL_SECONDS.) */
 export const OTP_TTL_SECONDS = 10 * 60;
+/** How many guesses an OTP tolerates before it's dead (staff and patients). */
 export const OTP_MAX_VERIFY_ATTEMPTS = 5;
 
-/** Guards against SMS-bombing a phone number with repeated OTP requests. */
+/**
+ * Patient portal OTP (first login and forgot PIN — the only two times a
+ * patient is ever sent one): 6 digits, 5 minutes, single use, at most 3 per
+ * phone number per hour (counted in the database).
+ */
+export const PATIENT_OTP_TTL_SECONDS = 5 * 60;
+export const PATIENT_OTP_MAX_SENDS_PER_HOUR = 3;
+/** Per-IP cap on OTP sends across all numbers, so nobody can run up our SMS bill. */
+export const PATIENT_OTP_MAX_SENDS_PER_IP_PER_HOUR = 10;
+/** After the OTP: how long the patient has to pick who they are, confirm their date of birth and set a PIN. */
+export const PATIENT_SETUP_FLOW_TTL_SECONDS = 15 * 60;
+export const PATIENT_SETUP_MAX_DOB_ATTEMPTS = 5;
+
+/** Patient PIN lock: this many wrong PINs locks the account for PATIENT_PIN_LOCK_MINUTES. */
+export const PATIENT_PIN_MAX_ATTEMPTS = 5;
+export const PATIENT_PIN_LOCK_MINUTES = 15;
+
+/** "Keep me signed in" on a personal device: the portal session lasts this long instead of 8 hours. */
+export const PATIENT_LONG_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
+
+/** Guards against SMS-bombing a staff phone number with repeated OTP requests. */
 export const OTP_REQUEST_RATE_LIMIT_MAX_ATTEMPTS = 3;
 export const OTP_REQUEST_RATE_LIMIT_WINDOW_SECONDS = 15 * 60;

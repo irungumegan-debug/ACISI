@@ -6,7 +6,7 @@ import { redis } from '../config/redis';
 import { InvalidPhoneNumberError, toE164 } from '../utils/phone';
 import { formatDateOfBirth, nameKey, parseDateOfBirth, splitFullName } from '../utils/patientInput';
 import { recordAuditEvent } from './auditService';
-import { registerPatient } from './patientService';
+import { DuplicatePatientError, registerPatient } from './patientService';
 import { ensureClinicLink, PatientRegistryError, sendRegistrationSms } from './clinicPatientService';
 
 /**
@@ -360,16 +360,22 @@ export async function confirmImport(importId: string, clinicId: string, staffId:
       linked++;
       continue;
     }
-    await registerPatient({
-      phoneNumberE164: r.phoneNumber,
-      firstName: r.firstName,
-      lastName: r.lastName,
-      dateOfBirth: parseDateOfBirth(r.dateOfBirth) ?? undefined,
-      sex: r.sex,
-      consentChannel: 'CLINIC_IMPORT',
-      clinicLink: { clinicId, source: 'IMPORTED', addedByStaffId: staffId },
-    });
-    created++;
+    try {
+      await registerPatient({
+        phoneNumberE164: r.phoneNumber,
+        firstName: r.firstName,
+        lastName: r.lastName,
+        dateOfBirth: parseDateOfBirth(r.dateOfBirth) ?? undefined,
+        sex: r.sex,
+        consentChannel: 'CLINIC_IMPORT',
+        clinicLink: { clinicId, source: 'IMPORTED', addedByStaffId: staffId },
+      });
+      created++;
+    } catch (err) {
+      if (!(err instanceof DuplicatePatientError)) throw err;
+      await ensureClinicLink(clinicId, err.existing.id, 'IMPORTED', staffId);
+      linked++;
+    }
   }
 
   await recordAuditEvent({

@@ -94,8 +94,30 @@ interface RegisterPatientInput {
 }
 
 /**
+ * Thrown when the same person is already registered on this phone: same
+ * first and last name (any case) and the same date of birth — or no date
+ * to tell them apart. Phones are shared (a parent and children), so the
+ * phone alone can't be unique; this is what stops duplicates instead.
+ */
+export class DuplicatePatientError extends Error {
+  constructor(public readonly existing: Patient) {
+    super('This person is already registered on this phone number');
+    this.name = 'DuplicatePatientError';
+  }
+}
+
+function sameBirth(a: Pick<Patient, 'dateOfBirth' | 'dateOfBirthEstimated'>, b: { dateOfBirth?: Date; dateOfBirthEstimated?: boolean }): boolean {
+  if (!a.dateOfBirth || !b.dateOfBirth) return true;
+  if (a.dateOfBirthEstimated || b.dateOfBirthEstimated) return a.dateOfBirth.getUTCFullYear() === b.dateOfBirth.getUTCFullYear();
+  return a.dateOfBirth.toISOString().slice(0, 10) === b.dateOfBirth.toISOString().slice(0, 10);
+}
+
+/**
  * Creates a Patient, their patientCode, and their initial
- * CROSS_CLINIC_RECORD_SHARING consent grant in one transaction. Only call
+ * CROSS_CLINIC_RECORD_SHARING consent grant in one transaction. Holds a
+ * lock on the phone number while it checks for the same person already on
+ * it (DuplicatePatientError), so a double submit or a replayed USSD session
+ * can't register someone twice. Only call
  * this after consent has already been captured from the user — never create
  * a Patient row speculatively.
  */
@@ -104,6 +126,18 @@ export async function registerPatient(input: RegisterPatientInput): Promise<Pati
   const pinHash = input.pin ? await bcrypt.hash(input.pin, env.STAFF_PIN_SALT_ROUNDS) : null;
 
   const patient = await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`patient-phone:${input.phoneNumberE164}`}))`;
+    const sameName = await tx.patient.findMany({
+      where: {
+        phoneNumber: input.phoneNumberE164,
+        deletedAt: null,
+        firstName: { equals: input.firstName.trim(), mode: 'insensitive' },
+        lastName: { equals: input.lastName.trim(), mode: 'insensitive' },
+      },
+    });
+    const duplicate = sameName.find((p) => sameBirth(p, input));
+    if (duplicate) throw new DuplicatePatientError(duplicate);
+
     const created = await tx.patient.create({
       data: {
         patientCode,
@@ -170,24 +204,6 @@ export async function registerPatient(input: RegisterPatientInput): Promise<Pati
   });
 
   return patient;
-}
-
-export async function verifyPatientPin(patient: Patient, pin: string): Promise<boolean> {
-  if (!patient.pinHash) return false;
-  const isValid = await bcrypt.compare(pin, patient.pinHash);
-  await recordAuditEvent({
-    actorType: 'PATIENT',
-    actorId: patient.id,
-    action: isValid ? 'PATIENT_LOGIN_SUCCESS' : 'PATIENT_LOGIN_FAILED',
-    entityType: 'Patient',
-    entityId: patient.id,
-  });
-  return isValid;
-}
-
-export async function setPatientPin(patientId: string, pin: string): Promise<void> {
-  const pinHash = await bcrypt.hash(pin, env.STAFF_PIN_SALT_ROUNDS);
-  await prisma.patient.update({ where: { id: patientId }, data: { pinHash } });
 }
 
 export async function hasActiveDataSharingConsent(patientId: string): Promise<boolean> {

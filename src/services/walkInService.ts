@@ -5,7 +5,7 @@ import { prisma } from '../db/prisma';
 import { CONSENT_VERSION } from '../config/constants';
 import { InvalidPhoneNumberError, toE164 } from '../utils/phone';
 import { recordAuditEvent } from './auditService';
-import { findPatientsByPhone, registerPatient } from './patientService';
+import { DuplicatePatientError, findPatientsByPhone, registerPatient } from './patientService';
 import { findActiveDepartment } from './departmentService';
 import { assignDoctorForCheckIn } from './doctorAssignmentService';
 import { findArrivalMatch, markAppointmentCompleted } from './appointmentService';
@@ -223,12 +223,9 @@ async function findOrCreatePatient(
     });
     return { patient, isNew: true };
   } catch (err) {
-    // Another check-in registered this phone number a moment ago: reuse that
+    // Another check-in registered this person a moment ago: reuse that
     // record rather than failing or creating a second patient.
-    if ((err as { code?: string })?.code === 'P2002') {
-      const [raced] = await findPatientsByPhone(phoneNumber);
-      if (raced) return { patient: raced, isNew: false };
-    }
+    if (err instanceof DuplicatePatientError) return { patient: err.existing, isNew: false };
     throw err;
   }
 }

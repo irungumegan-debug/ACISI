@@ -256,7 +256,7 @@ function CheckInPanel({ patientCode }: { patientCode: string }) {
         {checkIn.queuePosition !== null && (
           <p>{checkIn.queuePosition === 1 ? 'You’re next in line.' : `You’re number ${checkIn.queuePosition} in the queue.`}</p>
         )}
-        <p>Payment received. Show your patient ID at the front desk when you arrive.</p>
+        <p>Payment received. Show your ACISI ID at the front desk when you arrive.</p>
       </div>
     );
   }
@@ -603,7 +603,7 @@ function RecordsPanel({ patientCode }: { patientCode: string }) {
         <FileText size={24} aria-hidden /> My records
       </h1>
       <p className="lede">
-        Patient ID <strong>{patientCode}</strong> — every visit, in order.
+        ACISI ID <strong>{patientCode}</strong> — every visit, in order.
       </p>
       <div className="panel">
         {history === null ? (
@@ -702,7 +702,7 @@ function AccountPanel({ patientCode }: { patientCode: string }) {
         <UserRound size={24} aria-hidden /> Account
       </h1>
       <p className="lede">
-        Patient ID <strong>{patientCode}</strong>
+        ACISI ID <strong>{patientCode}</strong>
       </p>
       <div className="panel">
         <h2>Legal</h2>

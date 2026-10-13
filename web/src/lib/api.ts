@@ -2,6 +2,8 @@ export class ApiError extends Error {
   constructor(
     message: string,
     public status: number,
+    /** The whole error body, for errors that carry more than a message. */
+    public body: Record<string, unknown> = {},
   ) {
     super(message);
     this.name = 'ApiError';
@@ -17,7 +19,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
-    throw new ApiError(body.error ?? 'Something went wrong. Please try again.', res.status);
+    throw new ApiError(body.error ?? 'Something went wrong. Please try again.', res.status, body);
   }
 
   if (res.status === 204) return undefined as T;
@@ -47,7 +49,18 @@ export interface PatientIdentity {
 export interface PatientSession {
   patientCode: string;
   firstName: string;
+  /** Whether they've ticked "I have saved my ACISI ID". Until then the portal shows their ID first. */
+  idSaved?: boolean;
 }
+
+/** A person on a shared phone, as shown to whoever proved they hold the phone: "Jane W." */
+export interface PhonePerson {
+  id: string;
+  displayName: string;
+  hasPin?: boolean;
+}
+
+export type PatientLoginResult = PatientSession | { choose: PhonePerson[] };
 
 export type AppointmentStatus = 'REQUESTED' | 'CONFIRMED' | 'CANCELLED' | 'COMPLETED';
 
@@ -131,28 +144,50 @@ export const api = {
   },
 
   // ---- Patients ----
-  registerPatient(input: {
-    firstName: string;
-    lastName: string;
-    phoneNumber: string;
-    dateOfBirth?: string;
-    pin: string;
-    crossClinicConsent: boolean;
-    email?: string;
-    /** "I accept the Terms of Service and have read the Privacy Notice" — required by the server. */
-    acceptLegal: boolean;
-  }) {
-    return request<PatientSession>('/patients/register', {
+  /** Phone number or ACISI ID + PIN. On a shared phone the answer may be "which of these people are you?". */
+  patientLogin(identifier: string, pin: string, keepSignedIn: boolean, patientId?: string) {
+    return request<PatientLoginResult>('/patients/login', {
       method: 'POST',
-      body: JSON.stringify(input),
+      body: JSON.stringify({ identifier, pin, keepSignedIn, ...(patientId ? { patientId } : {}) }),
     });
   },
 
-  patientLogin(identifier: string, pin: string) {
-    return request<PatientSession>('/patients/login', {
+  /** Texts a one-time code: "login" for a first login or signup, "reset" for a forgotten PIN. */
+  requestPatientCode(phone: string, purpose: 'login' | 'reset') {
+    return request<{ message: string }>('/patients/otp/request', { method: 'POST', body: JSON.stringify({ phone, purpose }) });
+  },
+  verifyPatientCode(phone: string, purpose: 'login' | 'reset', code: string) {
+    return request<{ flowToken: string; people: PhonePerson[] }>('/patients/otp/verify', {
       method: 'POST',
-      body: JSON.stringify({ identifier, pin }),
+      body: JSON.stringify({ phone, purpose, code }),
     });
+  },
+  selectSetupPerson(flowToken: string, patientId: string) {
+    return request<void>('/patients/setup/select', { method: 'POST', body: JSON.stringify({ flowToken, patientId }) });
+  },
+  verifySetupDateOfBirth(flowToken: string, dateOfBirth: string) {
+    return request<void>('/patients/setup/verify-dob', { method: 'POST', body: JSON.stringify({ flowToken, dateOfBirth }) });
+  },
+  setSetupPin(flowToken: string, pin: string, pinConfirm: string, keepSignedIn: boolean) {
+    return request<PatientSession>('/patients/setup/set-pin', { method: 'POST', body: JSON.stringify({ flowToken, pin, pinConfirm, keepSignedIn }) });
+  },
+  registerPatientAfterCode(input: {
+    flowToken: string;
+    firstName: string;
+    lastName: string;
+    dateOfBirth: string;
+    sex: 'MALE' | 'FEMALE' | 'OTHER';
+    pin: string;
+    pinConfirm: string;
+    email?: string;
+    acceptLegal: boolean;
+    keepSignedIn: boolean;
+  }) {
+    return request<PatientSession>('/patients/setup/register', { method: 'POST', body: JSON.stringify(input) });
+  },
+  /** "I have saved my ACISI ID". */
+  markPatientIdSaved() {
+    return request<void>('/patients/id-saved', { method: 'POST' });
   },
 
   patientLogout() {
@@ -168,13 +203,6 @@ export const api = {
     return request<PatientSession>('/patients/me');
   },
 
-  forgotPatientPin(identifier: string) {
-    return request<{ message: string }>('/patients/forgot-pin', {
-      method: 'POST',
-      body: JSON.stringify({ identifier }),
-    });
-  },
-
   forgotStaffPin(staffCode: string) {
     return request<{ message: string }>('/staff/auth/forgot-pin', {
       method: 'POST',
@@ -186,13 +214,6 @@ export const api = {
     return request<{ message: string }>('/staff/auth/reset-pin', {
       method: 'POST',
       body: JSON.stringify({ staffCode, code, newPin }),
-    });
-  },
-
-  resetPatientPin(identifier: string, code: string, newPin: string) {
-    return request<{ message: string }>('/patients/reset-pin', {
-      method: 'POST',
-      body: JSON.stringify({ identifier, code, newPin }),
     });
   },
 

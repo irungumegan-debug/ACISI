@@ -28,8 +28,10 @@ jest.mock('../../src/portal/session', () => ({
   ...jest.requireActual('../../src/portal/session'),
   loadPatientSession: jest.fn(),
 }));
-jest.mock('../../src/services/patientService', () => ({ verifyPatientPin: jest.fn() }));
-jest.mock('../../src/services/otpService', () => ({}));
+jest.mock('../../src/services/patientAuthService', () => ({
+  ...jest.requireActual('../../src/services/patientAuthService'),
+  confirmPatientPin: jest.fn(),
+}));
 jest.mock('../../src/services/patientDeletionService', () => ({
   ...jest.requireActual('../../src/services/patientDeletionService'),
   deletePatientAccount: jest.fn(),
@@ -37,13 +39,13 @@ jest.mock('../../src/services/patientDeletionService', () => ({
 jest.mock('../../src/db/prisma', () => ({ prisma: { patient: { findFirst: jest.fn() } } }));
 
 import { loadPatientSession, PATIENT_SESSION_COOKIE_NAME } from '../../src/portal/session';
-import { verifyPatientPin } from '../../src/services/patientService';
+import { confirmPatientPin } from '../../src/services/patientAuthService';
 import { deletePatientAccount } from '../../src/services/patientDeletionService';
 import { prisma } from '../../src/db/prisma';
 import { portalAuthRouter } from '../../src/portal/auth';
 import { LOGIN_RATE_LIMIT_MAX_ATTEMPTS } from '../../src/config/constants';
 
-const mockVerifyPin = verifyPatientPin as jest.Mock;
+const mockVerifyPin = confirmPatientPin as jest.Mock;
 const PATIENT = { id: 'p-1', patientCode: 'ACI-7F2K', pinHash: 'hash', deletedAt: null };
 
 function buildApp() {

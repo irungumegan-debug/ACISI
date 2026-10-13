@@ -1,10 +1,11 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { api, PatientSession } from '../lib/api';
+import { api, PatientLoginResult, PatientSession } from '../lib/api';
 
 interface PatientAuthContextValue {
   session: PatientSession | null;
   loading: boolean;
-  login: (identifier: string, pin: string) => Promise<PatientSession>;
+  /** Logs in, or returns the people to choose from when the PIN matches several on a shared phone. */
+  login: (identifier: string, pin: string, keepSignedIn: boolean, patientId?: string) => Promise<PatientLoginResult>;
   /**
    * For callers (signup) that already have a PatientSession from their own
    * API call and just need the context to know about it — avoids a
@@ -39,9 +40,9 @@ export function PatientAuthProvider({ children }: { children: ReactNode }) {
    * from the one-time mount effect above and bounced straight back to
    * /login.
    */
-  async function login(identifier: string, pin: string): Promise<PatientSession> {
-    const result = await api.patientLogin(identifier, pin);
-    setSession(result);
+  async function login(identifier: string, pin: string, keepSignedIn: boolean, patientId?: string): Promise<PatientLoginResult> {
+    const result = await api.patientLogin(identifier, pin, keepSignedIn, patientId);
+    if (!('choose' in result)) setSession(result);
     return result;
   }
 

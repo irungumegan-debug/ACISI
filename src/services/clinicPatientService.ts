@@ -5,7 +5,7 @@ import { InvalidPhoneNumberError, toE164 } from '../utils/phone';
 import { looksLikePatientCode } from '../utils/idCodes';
 import { formatDateOfBirth, nameKey, parseDateOfBirth, splitFullName } from '../utils/patientInput';
 import { recordAuditEvent } from './auditService';
-import { findPatientByCode, findPatientsByPhone, registerPatient } from './patientService';
+import { DuplicatePatientError, findPatientByCode, findPatientsByPhone, registerPatient } from './patientService';
 import { recordLegalAcceptances } from './legalService';
 import { buildRegistrationSms } from './smsTemplates';
 import { sendSms } from './smsSender';
@@ -260,15 +260,27 @@ export async function addPatient(input: AddPatientInput): Promise<AddPatientResu
     });
   }
 
-  const patient = await registerPatient({
-    phoneNumberE164: phoneNumber,
-    firstName,
-    lastName,
-    dateOfBirth,
-    sex: input.sex,
-    consentChannel: 'STAFF_ASSISTED',
-    clinicLink: { clinicId: input.clinicId, source: 'ADDED', addedByStaffId: input.staffId },
-  });
+  let patient: Patient;
+  try {
+    patient = await registerPatient({
+      phoneNumberE164: phoneNumber,
+      firstName,
+      lastName,
+      dateOfBirth,
+      sex: input.sex,
+      consentChannel: 'STAFF_ASSISTED',
+      clinicLink: { clinicId: input.clinicId, source: 'ADDED', addedByStaffId: input.staffId },
+    });
+  } catch (err) {
+    // Someone added the same person a moment ago (double click, two desks).
+    if (err instanceof DuplicatePatientError) {
+      throw new PatientRegistryError(`${err.existing.firstName} ${err.existing.lastName} is already registered on this phone number (${err.existing.patientCode})`, 409, {
+        reason: 'duplicate',
+        existing: (await lookupPatients(phoneNumber, input.clinicId, input.staffId)).patients,
+      });
+    }
+    throw err;
+  }
 
   await prisma.$transaction(async (tx) => {
     await recordLegalAcceptances(

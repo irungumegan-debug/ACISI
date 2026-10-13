@@ -3,6 +3,11 @@ import { UssdSessionContext } from '../../src/ussd/types';
 jest.mock('../../src/services/departmentService', () => ({ listActiveDepartments: jest.fn() }));
 jest.mock('../../src/services/patientService', () => ({
   findPatientByPhone: jest.fn(),
+  // Shared-phone lookups wrap the single-patient mock: "the patient on this phone" or nobody.
+  findPatientsByPhone: jest.fn(async (phone: string) => {
+    const p = await jest.requireMock('../../src/services/patientService').findPatientByPhone(phone);
+    return p ? [p] : [];
+  }),
   registerPatient: jest.fn(),
 }));
 // proceedToPatientLookup (via patientCheckIn.ts) also pulls in checkInService,
@@ -35,6 +40,11 @@ function freshSession(): UssdSessionContext {
 
 beforeEach(() => {
   jest.resetAllMocks();
+  // Shared-phone lookups wrap the single-patient mock: "the patient on this phone" or nobody.
+  (jest.requireMock('../../src/services/patientService').findPatientsByPhone as jest.Mock).mockImplementation(async (phone: string) => {
+    const p = await jest.requireMock('../../src/services/patientService').findPatientByPhone(phone);
+    return p ? [p] : [];
+  });
 });
 
 describe('buildDepartmentSelectionPrompt', () => {

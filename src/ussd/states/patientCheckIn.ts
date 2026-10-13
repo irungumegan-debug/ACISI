@@ -1,10 +1,12 @@
-import { Sex } from '@prisma/client';
+import { Patient, Sex } from '@prisma/client';
 import { UssdSessionContext, UssdStateHandler, UssdStateResult } from '../types';
 import { ClinicListItem } from '../../services/clinicService';
-import { findPatientByPhone, registerPatient } from '../../services/patientService';
+import { DuplicatePatientError, findPatientsByPhone, registerPatient } from '../../services/patientService';
+import { displayName } from '../../services/patientAuthService';
 import { initiateCheckIn } from '../../services/checkInService';
 import { env } from '../../config/env';
 import { CONSENT_PROMPT_TEXT, CROSS_CLINIC_CONSENT_PROMPT_TEXT } from '../../config/constants';
+import { buildPersonMenu, MAX_PEOPLE_IN_MENU } from '../formatting';
 import { logger } from '../../utils/logger';
 
 const CURRENT_YEAR = new Date().getFullYear();
@@ -26,13 +28,70 @@ export async function proceedToPatientLookup(
   session.data.clinicId = clinic.id;
   session.data.clinicName = clinic.name;
 
-  const patient = await findPatientByPhone(session.phoneNumberE164);
-  if (patient) {
-    session.data.patientId = patient.id;
+  const patients = await findPatientsByPhone(session.phoneNumberE164);
+  if (patients.length === 1) {
+    session.data.patientId = (patients[0] as Patient).id;
     return { response: confirmPrompt(clinic.name), continueSession: true, nextState: 'CHECKIN_CONFIRM' };
   }
+  if (patients.length > 1) {
+    // A shared family phone: ask who is checking in (or someone new).
+    const shown = patients.slice(0, MAX_PEOPLE_IN_MENU);
+    session.data.personIds = shown.map((p) => p.id);
+    session.data.personNames = shown.map(displayName);
+    return { response: personPrompt(session), continueSession: true, nextState: 'CHECKIN_SELECT_PERSON' };
+  }
 
+  return consentPrompt();
+}
+
+function consentPrompt(): UssdStateResult {
   return { response: `CON ${CONSENT_PROMPT_TEXT}\n1. Yes, I agree\n2. No`, continueSession: true, nextState: 'CHECKIN_CONSENT' };
+}
+
+function personPrompt(session: UssdSessionContext): string {
+  return `CON ${buildPersonMenu('Who is checking in?', session.data.personNames as string[], '0. Someone new')}`;
+}
+
+/** Shared phone: "1. Jane W. / 2. Brian K. / 0. Someone new". */
+export const checkinSelectPerson: UssdStateHandler = async (session, input) => {
+  const ids = (session.data.personIds as string[] | undefined) ?? [];
+  if (input === '0') return consentPrompt();
+  const picked = ids[Number(input) - 1];
+  if (!/^\d+$/.test(input) || !picked) {
+    return { response: personPrompt(session).replace('CON ', 'CON Please choose from the list.\n'), continueSession: true };
+  }
+  session.data.patientId = picked;
+  return { response: confirmPrompt(session.data.clinicName as string), continueSession: true, nextState: 'CHECKIN_CONFIRM' };
+};
+
+/**
+ * Registers the new USSD patient (only the birth year is known, so the
+ * date is marked estimated). Idempotent: a replayed session, or the same
+ * person registering twice, reuses the existing record.
+ */
+async function registerUssdPatient(session: UssdSessionContext, crossClinicConsent: boolean): Promise<UssdStateResult> {
+  const clinicName = session.data.clinicName as string;
+  try {
+    const patient = await registerPatient({
+      phoneNumberE164: session.phoneNumberE164,
+      firstName: session.data.firstName as string,
+      lastName: session.data.lastName as string,
+      dateOfBirth: new Date(Date.UTC(session.data.birthYear as number, 0, 1)),
+      dateOfBirthEstimated: true,
+      sex: session.data.sex as Sex,
+      consentChannel: 'USSD',
+      crossClinicConsent,
+    });
+    session.data.patientId = patient.id;
+  } catch (err) {
+    if (err instanceof DuplicatePatientError) {
+      session.data.patientId = err.existing.id;
+    } else {
+      logger.error({ err, sessionId: session.sessionId }, 'Failed to register new patient during check-in');
+      return { response: 'END Something went wrong registering you. Please try again shortly.', continueSession: false };
+    }
+  }
+  return { response: confirmPrompt(clinicName), continueSession: true, nextState: 'CHECKIN_CONFIRM' };
 }
 
 export const checkinConsent: UssdStateHandler = async (_session, input) => {
@@ -85,19 +144,16 @@ export const checkinNewPatientSex: UssdStateHandler = async (session, input) => 
 
   session.data.sex = sex;
 
-  return {
-    response: `CON ${CROSS_CLINIC_CONSENT_PROMPT_TEXT}\n1. Yes, share with other clinics\n2. No, only this clinic`,
-    continueSession: true,
-    nextState: 'CHECKIN_CROSS_CLINIC_CONSENT',
-  };
+  // The old "share with all clinics" question is no longer asked: each
+  // clinic now asks the patient for their approval (a code by SMS) when it
+  // needs records from other clinics.
+  return registerUssdPatient(session, false);
 };
 
 /**
- * Separate from the platform-registration consent gate in checkinConsent
- * above (which is required to register at all): this one is optional and
- * defaults to declined either way, so answering "No" still lets the patient
- * register and check in — it just keeps their record clinic-local until
- * they opt in.
+ * No longer reached by new sessions (the question was retired in favour of
+ * per-clinic approval). Kept only so a session that was mid-way through it
+ * during a deploy finishes cleanly, honouring the answer given.
  */
 export const checkinCrossClinicConsent: UssdStateHandler = async (session, input) => {
   if (input !== '1' && input !== '2') {
@@ -107,25 +163,7 @@ export const checkinCrossClinicConsent: UssdStateHandler = async (session, input
     };
   }
 
-  const clinicName = session.data.clinicName as string;
-
-  try {
-    const patient = await registerPatient({
-      phoneNumberE164: session.phoneNumberE164,
-      firstName: session.data.firstName as string,
-      lastName: session.data.lastName as string,
-      dateOfBirth: new Date(Date.UTC(session.data.birthYear as number, 0, 1)),
-      sex: session.data.sex as Sex,
-      consentChannel: 'USSD',
-      crossClinicConsent: input === '1',
-    });
-    session.data.patientId = patient.id;
-  } catch (err) {
-    logger.error({ err, sessionId: session.sessionId }, 'Failed to register new patient during check-in');
-    return { response: 'END Something went wrong registering you. Please try again shortly.', continueSession: false };
-  }
-
-  return { response: confirmPrompt(clinicName), continueSession: true, nextState: 'CHECKIN_CONFIRM' };
+  return registerUssdPatient(session, input === '1');
 };
 
 export const checkinConfirm: UssdStateHandler = async (session, input) => {

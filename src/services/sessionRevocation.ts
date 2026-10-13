@@ -1,5 +1,5 @@
 import { redis } from '../config/redis';
-import { DASHBOARD_SESSION_TTL_SECONDS, OWNER_SESSION_TTL_SECONDS } from '../config/constants';
+import { DASHBOARD_SESSION_TTL_SECONDS, OWNER_SESSION_TTL_SECONDS, PATIENT_LONG_SESSION_TTL_SECONDS } from '../config/constants';
 
 const KEY_PREFIX = 'session:revoked_before:';
 
@@ -14,8 +14,8 @@ export type RevocationSubject =
   | `patient:${string}`
   | `owner:${string}`;
 
-/** Long enough to outlive any session issued before the revocation. */
-const MARKER_TTL_SECONDS = Math.max(DASHBOARD_SESSION_TTL_SECONDS, OWNER_SESSION_TTL_SECONDS);
+/** Long enough to outlive any session issued before the revocation — including a 30-day "keep me signed in" patient session. */
+const MARKER_TTL_SECONDS = Math.max(DASHBOARD_SESSION_TTL_SECONDS, OWNER_SESSION_TTL_SECONDS, PATIENT_LONG_SESSION_TTL_SECONDS);
 
 /**
  * Invalidates every session for `subject` issued up to now, without having
@@ -23,8 +23,12 @@ const MARKER_TTL_SECONDS = Math.max(DASHBOARD_SESSION_TTL_SECONDS, OWNER_SESSION
  * at or before this marker is treated as expired by the session loaders.
  * A login after the marker (e.g. a reactivated staff member) is unaffected.
  */
-export async function revokeSessionsFor(subject: RevocationSubject): Promise<void> {
-  await redis.set(`${KEY_PREFIX}${subject}`, String(Date.now()), 'EX', MARKER_TTL_SECONDS);
+export async function revokeSessionsFor(subject: RevocationSubject): Promise<number> {
+  const marker = Date.now();
+  await redis.set(`${KEY_PREFIX}${subject}`, String(marker), 'EX', MARKER_TTL_SECONDS);
+  // Returned so a session created straight afterwards (logging in with a
+  // new PIN) can be issued strictly after it, even within the same millisecond.
+  return marker;
 }
 
 /**
