@@ -19,6 +19,7 @@ repository, in a chat, or in a support ticket.**
 | Redis | localhost only, 64 MB cap, `noeviction`, saved to disk (`appendonly`) |
 | Web front door | Nginx + Let's Encrypt for `acisi.co.ke` (reference copy: `deploy/nginx/acisi.conf`) |
 | DNS | Cloudflare: `acisi.co.ke` and `www` are **A → 102.68.86.176, DNS only (grey cloud)**. Keep the proxy off: with it on, Cloudflare would decrypt patient traffic outside Kenya. |
+| Uploaded patient files | `/var/lib/acisi/uploads` (`FILE_STORAGE_DIR`), owned by `acisi`, mode 0700, random file names. Never under the web root; served only through logged-in routes |
 | Backups | `/var/backups/acisi`, nightly at 02:00 EAT, encrypted, 14 days (see below) |
 
 ## Data stays in Kenya
@@ -55,14 +56,52 @@ Database migrations run automatically on start (`prisma migrate deploy`).
 If the service files in `deploy/` changed, copy them again (see "Install
 or update the backup job").
 
+### One-time steps for the patient onboarding release (Oct 2026)
+
+This release adds file uploads, so the app service, Nginx and the backup job
+all change. **Take a backup first** (`sudo systemctl start acisi-backup`),
+then after `git pull` and the build:
+```
+D=/opt/acisi/app/deploy
+# App service: gives the app its private uploads folder (/var/lib/acisi).
+sudo install -m 644 $D/systemd/acisi.service /etc/systemd/system/acisi.service
+# Nginx: bigger request size, only for the upload routes.
+sudo install -m 644 $D/nginx/acisi.conf /etc/nginx/sites-available/acisi
+sudo nginx -t && sudo systemctl reload nginx
+# Backup job: now also backs up the uploaded files.
+sudo install -m 755 $D/backup/acisi-backup.sh /usr/local/sbin/acisi-backup
+sudo systemctl daemon-reload
+sudo systemctl restart acisi
+sleep 15; curl -s https://acisi.co.ke/healthz; echo
+ls -ld /var/lib/acisi    # drwx------ acisi acisi
+```
+Settings to add to `/etc/acisi/acisi.env` (then restart):
+- `SMS_REPLY_STOP_ENABLED=false` — set `true` only once Africa's Talking confirms
+  our sender can receive replies. Then "Reply STOP to opt out." is added to the
+  registration SMS.
+- `SMS_INBOUND_TOKEN=` a long random value (`openssl rand -hex 24`). In the Africa's
+  Talking dashboard set the incoming-messages callback to
+  `https://acisi.co.ke/api/sms/inbound?token=<that value>`. A "STOP" reply then
+  sets "does not want SMS" for every patient on that phone.
+- `FILE_STORAGE_DIR` only if you want somewhere other than `/var/lib/acisi/uploads`
+  (it must be inside `/var/lib/acisi`, the only place the service may write).
+
+**Disk:** the owner site's Overview shows how much the uploaded files take and
+how full the server disk is (amber at 80%). The nightly backup keeps 3 full copies
+of the files, so allow for about 4× the files' size in total.
+
 ## Backups
 
-**What:** every night at about 02:00 EAT, `acisi-backup` writes two encrypted files to
+**What:** every night at about 02:00 EAT, `acisi-backup` writes three encrypted files to
 `/var/backups/acisi`:
 - `acisi-db-<date>.dump.age`: the whole database
 - `acisi-config-<date>.tar.age`: `acisi.env`, the Nginx site and the systemd unit
 
-Files older than 14 days are deleted, but only after a successful backup.
+- `acisi-files-<date>.tar.age`: the uploaded patient files (`/var/lib/acisi/uploads`).
+  Only the newest 3 are kept: files never change once stored, and each copy is
+  the size of the whole folder.
+
+Database and config backups older than 14 days are deleted, but only after a successful backup.
 
 **Encryption:** `age`, to the public key in `/etc/acisi/backup-recipients.txt`.
 The **private key is not on the server**. It lives in your password manager and
@@ -98,6 +137,16 @@ rm -f "$KEY"
 systemctl start acisi
 exit
 ```
+
+**Restore the uploaded files** (after the database, in the same root shell, before the `rm -f "$KEY"` line):
+```
+systemctl stop acisi
+mkdir -p /var/lib/acisi/uploads
+age -d -i "$KEY" /var/backups/acisi/acisi-files-<date>.tar.age | tar -C /var/lib/acisi/uploads -xf -
+chown -R acisi:acisi /var/lib/acisi; chmod 700 /var/lib/acisi /var/lib/acisi/uploads
+systemctl start acisi
+```
+Restore the files backup from the same night as the database backup, or later.
 
 **Off-server copy (prepared, NOT enabled):** HostAfrica's backup add-on will be
 added before real patient data. If it snapshots the whole server, nothing else

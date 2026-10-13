@@ -5,11 +5,14 @@
  * patient agreed to — required for Data Protection Act accountability, not
  * just nice-to-have.
  */
-export const CONSENT_VERSION = 'v2';
+// v3 (Oct 2026): "basic health record" became "basic record"; sharing with
+// other clinics is now approved per clinic (CLINIC_RECORD_ACCESS), and
+// CROSS_CLINIC_CONSENT_PROMPT_TEXT is no longer shown to new patients.
+export const CONSENT_VERSION = 'v3';
 
 /** Required to register at all — creating a basic record at this clinic. */
 export const CONSENT_PROMPT_TEXT =
-  'ACISI will create a basic health record for you (name, visits) so this clinic can serve you now and on ' +
+  'ACISI will create a basic record for you (name, visits) so this clinic can serve you now and on ' +
   'future visits. Agree?';
 
 /** Optional, defaults to declined — separate from CONSENT_PROMPT_TEXT above. */

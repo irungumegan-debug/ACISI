@@ -796,8 +796,8 @@ function AccountPanel({ patientCode }: { patientCode: string }) {
           logs you out on every device. It can&apos;t be undone.
         </p>
         <p>
-          Clinics you&apos;ve visited keep a record of the visit (what was diagnosed and prescribed, and the payment), but with
-          no name or phone number attached, so it can no longer be linked to you. If you want to use ACISI again later, just
+          Clinics you&apos;ve visited keep their record of each visit (their notes and the payment), but with no name or phone
+          number attached, so it can no longer be linked to you. Files you uploaded yourself are deleted. If you want to use ACISI again later, just
           register as a new patient.
         </p>
         {!confirming ? (

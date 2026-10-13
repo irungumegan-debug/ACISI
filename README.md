@@ -118,26 +118,29 @@ full page navigation after authenticating (the session cookie set by that
 request carries over, since it's the same origin) — everything else is
 client-side routing within whichever of the SPAs is active.
 
-### Walk-in check-in (front desk)
+### Patients: adding, walk-ins, login, sharing, files
 
-For patients who arrive without checking in remotely. On the console's
-**Queue** page, front-desk roles (receptionist, clinician, admin — not
-doctors) use **Check in walk-in patient**: search by phone (any Kenyan
-format, normalised to `+254…`), confirm the patient found or register a new
-one (never a duplicate for the same phone), and add them to the same queue
-as remote check-ins. Walk-ins are stored with `source = WALK_IN` and status
-`NO_FEE` — no ACISI check-in fee and no M-Pesa prompt — and record which
-staff member checked them in. From there they go through the doctor and
-checkout like any other visit.
+- **Add patient** (console → Patients → Add patient): name, phone, date of
+  birth, sex. The phone is checked first; several family members may share
+  one phone, each with their own ACISI ID (`ACS-48217`). New patients get one
+  registration SMS. Admins can **import** a CSV/Excel list (preview first, no
+  SMS) and then **Send invitations**. `src/services/clinicPatientService.ts`,
+  `src/services/patientImportService.ts`, `src/dashboard/registry.ts`.
+- **Walk-in** (Queue → Check in walk-in patient): search by phone or ACISI ID,
+  pick the person, confirm name and date of birth, or add them on the same
+  screen. No ACISI fee. They get an SMS with their place in the queue and one
+  when they're next. `src/services/walkInService.ts`, `queueSmsService.ts`.
+- **Portal login**: one SMS code at first login (or forgot PIN), then phone or
+  ACISI ID + 6-digit PIN. `src/services/patientAuthService.ts`, `src/portal/auth.ts`.
+- **Records from other clinics**: hidden until the patient approves "Request
+  past records" (SMS code or their PIN); revocable in the portal.
+  `src/services/recordAccessService.ts`.
+- **Files**: JPG/PNG/PDF up to 20 MB, or photos of a paper file combined into
+  one PDF. Stored in `FILE_STORAGE_DIR` on the server. In development set
+  `FILE_STORAGE_DIR=./.uploads`. `src/services/fileStorageService.ts`.
 
-If staff tick "Patient agreed to receive SMS from the clinic", the consent
-is saved (`SMS_CLINIC_MESSAGES`) and a one-off invite is sent (wording in
-`src/services/smsTemplates.ts`); unticked, nothing is sent. A failed SMS
-never blocks the check-in. The queue shows today's walk-in vs remote counts.
-Logic: `src/services/walkInService.ts`; routes: `src/dashboard/walkIn.ts`.
-Staff can instead tick "Patient does not want SMS": that is saved on the
-patient (also switchable on the patient page) and blocks the receipt and
-visit-summary SMS.
+All SMS go through Africa's Talking; with `AT_USERNAME=sandbox` nothing reaches
+real phones — watch them in the AT sandbox simulator.
 
 ### Departments
 

@@ -26,6 +26,12 @@ import { clinicHasRecordAccess } from './patientService';
 export const MAX_FILE_BYTES = 20 * 1024 * 1024;
 /** "Previous records" photos combined into one PDF in a single go. */
 export const MAX_PHOTOS_PER_PDF = 30;
+/**
+ * And at most this much in total. The server has 1 GB of RAM (the app is
+ * capped at 500 MB), so photos are read one at a time while the PDF is
+ * written straight to disk — never all held in memory together.
+ */
+export const MAX_PHOTOS_TOTAL_BYTES = 100 * 1024 * 1024;
 
 export type AllowedMime = 'image/jpeg' | 'image/png' | 'application/pdf';
 
@@ -188,42 +194,46 @@ export async function savePhotosAsPdf(tempFiles: string[], patientId: string, me
   try {
     if (tempFiles.length === 0) throw new PatientFileError('Take at least one photo', 400);
     if (tempFiles.length > MAX_PHOTOS_PER_PDF) throw new PatientFileError(`At most ${MAX_PHOTOS_PER_PDF} photos at a time`, 400);
-    const images: Buffer[] = [];
+    let total = 0;
     for (const [i, f] of tempFiles.entries()) {
-      const buf = await fs.promises.readFile(f);
-      if (buf.length > MAX_FILE_BYTES) throw new PatientFileError(`Photo ${i + 1} is over 20 MB`, 413);
-      const mime = detectFileType(buf.subarray(0, 16));
+      const { size } = await fs.promises.stat(f);
+      if (size > MAX_FILE_BYTES) throw new PatientFileError(`Photo ${i + 1} is over 20 MB`, 413);
+      total += size;
+      const mime = detectFileType(await readHead(f));
       if (mime !== 'image/jpeg' && mime !== 'image/png') throw new PatientFileError(`Photo ${i + 1} is not a JPG or PNG photo`, 400);
-      images.push(buf);
     }
-    await new Promise<void>((resolve, reject) => {
-      const doc = new PDFDocument({ autoFirstPage: false, info: { Title: 'Previous records', Producer: 'ACISI' } });
-      const out = fs.createWriteStream(pdfPath, { mode: 0o600 });
+    if (total > MAX_PHOTOS_TOTAL_BYTES) throw new PatientFileError('Those photos are over 100 MB together. Save them in two goes.', 413);
+    const doc = new PDFDocument({ autoFirstPage: false, info: { Title: 'Previous records', Producer: 'ACISI' } });
+    const out = fs.createWriteStream(pdfPath, { mode: 0o600 });
+    const finished = new Promise<void>((resolve, reject) => {
       out.on('finish', resolve);
       out.on('error', reject);
       doc.on('error', reject);
-      doc.pipe(out);
-      try {
-        for (const [i, img] of images.entries()) {
-          // openImage exists in pdfkit but is missing from its type definitions.
-          let opened: { width: number; height: number };
-          try {
-            opened = (doc as unknown as { openImage(src: Buffer): { width: number; height: number } }).openImage(img);
-          } catch {
-            throw new PatientFileError(`Photo ${i + 1} couldn't be read. Take it again.`, 400);
-          }
-          // A4 page in the photo's orientation; the photo fills it with a small margin.
-          const portrait = opened.height >= opened.width;
-          const [w, h] = portrait ? [595.28, 841.89] : [841.89, 595.28];
-          doc.addPage({ size: [w, h], margin: 0 });
-          doc.image(opened as unknown as Buffer, 18, 18, { fit: [w - 36, h - 36], align: 'center', valign: 'center' });
-        }
-        doc.end();
-      } catch (err) {
-        reject(err);
-      }
     });
-    return await storeAndRecord(pdfPath, patientId, { ...meta, category: 'PREVIOUS_RECORDS' }, uploader, 'application/pdf', images.length);
+    doc.pipe(out);
+    try {
+      for (const [i, f] of tempFiles.entries()) {
+        // One photo in memory at a time; wait for the disk to catch up between pages.
+        const img = await fs.promises.readFile(f);
+        // openImage exists in pdfkit but is missing from its type definitions.
+        let opened: { width: number; height: number };
+        try {
+          opened = (doc as unknown as { openImage(src: Buffer): { width: number; height: number } }).openImage(img);
+        } catch {
+          throw new PatientFileError(`Photo ${i + 1} couldn't be read. Take it again.`, 400);
+        }
+        // A4 page in the photo's orientation; the photo fills it with a small margin.
+        const portrait = opened.height >= opened.width;
+        const [w, h] = portrait ? [595.28, 841.89] : [841.89, 595.28];
+        doc.addPage({ size: [w, h], margin: 0 });
+        doc.image(opened as unknown as Buffer, 18, 18, { fit: [w - 36, h - 36], align: 'center', valign: 'center' });
+        await new Promise<void>((resolve) => (out.writableLength > 4 * 1024 * 1024 ? out.once('drain', () => resolve()) : setImmediate(resolve)));
+      }
+    } finally {
+      doc.end();
+    }
+    await finished;
+    return await storeAndRecord(pdfPath, patientId, { ...meta, category: 'PREVIOUS_RECORDS' }, uploader, 'application/pdf', tempFiles.length);
   } catch (err) {
     await removeQuietly(pdfPath);
     throw err;

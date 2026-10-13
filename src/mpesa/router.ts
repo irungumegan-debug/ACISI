@@ -45,7 +45,8 @@ mpesaRouter.post('/callback', async (req, res) => {
 mpesaRouter.post('/clinic-callback', async (req, res) => {
   const payload = req.body as StkCallbackPayload;
   if (!payload?.Body?.stkCallback) {
-    logger.warn({ body: req.body }, 'Received malformed clinic M-Pesa callback');
+    // Only the shape, never the body: it can carry the payer's phone number.
+    logger.warn({ keys: Object.keys((req.body ?? {}) as object) }, 'Received malformed clinic M-Pesa callback');
     res.status(400).json({ ResultCode: 1, ResultDesc: 'Malformed callback body' });
     return;
   }

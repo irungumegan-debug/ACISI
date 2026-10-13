@@ -47,7 +47,9 @@ export async function darajaClient() {
 
 export function logDarajaError(context: string, err: unknown): void {
   if (axios.isAxiosError(err)) {
-    logger.error({ context, status: err.response?.status, data: err.response?.data }, 'Daraja API error');
+    const data = (err.response?.data ?? {}) as { errorCode?: unknown; errorMessage?: unknown; ResponseCode?: unknown };
+    // Daraja's error fields only — never the whole response, which can echo the request (phone number).
+    logger.error({ context, status: err.response?.status, errorCode: data.errorCode, errorMessage: data.errorMessage, responseCode: data.ResponseCode }, 'Daraja API error');
   } else {
     logger.error({ context, err }, 'Unexpected Daraja error');
   }

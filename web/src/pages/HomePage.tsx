@@ -85,7 +85,7 @@ export function HomePage() {
           <div data-reveal>
             <p className="eyebrow">The problem</p>
             <h2 id="problem-title" className="section-title">
-              Health records shouldn&apos;t live in an envelope.
+              Patient records shouldn&apos;t live in an envelope.
             </h2>
             <p className="section-lede">
               Too often, patients carry paper files, results and old prescriptions from visit to visit. Files get lost,

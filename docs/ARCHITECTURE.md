@@ -108,8 +108,8 @@ See `prisma/schema.prisma` for full field-level comments. Key decisions:
   details are on file, audit rows name the fields changed but never their
   values, and account deletion wipes them.
 - **Consent is append-only:** `Consent` rows are never updated in place; a
-  revocation is a new row with `granted: false`. `hasActiveDataSharingConsent()`
-  always reads the *latest* row, so history is preserved but current status
+  revocation is a new row with `granted: false`. Checks such as
+  `clinicHasRecordAccess()` always read the *latest* row, so history is preserved but current status
   is still a cheap single query. Every grant records the `version` of the
   consent copy shown (`CONSENT_VERSION` in `src/config/constants.ts`), so we
   can always reproduce exactly what a patient agreed to.
@@ -119,10 +119,11 @@ See `prisma/schema.prisma` for full field-level comments. Key decisions:
   their name, DOB, or sex; declining ends the session with nothing
   persisted, agreeing is recorded as a granted consent row by
   `registerPatient` once registration completes) from
-  `CROSS_CLINIC_RECORD_SHARING` (optional, asked afterward at
-  `CHECKIN_CROSS_CLINIC_CONSENT`, defaults to **not shared** unless the
-  patient explicitly opts in — declining still registers and checks the
-  patient in, it just keeps the record clinic-local).
+  sharing with other clinics. Since Oct 2026 sharing is approved **per
+  clinic** (`CLINIC_RECORD_ACCESS`, see "Patients, shared phones, login,
+  sharing and files"); the old platform-wide `CROSS_CLINIC_RECORD_SHARING`
+  question is no longer asked, but a past "yes" still counts until the
+  patient revokes it in the portal.
 - **Audit trail:** `AuditLog` is intended to be append-only at the
   application level (no update/delete code paths call it). Every patient
   data access — not just mutations — should log a row; see
@@ -130,11 +131,11 @@ See `prisma/schema.prisma` for full field-level comments. Key decisions:
   pattern (log *before* returning data, with who accessed it and why).
   Enforcing append-only at the database level (e.g. revoking UPDATE/DELETE
   grants for the app's DB role) is a deliberate follow-up, not yet applied.
-- **Consent-gated history access:** `staffHistoryEnterPhone` checks
-  `hasActiveDataSharingConsent()` before returning any cross-clinic history,
-  independent of whether the patient record itself exists — so a future
-  consent-revocation flow (not yet built) will correctly cut off access
-  without any change to the history-viewing code path.
+- **Consent-gated history access:** every path that shows other clinics'
+  history (`getScopedHistory` for the console and doctor view,
+  `staffHistoryEnterPhone` over USSD, file downloads) asks
+  `clinicHasRecordAccess()` for the viewing clinic, so revoking in the
+  portal cuts access off everywhere at once.
 
 ## Privacy Notice and Terms of Service
 
@@ -237,15 +238,11 @@ brute-forceable, and this endpoint gates access to every patient at the
 clinic, so it gets the same security treatment as everything else patient-data-adjacent in this codebase.
 
 **Patient portal (`src/portal/`).** A third surface, alongside USSD and the
-staff dashboard, for patients on the web: register, login, forgot/reset PIN,
-web check-in, and records — all under `/api/patients`. Patients log in with
-their phone number or `patientCode` (`ACI-XXXX`, `Patient.patientCode`) plus
-a PIN (`Patient.pinHash`), using the same opaque-Redis-session pattern as the
-staff dashboard (`src/portal/session.ts`, cookie `acisi_patient_session`).
-OTP (`Otp` model, SMS via Africa's Talking) is reset-only — sent when a
-patient forgets their PIN, or to let a patient who registered via USSD (and
-so never set one) set their first PIN; it is never used for everyday login.
-Web check-in (`POST /api/patients/checkin`) calls the exact same
+staff dashboard, for patients on the web — all under `/api/patients`. See
+"Patients, shared phones, login, sharing and files" below for sign-in.
+Patients use the same opaque-Redis-session pattern as the staff dashboard
+(`src/portal/session.ts`, cookie `acisi_patient_session`). Web check-in
+(`POST /api/patients/checkin`) calls the exact same
 `checkInService.initiateCheckIn` USSD uses, so payment/idempotency/SMS
 behavior is identical regardless of channel.
 
@@ -384,10 +381,80 @@ change surfaced, not something introduced by it. Fixed by importing
 Express's shared Router/Route prototypes so those rejections now reach
 `errorHandler` (a clean `500`) instead. No route handler code changed.
 
+## Patients, shared phones, login, sharing and files (Oct 2026)
+
+**One phone, several patients.** `Patient.phoneNumber` is no longer unique:
+a parent and their children can share a phone, each with their own ACISI
+ID (`ACS-48217`, five random digits; older `ACI-7F2K` IDs still work).
+What stops duplicates instead is `registerPatient`: it takes a Postgres
+advisory lock on the phone number and refuses the same first and last
+name with the same date of birth (or no date to tell them apart) —
+`DuplicatePatientError`, which each caller turns into "already registered",
+"reuse the existing record" (walk-in, replayed USSD session) or "link it"
+(import). Every place that used to look a patient up by phone now handles
+a list: the console asks staff to pick, the portal asks "who are you?",
+USSD shows a short person menu (and puts "My Records" behind the person's
+PIN on a shared phone).
+
+**A clinic's patients.** `ClinicPatient` links a clinic to patients it added
+("Add patient", bulk import) or saw (backfilled from check-ins). A link
+gives the clinic the patient's details and its *own* records — never other
+clinics' records. `clinicCanSeePatientWhere` is the one scoping filter.
+Bulk import (`patientImportService`) previews errors and duplicates before
+anything is saved and sends no SMS; "Send invitations" sends the
+registration SMS in batches, so the clinic controls the cost.
+
+**Sign-in (`patientAuthService`).** Patients get one OTP ever — at first login
+(or forgot PIN): phone → `PhoneOtp` (hashed, 5 minutes, single use, 5
+guesses, 3 per number per hour counted in the database, plus a per-IP cap)
+→ pick the person → confirm date of birth (protects against recycled
+numbers; year only when it was worked out from an age; none on file means
+"ask your clinic") → PIN twice → the ACISI ID screen, which needs "I have
+saved my ACISI ID" (`Patient.idSavedAt`). The steps between the OTP and the
+PIN are carried by a short-lived Redis "setup flow" token. Everyday login is
+phone or ACISI ID + PIN. The lock (5 wrong → 15 minutes) lives on the
+account (`pinFailedAttempts`, `pinLockedUntil`), so changing identifier
+gives no extra guesses; by phone, a wrong PIN counts against every account
+on it, and a PIN matching several people asks which. "Keep me signed in"
+gives a 30-day session; revocation markers outlive it.
+
+**Records from other clinics (`recordAccessService`).** `getScopedHistory`
+asks `clinicHasRecordAccess(patient, clinic)`: the latest
+`CLINIC_RECORD_ACCESS` consent row for that clinic, or — for patients who
+said yes before per-clinic approval existed — their old
+`CROSS_CLINIC_RECORD_SHARING` answer until they revoke it. "Request past
+records" texts a code (10 minutes, single use, 5 wrong tries, 3 per patient
+per clinic per hour); the patient reads it out, or types their own PIN on
+the front-desk screen (same lock as login). The patient sees and revokes
+access in the portal. Requests, approvals, wrong codes, revocations and
+every view are in `AuditLog`, which now has `clinicId` and `patientId`
+columns.
+
+**Files (`fileStorageService`).** JPG/PNG/PDF only, recognised by magic bytes,
+20 MB each. Multer writes uploads to `FILE_STORAGE_DIR/.incoming` under random
+names; after the content check they're renamed into `FILE_STORAGE_DIR`
+(0700, files 0600, random 48-hex names, no extension). Several photos of a
+paper file become one PDF (pdfkit), read one at a time because the server
+has 1 GB of RAM. Served only through logged-in routes with the records
+rule: the uploading clinic and the patient always; other clinics' uploads
+and the patient's own uploads only with the patient's approval. Patient
+uploads are labelled; deleting an account deletes them (clinic uploads stay,
+like visit records).
+
+**SMS.** All new SMS go through `smsSender.sendSms` (one segment, never logs
+the number or text): registration, queue join / "you're next" for walk-ins
+(no department name), record-access code, OTP. `POST /api/sms/inbound`
+handles STOP replies; "Reply STOP" is only added to SMS text when
+`SMS_REPLY_STOP_ENABLED` is on.
+
+**Logs.** `utils/logger.ts` logs requests without query strings or cookies,
+redacts phone/PIN/code/record fields, masks digit runs in error messages and
+drops database error messages (which can echo saved values).
+
 ## Known MVP limitations / deliberate scope cuts
 
-- Consent revocation has no USSD flow yet (only grant, at registration).
-  The schema and `hasActiveDataSharingConsent()` already support it.
+- Revoking a clinic's access to records from other clinics is portal-only
+  (no USSD flow).
 - Staff PIN lockout is per-session only in USSD (`MAX_STAFF_PIN_ATTEMPTS`);
   the dashboard login has its own, separate Redis-backed rate limit
   (`LOGIN_RATE_LIMIT_MAX_ATTEMPTS`) since a web form doesn't have USSD's
