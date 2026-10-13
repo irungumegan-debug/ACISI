@@ -81,7 +81,8 @@ Everything uses test mode: SMS through the Africa's Talking **sandbox**
 - [ ] (Once AT can deliver replies) reply **STOP** from phone A: both patients on A become "does not want SMS"
 - [ ] `sudo journalctl -u acisi --since "1 hour ago" | grep -E "07[0-9]{8}|2547[0-9]{8}"` finds nothing
 - [ ] Owner site → Activity shows the lookups, record requests, approvals, revocations and file views,
-      each with clinic and patient
+      with who did each and at which clinic. To see the patient on each row too:
+      `sudo -u postgres psql acisi -c 'select "createdAt", action, "clinicId", "patientId" from audit_logs order by "createdAt" desc limit 30'`
 
 ## Before real patients
 
