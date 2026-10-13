@@ -90,6 +90,12 @@ enum ConsentType {
   /// walk-in "check in from home next time" invite). Never assumed: no such
   /// SMS is sent unless the latest row of this type is granted=true.
   SMS_CLINIC_MESSAGES
+  /// One clinic may see the patient's records from *other* clinics. Always
+  /// carries clinicId. Granted when the patient approves a "Request past
+  /// records" (code by SMS, or their own PIN on the front-desk screen);
+  /// revoked by the patient from the portal. The latest row per
+  /// (patient, clinic) decides — see recordAccessService.
+  CLINIC_RECORD_ACCESS
 }
 
 enum ActorType {
@@ -101,9 +107,11 @@ enum ActorType {
   OWNER
 }
 
-/// Purpose of a one-time code sent to a patient's phone. Currently only PIN reset.
+/// Purpose of a one-time code sent by SMS.
 enum OtpPurpose {
   PIN_RESET
+  /// A patient's first portal login: the one OTP before they set a PIN.
+  FIRST_LOGIN
 }
 
 /// Clinical lifecycle of a visit, independent of CheckInStatus (which is
@@ -151,6 +159,10 @@ model Clinic {
   updatedAt  DateTime @updatedAt
 
   staff            Staff[]
+  patientLinks     ClinicPatient[]
+  consents         Consent[]
+  recordRequests   RecordAccessRequest[]
+  patientFiles     PatientFile[]
   checkIns         CheckIn[]
   encounters       Encounter[]
   departments      Department[]
@@ -249,18 +261,21 @@ model Staff {
   updatedAt          DateTime               @updatedAt
 
   checkIns                 CheckIn[]
-  checkInsPaymentConfirmed CheckIn[]         @relation("CheckInPaymentConfirmedBy")
+  checkInsPaymentConfirmed CheckIn[]             @relation("CheckInPaymentConfirmedBy")
   auditLogs                AuditLog[]
   otps                     StaffOtp[]
-  assignedEncounters       Encounter[]       @relation("EncounterAssignedDoctor")
-  consultedEncounters      Encounter[]       @relation("EncounterConsultedBy")
-  billsCreated             Bill[]            @relation("BillCreatedBy")
-  paymentsTaken            Payment[]         @relation("PaymentTakenBy")
-  paymentsVoided           Payment[]         @relation("PaymentVoidedBy")
-  checkedOutEncounters     Encounter[]       @relation("EncounterCheckedOutBy")
-  confirmedAppointments    Appointment[]     @relation("AppointmentConfirmedBy")
-  cancelledAppointments    Appointment[]     @relation("AppointmentCancelledBy")
+  assignedEncounters       Encounter[]           @relation("EncounterAssignedDoctor")
+  consultedEncounters      Encounter[]           @relation("EncounterConsultedBy")
+  billsCreated             Bill[]                @relation("BillCreatedBy")
+  paymentsTaken            Payment[]             @relation("PaymentTakenBy")
+  paymentsVoided           Payment[]             @relation("PaymentVoidedBy")
+  checkedOutEncounters     Encounter[]           @relation("EncounterCheckedOutBy")
+  confirmedAppointments    Appointment[]         @relation("AppointmentConfirmedBy")
+  cancelledAppointments    Appointment[]         @relation("AppointmentCancelledBy")
   legalAcceptances         LegalAcceptance[]
+  patientsAdded            ClinicPatient[]
+  recordRequests           RecordAccessRequest[]
+  filesUploaded            PatientFile[]
 
   @@index([clinicId])
   @@index([departmentId])
@@ -268,57 +283,72 @@ model Staff {
 }
 
 model Patient {
-  id                 String         @id @default(cuid())
-  /// System-generated human-readable ID, e.g. "ACI-7F2K" — separate from
-  /// the phone number and from the internal cuid `id`. Usable as an
-  /// alternate login identifier alongside the phone number.
-  patientCode        String         @unique
-  /// E.164 phone number — the primary lookup key, since Africa's Talking
-  /// gives us the caller's number on every USSD session.
-  phoneNumber        String         @unique
-  firstName          String
-  lastName           String
-  dateOfBirth        DateTime?
-  sex                Sex            @default(UNKNOWN)
-  county             String?
+  id                   String         @id @default(cuid())
+  /// The patient's ACISI ID, e.g. "ACS-48217" (random digits, never in
+  /// sequence). Patients registered before Oct 2026 keep their older
+  /// "ACI-7F2K" form; both are accepted everywhere. Usable as a login
+  /// identifier alongside the phone number — and the only unambiguous one
+  /// when several patients share a phone.
+  patientCode          String         @unique
+  /// E.164 phone number — the lookup key, since Africa's Talking gives us
+  /// the caller's number on every USSD session. Deliberately NOT unique: one
+  /// phone can hold several patients (a parent and their children), each
+  /// with their own ACISI ID.
+  phoneNumber          String
+  firstName            String
+  lastName             String
+  dateOfBirth          DateTime?
+  /// True when dateOfBirth was worked out from an age (stored as 1 January
+  /// of the birth year), so only the year is known. First portal login then
+  /// accepts any date in that year and saves the full date given.
+  dateOfBirthEstimated Boolean        @default(false)
+  sex                  Sex            @default(UNKNOWN)
+  county               String?
   /// Optional — collected only via the web portal signup form (not USSD,
   /// which has no practical way to enter one). Never used for login or any
   /// notification besides the staff-initiated visit-summary email at
   /// checkout; no uniqueness constraint since a shared household email is
   /// a reasonable, expected case.
-  email              String?
+  email                String?
   /// bcrypt hash of the patient's chosen numeric PIN. Everyday login
   /// credential; OTP (see Otp model) is reset-only, not primary login.
   /// Null for a patient registered via USSD check-in who has never set one —
   /// they use the same OTP flow to set their first PIN as to reset it.
-  pinHash            String?
+  pinHash              String?
+  /// Wrong-PIN counter and lock (5 wrong → locked 15 minutes). Kept on the
+  /// account, not per typed identifier, so switching between phone number
+  /// and ACISI ID gives no extra guesses. Reset on a correct PIN or a PIN reset.
+  pinFailedAttempts    Int            @default(0)
+  pinLockedUntil       DateTime?
+  /// When the patient ticked "I have saved my ACISI ID" after setting a PIN.
+  idSavedAt            DateTime?
   /// Set when the account is deleted, by the patient themselves (portal) or
   /// the platform owner — see patientDeletionService. Deletion wipes every
   /// identifying field above (name, phone, email, DOB, county, PIN) in the
   /// same update, but keeps this row and its Encounters/CheckIns/payments,
   /// now anonymous, so clinics keep their medical and financial records.
   /// Every patient lookup used for login/USSD/OTP excludes deleted rows.
-  deletedAt          DateTime?
-  deletedByType      ActorType?
+  deletedAt            DateTime?
+  deletedByType        ActorType?
   /// "Patient does not want SMS", set by front desk (at walk-in check-in or
   /// on the patient's page). When true, no clinic SMS is sent to them —
   /// no payment receipt, no visit summary, no invite. Off by default.
-  smsOptOut          Boolean        @default(false)
-  smsOptOutUpdatedAt DateTime?
+  smsOptOut            Boolean        @default(false)
+  smsOptOutUpdatedAt   DateTime?
   /// Identity document, to identify the patient correctly and avoid duplicate
   /// records (needed for Digital Health Agency certification). Optional:
   /// given by the patient at web check-in, or recorded by front desk at a
   /// walk-in or on the patient's page. Always set together with idNumber.
   /// Sensitive — wiped on account deletion like every identifying field.
-  idType             PatientIdType?
+  idType               PatientIdType?
   /// Normalised: upper case, no spaces (see services/patientIdentity.ts).
-  idNumber           String?
+  idNumber             String?
   /// Optional next of kin, so the clinic can reach someone on the patient's
   /// behalf. Phone is E.164. Wiped on account deletion.
-  nextOfKinName      String?
-  nextOfKinPhone     String?
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
+  nextOfKinName        String?
+  nextOfKinPhone       String?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
 
   consents         Consent[]
   encounters       Encounter[]
@@ -326,7 +356,11 @@ model Patient {
   otps             Otp[]
   appointments     Appointment[]
   legalAcceptances LegalAcceptance[]
+  clinicLinks      ClinicPatient[]
+  recordRequests   RecordAccessRequest[]
+  files            PatientFile[]
 
+  @@index([phoneNumber])
   @@map("patients")
 }
 
@@ -346,6 +380,138 @@ model Otp {
 
   @@index([patientId])
   @@map("otps")
+}
+
+/// One-time codes sent to a *phone number* rather than a patient: the
+/// first-login code (sent before we know which of the patients on a shared
+/// phone is logging in) and the forgot-PIN code. Hashed, single use, five
+/// minutes, limited guesses; at most 3 sent per phone per hour (counted
+/// from these rows, so it survives a restart).
+model PhoneOtp {
+  id          String     @id @default(cuid())
+  /// E.164.
+  phoneNumber String
+  purpose     OtpPurpose
+  /// bcrypt hash of the OTP. Never store or log the raw code.
+  codeHash    String
+  attempts    Int        @default(0)
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  createdAt   DateTime   @default(now())
+
+  @@index([phoneNumber, createdAt])
+  @@map("phone_otps")
+}
+
+/// How a patient came to be linked to a clinic.
+enum ClinicPatientSource {
+  /// Added by staff with the "Add patient" form (or at a walk-in).
+  ADDED
+  /// Brought in by a bulk import of the clinic's existing patient list.
+  IMPORTED
+  /// Checked in at the clinic (remote or walk-in) — backfilled for history.
+  VISIT
+}
+
+/// A clinic's relationship with a patient. Gives the clinic access to the
+/// patient's details and to the records the clinic itself created — never
+/// to other clinics' records (that needs CLINIC_RECORD_ACCESS consent).
+model ClinicPatient {
+  id             String              @id @default(cuid())
+  clinicId       String
+  clinic         Clinic              @relation(fields: [clinicId], references: [id])
+  patientId      String
+  patient        Patient             @relation(fields: [patientId], references: [id])
+  source         ClinicPatientSource
+  addedByStaffId String?
+  addedByStaff   Staff?              @relation(fields: [addedByStaffId], references: [id])
+  /// When the registration SMS went out. Null for bulk-imported patients
+  /// until the clinic presses "Send invitations".
+  invitedAt      DateTime?
+  createdAt      DateTime            @default(now())
+
+  @@unique([clinicId, patientId])
+  @@index([patientId])
+  @@map("clinic_patients")
+}
+
+enum RecordAccessStatus {
+  PENDING
+  APPROVED
+  /// Expired unused, or 5 wrong codes entered.
+  EXPIRED
+}
+
+enum RecordAccessMethod {
+  SMS_CODE
+  PATIENT_PIN
+}
+
+/// A clinic asking to see a patient's records from other clinics. The
+/// patient approves by reading the SMS code to the front desk (6 digits, 10
+/// minutes, single use, 5 wrong tries) or typing their own PIN on the
+/// front-desk screen. Approval writes a CLINIC_RECORD_ACCESS consent row.
+model RecordAccessRequest {
+  id                 String              @id @default(cuid())
+  clinicId           String
+  clinic             Clinic              @relation(fields: [clinicId], references: [id])
+  patientId          String
+  patient            Patient             @relation(fields: [patientId], references: [id])
+  requestedByStaffId String
+  requestedByStaff   Staff               @relation(fields: [requestedByStaffId], references: [id])
+  /// bcrypt hash of the SMS code; null when no SMS was sent (PIN approval).
+  codeHash           String?
+  attempts           Int                 @default(0)
+  expiresAt          DateTime
+  status             RecordAccessStatus  @default(PENDING)
+  approvedBy         RecordAccessMethod?
+  resolvedAt         DateTime?
+  createdAt          DateTime            @default(now())
+
+  @@index([patientId, clinicId])
+  @@map("record_access_requests")
+}
+
+enum PatientFileCategory {
+  XRAY
+  CT_SCAN
+  MRI
+  ULTRASOUND
+  LAB_REPORT
+  PREVIOUS_RECORDS
+  OTHER
+}
+
+/// An uploaded file (JPG, PNG or PDF) on a patient's record. The bytes live
+/// on the server's own disk in a private directory (env FILE_STORAGE_DIR)
+/// under a random name — never a public URL, never a foreign cloud — and are
+/// only served through an authenticated route that applies the same access
+/// rule as visit records (see fileStorageService).
+model PatientFile {
+  id                String              @id @default(cuid())
+  patientId         String
+  patient           Patient             @relation(fields: [patientId], references: [id])
+  /// The clinic that uploaded it. Null for a patient's own upload.
+  clinicId          String?
+  clinic            Clinic?             @relation(fields: [clinicId], references: [id])
+  uploadedByType    ActorType
+  uploadedByStaffId String?
+  uploadedByStaff   Staff?              @relation(fields: [uploadedByStaffId], references: [id])
+  category          PatientFileCategory
+  /// The date the document is from (chosen by the uploader), not the upload time.
+  documentDate      DateTime            @db.Date
+  note              String?
+  /// Random file name on disk (hex). Never derived from the patient or the original name.
+  storageName       String              @unique
+  mimeType          String
+  sizeBytes         Int
+  /// For a PDF made from several photos, how many pages it has.
+  pageCount         Int?
+  createdAt         DateTime            @default(now())
+
+  @@index([patientId])
+  @@index([clinicId])
+  @@map("patient_files")
 }
 
 /// Staff/doctor counterpart of Otp: a one-time code sent by SMS to the
@@ -375,6 +541,9 @@ model Consent {
   patientId String
   patient   Patient     @relation(fields: [patientId], references: [id])
   type      ConsentType
+  /// Set only for CLINIC_RECORD_ACCESS: the clinic the consent is about.
+  clinicId  String?
+  clinic    Clinic?     @relation(fields: [clinicId], references: [id])
   granted   Boolean
   /// How consent was captured, e.g. "USSD", "STAFF_ASSISTED".
   channel   String
@@ -384,6 +553,7 @@ model Consent {
   createdAt DateTime    @default(now())
 
   @@index([patientId])
+  @@index([patientId, type, clinicId])
   @@map("consents")
 }
 
@@ -426,6 +596,10 @@ model Encounter {
   checkedOutByStaffId String?
   checkedOutByStaff   Staff?          @relation("EncounterCheckedOutBy", fields: [checkedOutByStaffId], references: [id])
   checkedOutAt        DateTime?
+  /// Walk-in queue SMS ("You are number 3…" and "You're next…"), each sent
+  /// at most once — set atomically before sending.
+  queueJoinSmsAt      DateTime?
+  queueNextSmsAt      DateTime?
   createdAt           DateTime        @default(now())
 
   bill Bill?
@@ -791,6 +965,10 @@ model AuditLog {
   actorId    String?
   staffId    String?
   staff      Staff?    @relation(fields: [staffId], references: [id])
+  /// The clinic the action happened at / on behalf of, when there is one.
+  clinicId   String?
+  /// The patient whose data was touched, when there is one.
+  patientId  String?
   /// e.g. "PATIENT_HISTORY_VIEWED", "CONSENT_GRANTED", "CHECK_IN_CREATED".
   action     String
   entityType String
@@ -800,5 +978,7 @@ model AuditLog {
 
   @@index([entityType, entityId])
   @@index([actorType, actorId])
+  @@index([patientId, createdAt])
+  @@index([clinicId, createdAt])
   @@map("audit_logs")
 }

@@ -2,7 +2,7 @@ import bcrypt from 'bcrypt';
 import { Patient, Sex } from '@prisma/client';
 import { prisma } from '../db/prisma';
 import { recordAuditEvent } from './auditService';
-import { generatePatientCode } from '../utils/idCodes';
+import { generatePatientCode, looksLikePatientCode } from '../utils/idCodes';
 import { CONSENT_VERSION, HISTORY_ENCOUNTER_LIMIT } from '../config/constants';
 import { env } from '../config/env';
 import { InvalidPhoneNumberError, toE164 } from '../utils/phone';
@@ -26,7 +26,7 @@ export async function findPatientByCode(patientCode: string): Promise<Patient | 
 /** Looks a patient up by phone number or patientCode, whichever the identifier looks like. */
 export async function findPatientByPhoneOrCode(identifier: string): Promise<Patient | null> {
   const trimmed = identifier.trim();
-  if (/^ACI-/i.test(trimmed)) {
+  if (looksLikePatientCode(trimmed)) {
     return findPatientByCode(trimmed.toUpperCase());
   }
   // Patients type their number however they're used to (0712…, 254712…,

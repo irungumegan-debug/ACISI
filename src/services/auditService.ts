@@ -5,6 +5,10 @@ interface RecordAuditEventInput {
   actorType: ActorType;
   actorId?: string;
   staffId?: string;
+  /** The clinic the action happened at, when there is one. */
+  clinicId?: string;
+  /** The patient whose data was touched, when there is one. */
+  patientId?: string;
   action: string;
   entityType: string;
   entityId?: string;
@@ -14,7 +18,8 @@ interface RecordAuditEventInput {
 /**
  * Writes one append-only audit row. This is the Data Protection Act audit
  * trail — call it for every access to or mutation of patient data, not just
- * for security-sensitive events.
+ * for security-sensitive events. Record who (actor), which clinic, which
+ * patient and what; never phone numbers, PINs, codes or record contents.
  */
 export async function recordAuditEvent(input: RecordAuditEventInput): Promise<void> {
   await prisma.auditLog.create({
@@ -22,6 +27,10 @@ export async function recordAuditEvent(input: RecordAuditEventInput): Promise<vo
       actorType: input.actorType,
       actorId: input.actorId,
       staffId: input.staffId,
+      clinicId: input.clinicId,
+      // Most patient events use the patient as their entity; fill it in so
+      // "everything that happened to this patient" is one indexed query.
+      patientId: input.patientId ?? (input.entityType === 'Patient' ? input.entityId : undefined),
       action: input.action,
       entityType: input.entityType,
       entityId: input.entityId,

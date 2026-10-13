@@ -17,9 +17,20 @@ function randomCode(length: number): string {
   return out;
 }
 
-/** e.g. "ACI-7F2K" */
+/**
+ * A patient's ACISI ID, e.g. "ACS-48217": five random digits (never issued
+ * in sequence, so one ID says nothing about the next). Digits only, so it's
+ * easy to read out at a front desk and type on any phone keypad. Uniqueness
+ * is checked by the caller. Patients registered before Oct 2026 keep their
+ * older "ACI-7F2K" IDs.
+ */
 export function generatePatientCode(): string {
-  return `ACI-${randomCode(4)}`;
+  return `ACS-${crypto.randomInt(10_000, 100_000)}`;
+}
+
+/** True for anything shaped like an ACISI ID — the new "ACS-48217" or the older "ACI-7F2K". */
+export function looksLikePatientCode(identifier: string): boolean {
+  return /^AC[IS]-[A-Z0-9]{4,6}$/i.test(identifier.trim());
 }
 
 /** e.g. "ACI-STF-7F2K" */
