@@ -77,3 +77,24 @@ it('looks up by phone or ACISI ID', async () => {
   expect(res.status).toBe(200);
   expect(lookupPatients).toHaveBeenCalledWith('ACS-12345', 'clinic-A', 'staff-1');
 });
+
+describe('bulk import and invitations are admin-only', () => {
+  it.each(['RECEPTIONIST', 'CLINICIAN', 'DOCTOR'])('refuses %s', async (role) => {
+    (loadDashboardSession as jest.Mock).mockResolvedValue({ ...RECEPTIONIST, role });
+    for (const req of [
+      request(app()).post('/registry/import/preview').attach('file', Buffer.from('Name,Phone\n'), 'list.csv'),
+      request(app()).post('/registry/import/abc/confirm').send({ clinicConfirmsBasis: true }),
+      request(app()).get('/registry/invitations'),
+      request(app()).post('/registry/invitations/send').send({}),
+    ]) {
+      expect((await withCookie(req)).status).toBe(403);
+    }
+  });
+
+  it('rejects a file over 5 MB', async () => {
+    (loadDashboardSession as jest.Mock).mockResolvedValue({ ...RECEPTIONIST, role: 'ADMIN' });
+    const res = await withCookie(request(app()).post('/registry/import/preview').attach('file', Buffer.alloc(5 * 1024 * 1024 + 1), 'big.csv'));
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/too big/);
+  });
+});

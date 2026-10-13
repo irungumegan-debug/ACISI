@@ -409,7 +409,35 @@ export interface AddPatientResult {
   sms: 'sent' | 'failed' | 'opted_out';
 }
 
+export type ImportRowStatus = 'new' | 'existing' | 'already_linked' | 'duplicate_in_file' | 'error';
+
+export interface ImportPreview {
+  importId: string;
+  rows: { rowNumber: number; fullName: string; phone: string; dateOfBirth: string; sex: string | null; status: ImportRowStatus; message: string | null }[];
+  counts: Record<ImportRowStatus, number>;
+}
+
 export const api = {
+  previewPatientImport(file: File) {
+    const form = new FormData();
+    form.append('file', file);
+    return upload<ImportPreview>('/registry/import/preview', form);
+  },
+  confirmPatientImport(importId: string) {
+    return request<{ created: number; linked: number }>(`/registry/import/${encodeURIComponent(importId)}/confirm`, {
+      method: 'POST',
+      body: JSON.stringify({ clinicConfirmsBasis: true }),
+    });
+  },
+  getPendingInvitations() {
+    return request<{ pending: number }>('/registry/invitations');
+  },
+  sendInvitations(cursor?: string) {
+    return request<{ sent: number; failed: number; remaining: number; cursor: string | null; done: boolean }>('/registry/invitations/send', {
+      method: 'POST',
+      body: JSON.stringify(cursor ? { cursor } : {}),
+    });
+  },
   lookupPatients(q: string) {
     return request<PatientLookup>(`/registry/lookup?q=${encodeURIComponent(q)}`);
   },

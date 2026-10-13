@@ -1,7 +1,9 @@
 import { NextFunction, Request, Response, Router } from 'express';
 import { z } from 'zod';
 import { requireStaffSession, AuthenticatedRequest } from './auth';
+import multer from 'multer';
 import { addPatient, linkExistingPatient, lookupPatients, PatientRegistryError } from '../services/clinicPatientService';
+import { confirmImport, countPendingInvitations, previewImport, sendPendingInvitations } from '../services/patientImportService';
 
 /**
  * The clinic's patient list: look up by phone or ACISI ID, "Add patient",
@@ -85,6 +87,62 @@ registryRouter.post('/patients/:id/link', async (req, res) => {
   const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
   try {
     res.json(await linkExistingPatient(clinicId, staffId, req.params.id as string));
+  } catch (err) {
+    if (!sendRegistryError(err, res)) throw err;
+  }
+});
+
+// --- Bulk import and invitations (clinic admin only) -------------------------
+
+/** Patient lists are small text/spreadsheet files; kept in memory, never written to disk. */
+const importUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1 } });
+
+registryRouter.post('/import/preview', requireAdmin, (req, res, next) => {
+  importUpload.single('file')(req, res, (err: unknown) => {
+    if (err) {
+      const tooBig = (err as { code?: string }).code === 'LIMIT_FILE_SIZE';
+      res.status(400).json({ error: tooBig ? 'The file is too big (max 5 MB). Split it into smaller files.' : 'Upload one .csv or .xlsx file' });
+      return;
+    }
+    next();
+  });
+}, async (req, res) => {
+  if (!req.file) {
+    res.status(400).json({ error: 'Choose a .csv or .xlsx file to upload' });
+    return;
+  }
+  const { clinicId } = (req as AuthenticatedRequest).dashboardSession;
+  try {
+    res.json(await previewImport(req.file, clinicId));
+  } catch (err) {
+    if (!sendRegistryError(err, res)) throw err;
+  }
+});
+
+const confirmSchema = z.object({ clinicConfirmsBasis: z.boolean().default(false) });
+
+registryRouter.post('/import/:importId/confirm', requireAdmin, async (req, res) => {
+  const parsed = confirmSchema.safeParse(req.body ?? {});
+  const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  try {
+    res.json(await confirmImport(req.params.importId as string, clinicId, staffId, { clinicConfirmsBasis: parsed.success && parsed.data.clinicConfirmsBasis }));
+  } catch (err) {
+    if (!sendRegistryError(err, res)) throw err;
+  }
+});
+
+registryRouter.get('/invitations', requireAdmin, async (req, res) => {
+  const { clinicId } = (req as AuthenticatedRequest).dashboardSession;
+  res.json({ pending: await countPendingInvitations(clinicId) });
+});
+
+const sendInvitesSchema = z.object({ cursor: z.string().max(64).optional() });
+
+registryRouter.post('/invitations/send', requireAdmin, async (req, res) => {
+  const parsed = sendInvitesSchema.safeParse(req.body ?? {});
+  const { clinicId, staffId } = (req as AuthenticatedRequest).dashboardSession;
+  try {
+    res.json(await sendPendingInvitations(clinicId, staffId, parsed.success ? parsed.data.cursor : undefined));
   } catch (err) {
     if (!sendRegistryError(err, res)) throw err;
   }

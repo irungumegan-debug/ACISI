@@ -14,6 +14,7 @@ import { WalkInPage } from './pages/WalkInPage';
 import { CheckoutPage } from './pages/CheckoutPage';
 import { DailySummaryPage } from './pages/DailySummaryPage';
 import { AddPatientPage } from './pages/AddPatientPage';
+import { ImportPatientsPage } from './pages/ImportPatientsPage';
 
 /** A doctor's home is their own queue; everyone else lands on the front-desk queue. */
 function HomeRedirect() {
@@ -51,6 +52,7 @@ export function App() {
             <Route path="/reports/daily" element={<DailySummaryPage />} />
             <Route path="/patients" element={<PatientsPage />} />
             <Route path="/patients/new" element={<AddPatientPage />} />
+            <Route path="/patients/import" element={<ImportPatientsPage />} />
             <Route path="/patients/:id" element={<PatientDetailPage />} />
             <Route path="/appointments" element={<AppointmentsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
