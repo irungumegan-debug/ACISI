@@ -70,7 +70,7 @@ export async function walkInNeedsPrivacyAck(patientId: string, clinicId: string)
   return !(await hasCurrent('PRIVACY_NOTICE', {
     patientId,
     clinicId,
-    context: { in: ['WALK_IN_CHECKIN', 'PATIENT_WEB_CHECKIN'] },
+    context: { in: ['WALK_IN_CHECKIN', 'PATIENT_WEB_CHECKIN', 'CLINIC_ADDED_PATIENT'] },
   }));
 }
 

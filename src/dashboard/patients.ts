@@ -4,6 +4,7 @@ import { requireStaffSession, AuthenticatedRequest } from './auth';
 import { getScopedHistory } from '../services/patientService';
 import { recordAuditEvent } from '../services/auditService';
 import { z } from 'zod';
+import { clinicCanSeePatientWhere } from '../services/clinicPatientService';
 import { identityView, patientIdentityInputSchema, PatientIdentityError, preparePatientIdentity } from '../services/patientIdentity';
 
 export const patientsRouter = Router();
@@ -28,17 +29,18 @@ patientsRouter.get('/', async (req, res) => {
   const patients = await prisma.patient.findMany({
     where: {
       AND: [
-        { OR: [{ checkIns: { some: { clinicId } } }, { encounters: { some: { clinicId } } }] },
+        clinicCanSeePatientWhere(clinicId),
         {
           OR: [
             { phoneNumber: { contains: query } },
+            { patientCode: { equals: query.toUpperCase() } },
             { firstName: { contains: query, mode: 'insensitive' } },
             { lastName: { contains: query, mode: 'insensitive' } },
           ],
         },
       ],
     },
-    select: { id: true, firstName: true, lastName: true, phoneNumber: true },
+    select: { id: true, firstName: true, lastName: true, phoneNumber: true, patientCode: true },
     take: 20,
     orderBy: { firstName: 'asc' },
   });
@@ -60,7 +62,7 @@ patientsRouter.get('/:id', async (req, res) => {
   const patient = await prisma.patient.findFirst({
     where: {
       id: patientId,
-      OR: [{ checkIns: { some: { clinicId } } }, { encounters: { some: { clinicId } } }],
+      ...clinicCanSeePatientWhere(clinicId),
     },
   });
 
@@ -115,7 +117,7 @@ patientsRouter.patch('/:id/sms-preference', async (req, res) => {
   }
 
   const patient = await prisma.patient.findFirst({
-    where: { id: req.params.id, deletedAt: null, OR: [{ checkIns: { some: { clinicId } } }, { encounters: { some: { clinicId } } }] },
+    where: { id: req.params.id, deletedAt: null, ...clinicCanSeePatientWhere(clinicId) },
   });
   if (!patient) {
     res.status(404).json({ error: 'Patient not found' });
@@ -166,7 +168,7 @@ patientsRouter.patch('/:id/details', async (req, res) => {
   }
 
   const patient = await prisma.patient.findFirst({
-    where: { id: req.params.id, deletedAt: null, OR: [{ checkIns: { some: { clinicId } } }, { encounters: { some: { clinicId } } }] },
+    where: { id: req.params.id, deletedAt: null, ...clinicCanSeePatientWhere(clinicId) },
   });
   if (!patient) {
     res.status(404).json({ error: 'Patient not found' });

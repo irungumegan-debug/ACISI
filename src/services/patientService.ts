@@ -1,5 +1,5 @@
 import bcrypt from 'bcrypt';
-import { Patient, Sex } from '@prisma/client';
+import { ClinicPatientSource, Patient, Sex } from '@prisma/client';
 import { prisma } from '../db/prisma';
 import { recordAuditEvent } from './auditService';
 import { generatePatientCode, looksLikePatientCode } from '../utils/idCodes';
@@ -16,7 +16,12 @@ const MAX_CODE_GENERATION_ATTEMPTS = 10;
 // brand-new registration.
 
 export async function findPatientByPhone(phoneNumberE164: string): Promise<Patient | null> {
-  return prisma.patient.findFirst({ where: { phoneNumber: phoneNumberE164, deletedAt: null } });
+  return prisma.patient.findFirst({ where: { phoneNumber: phoneNumberE164, deletedAt: null }, orderBy: { createdAt: 'asc' } });
+}
+
+/** Every (non-deleted) patient on a phone number — a parent and their children can share one. Oldest first. */
+export async function findPatientsByPhone(phoneNumberE164: string): Promise<Patient[]> {
+  return prisma.patient.findMany({ where: { phoneNumber: phoneNumberE164, deletedAt: null }, orderBy: { createdAt: 'asc' } });
 }
 
 export async function findPatientByCode(patientCode: string): Promise<Patient | null> {
@@ -55,10 +60,19 @@ interface RegisterPatientInput {
   firstName: string;
   lastName: string;
   dateOfBirth?: Date;
+  /** True when dateOfBirth was worked out from an age (1 January of the birth year). */
+  dateOfBirthEstimated?: boolean;
   sex: Sex;
   consentChannel: string;
-  /** Whether this patient consents to cross-clinic record sharing. Defaults to false (not shared) unless explicitly granted. */
-  crossClinicConsent: boolean;
+  /**
+   * The old "share with all clinics" answer. No longer asked anywhere new —
+   * sharing is approved per clinic (see recordAccessService) — so new
+   * patients get an explicit "not shared" row. Kept for USSD/portal callers
+   * that still pass a patient's answer.
+   */
+  crossClinicConsent?: boolean;
+  /** Links the new patient to the clinic that registered them, in the same transaction. */
+  clinicLink?: { clinicId: string; source: ClinicPatientSource; addedByStaffId?: string };
   /**
    * A patient registered via USSD check-in hasn't chosen a PIN yet — they set
    * one later via the "forgot PIN" SMS flow. A patient registering through
@@ -97,6 +111,7 @@ export async function registerPatient(input: RegisterPatientInput): Promise<Pati
         firstName: input.firstName,
         lastName: input.lastName,
         dateOfBirth: input.dateOfBirth,
+        dateOfBirthEstimated: Boolean(input.dateOfBirth && input.dateOfBirthEstimated),
         sex: input.sex,
         email: input.email,
         pinHash,
@@ -122,11 +137,22 @@ export async function registerPatient(input: RegisterPatientInput): Promise<Pati
       data: {
         patientId: created.id,
         type: 'CROSS_CLINIC_RECORD_SHARING',
-        granted: input.crossClinicConsent,
+        granted: input.crossClinicConsent ?? false,
         channel: input.consentChannel,
         version: CONSENT_VERSION,
       },
     });
+
+    if (input.clinicLink) {
+      await tx.clinicPatient.create({
+        data: {
+          clinicId: input.clinicLink.clinicId,
+          patientId: created.id,
+          source: input.clinicLink.source,
+          addedByStaffId: input.clinicLink.addedByStaffId,
+        },
+      });
+    }
 
     if (input.acceptedTermsAndPrivacyNotice) {
       await recordLegalAcceptances(['TERMS_OF_SERVICE', 'PRIVACY_NOTICE'], 'PATIENT_SIGNUP', { patientId: created.id }, tx);

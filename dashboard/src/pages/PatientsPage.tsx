@@ -1,7 +1,7 @@
 import { FormEvent, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, PatientListItem } from '../lib/api';
-import { ChevronRight, Search, SearchX, UserRound } from 'lucide-react';
+import { ChevronRight, Search, SearchX, UserPlus, UserRound } from 'lucide-react';
 import { Avatar, btn, Card, EmptyState, field, SkeletonList } from '../components/ui';
 
 export function PatientsPage() {
@@ -25,8 +25,15 @@ export function PatientsPage() {
 
   return (
     <div>
-      <h1 className="font-display text-2xl font-bold tracking-tight text-navy-900 sm:text-[28px]">Patients</h1>
-      <p className="mb-5 mt-1 text-sm text-ink-500">Find a patient at your clinic by phone number or name.</p>
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="font-display text-2xl font-bold tracking-tight text-navy-900 sm:text-[28px]">Patients</h1>
+          <p className="mt-1 text-sm text-ink-500">Find a patient at your clinic by phone number, name or ACISI ID.</p>
+        </div>
+        <Link to="/patients/new" className={btn.gold}>
+          <UserPlus size={16} aria-hidden /> Add patient
+        </Link>
+      </div>
       <form onSubmit={(e) => void handleSubmit(e)} className="mb-6 flex gap-2">
         <label className="relative flex-1">
           <span className="sr-only">Search by phone or name</span>
@@ -34,7 +41,7 @@ export function PatientsPage() {
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search by phone or name"
+            placeholder="Search by phone, name or ACISI ID"
             className={`${field.input} pl-10 text-base sm:text-[15px]`}
           />
         </label>
@@ -68,7 +75,9 @@ export function PatientsPage() {
                   <span className="block truncate font-medium text-navy-900">
                     {patient.firstName} {patient.lastName}
                   </span>
-                  <span className="block text-sm text-ink-500">{patient.phoneNumber}</span>
+                  <span className="block text-sm text-ink-500">
+                    {patient.patientCode} · {patient.phoneNumber}
+                  </span>
                 </span>
                 <ChevronRight size={18} aria-hidden className="text-ink-400" />
               </Link>

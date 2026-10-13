@@ -10,12 +10,14 @@ import { appointmentsRouter } from './appointments';
 import { walkInRouter } from './walkIn';
 import { billingRouter } from './billing';
 import { legalRouter } from './legal';
+import { registryRouter } from './registry';
 
 export const dashboardRouter = Router();
 
 dashboardRouter.use('/auth', authRouter);
 dashboardRouter.use('/register', staffRegistrationRouter);
 dashboardRouter.use('/clinic', clinicSettingsRouter);
+dashboardRouter.use('/registry', registryRouter);
 dashboardRouter.use('/patients', patientsRouter);
 dashboardRouter.use('/checkins', checkinsRouter);
 dashboardRouter.use('/doctor', doctorRouter);

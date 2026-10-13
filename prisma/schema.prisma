@@ -900,6 +900,9 @@ enum LegalAcceptanceContext {
   /// Front desk confirmed the patient was told how their data is used and
   /// where to read the Privacy Notice (staffId says who).
   WALK_IN_CHECKIN
+  /// Same confirmation as WALK_IN_CHECKIN, given when front desk added the
+  /// patient with "Add patient" (staffId says who).
+  CLINIC_ADDED_PATIENT
   /// Clinic admin accepted both documents when registering the clinic.
   CLINIC_REGISTRATION
   /// Staff member accepted the current Terms on the one-time screen after logging in to the console.

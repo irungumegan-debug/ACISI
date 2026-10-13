@@ -89,6 +89,32 @@ export function buildWalkInInviteSms(clinicName: string): string {
   return `${before}${name}${after}`;
 }
 
+/** Shortens a clinic name so `before + name + after` fits one SMS, or leaves it alone. */
+function fitClinicName(clinicName: string, fixedLength: number): string {
+  const room = SINGLE_SMS_MAX_CHARS - fixedLength;
+  let name = toSmsSafe(clinicName) || 'the clinic';
+  if (name.length > room) {
+    name = name.slice(0, Math.max(room - 3, 3)).trimEnd() + '...';
+  }
+  return name;
+}
+
+/** Added at the end of clinic SMS only once replies can actually reach us (env SMS_REPLY_STOP_ENABLED). */
+export const REPLY_STOP_SMS_LINE = 'Reply STOP to opt out.';
+
+/**
+ * Sent once when a clinic adds a patient (or presses "Send invitations" for
+ * imported patients): "You're registered with [Clinic] on ACISI. Check in
+ * from home next time at acisi.co.ke." Always one SMS — a long clinic name
+ * is shortened. "Reply STOP to opt out." is added only when `replyStop` is
+ * on (see env SMS_REPLY_STOP_ENABLED).
+ */
+export function buildRegistrationSms(clinicName: string, opts: { replyStop: boolean }): string {
+  const before = "You're registered with ";
+  const after = ` on ACISI. Check in from home next time at acisi.co.ke.${opts.replyStop ? ` ${REPLY_STOP_SMS_LINE}` : ''}`;
+  return `${before}${fitClinicName(clinicName, before.length + after.length)}${after}`;
+}
+
 /** 1500 -> "1,500" (integer KES only — no floating point anywhere in money). */
 export function formatKes(amountKes: number): string {
   return String(Math.trunc(amountKes)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');

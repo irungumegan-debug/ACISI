@@ -136,7 +136,7 @@ describe('findPatientByPhoneOrCode', () => {
     async (typed) => {
       mockFindPatient.mockResolvedValue({ id: 'p-1' });
       await expect(findPatientByPhoneOrCode(typed)).resolves.toEqual({ id: 'p-1' });
-      expect(mockFindPatient).toHaveBeenCalledWith({ where: { phoneNumber: '+254711000111', deletedAt: null } });
+      expect(mockFindPatient).toHaveBeenCalledWith({ where: { phoneNumber: '+254711000111', deletedAt: null }, orderBy: { createdAt: 'asc' } });
     },
   );
 

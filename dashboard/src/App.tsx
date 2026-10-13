@@ -13,6 +13,7 @@ import { DoctorAppointmentsPage } from './pages/DoctorAppointmentsPage';
 import { WalkInPage } from './pages/WalkInPage';
 import { CheckoutPage } from './pages/CheckoutPage';
 import { DailySummaryPage } from './pages/DailySummaryPage';
+import { AddPatientPage } from './pages/AddPatientPage';
 
 /** A doctor's home is their own queue; everyone else lands on the front-desk queue. */
 function HomeRedirect() {
@@ -49,6 +50,7 @@ export function App() {
             <Route path="/checkout/:encounterId" element={<CheckoutPage />} />
             <Route path="/reports/daily" element={<DailySummaryPage />} />
             <Route path="/patients" element={<PatientsPage />} />
+            <Route path="/patients/new" element={<AddPatientPage />} />
             <Route path="/patients/:id" element={<PatientDetailPage />} />
             <Route path="/appointments" element={<AppointmentsPage />} />
             <Route path="/settings" element={<SettingsPage />} />

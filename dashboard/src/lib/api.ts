@@ -42,6 +42,7 @@ export interface ClinicStaffListItem {
 
 export interface PatientListItem {
   id: string;
+  patientCode: string;
   firstName: string;
   lastName: string;
   phoneNumber: string;
@@ -337,6 +338,8 @@ class ApiError extends Error {
   constructor(
     message: string,
     public status: number,
+    /** The whole error body, for errors that carry more than a message (e.g. existing patients on a phone). */
+    public body: Record<string, unknown> = {},
   ) {
     super(message);
     this.name = 'ApiError';
@@ -352,14 +355,70 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
-    throw new ApiError(body.error ?? 'Request failed', res.status);
+    throw new ApiError(body.error ?? 'Request failed', res.status, body);
   }
 
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
 
+/** For multipart uploads: no JSON Content-Type, the browser sets the boundary. */
+export async function upload<T>(path: string, form: FormData): Promise<T> {
+  const res = await fetch(`/api/staff${path}`, { method: 'POST', credentials: 'include', body: form });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new ApiError(body.error ?? 'Request failed', res.status, body);
+  }
+  return res.json() as Promise<T>;
+}
+
+export interface PatientMatch {
+  id: string;
+  name: string;
+  patientCode: string;
+  sex: Sex;
+  /** Full date only for patients already linked to this clinic. */
+  dateOfBirth: string | null;
+  birthYear: number | null;
+  dateOfBirthEstimated: boolean;
+  linkedToClinic: boolean;
+  lastVisitAt: string | null;
+}
+
+export interface PatientLookup {
+  query: string;
+  kind: 'phone' | 'patientCode';
+  phoneNumber: string | null;
+  patients: PatientMatch[];
+}
+
+export interface AddPatientRequest {
+  fullName: string;
+  phone: string;
+  dateOfBirth: string;
+  sex: 'MALE' | 'FEMALE' | 'OTHER';
+  registrationConsent: boolean;
+  privacyNoticeExplained: boolean;
+  smsOptOut: boolean;
+  confirmedNewPersonOnPhone: boolean;
+  skipRegistrationSms?: boolean;
+}
+
+export interface AddPatientResult {
+  patient: { id: string; name: string; patientCode: string };
+  sms: 'sent' | 'failed' | 'opted_out';
+}
+
 export const api = {
+  lookupPatients(q: string) {
+    return request<PatientLookup>(`/registry/lookup?q=${encodeURIComponent(q)}`);
+  },
+  addPatient(body: AddPatientRequest) {
+    return request<AddPatientResult>('/registry/patients', { method: 'POST', body: JSON.stringify(body) });
+  },
+  linkPatient(patientId: string) {
+    return request<{ id: string; name: string; patientCode: string }>(`/registry/patients/${encodeURIComponent(patientId)}/link`, { method: 'POST' });
+  },
   getCheckout(encounterId: string) {
     return request<CheckoutView>(`/billing/visits/${encodeURIComponent(encounterId)}`);
   },

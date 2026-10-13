@@ -60,6 +60,21 @@ const envSchema = z.object({
   OWNER_NAME: z.string().optional(),
   OWNER_PASSWORD: z.string().optional(),
 
+  // --- SMS replies ---
+  // "Reply STOP to opt out" is only added to SMS text once our Africa's
+  // Talking sender can actually receive replies (a two-way short code).
+  // Until then, keep this off: the STOP handler (POST /api/sms/inbound)
+  // still works, but we don't promise something patients can't do.
+  SMS_REPLY_STOP_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+
+  // --- Uploaded patient files ---
+  // A private directory on this server's own disk (never under the web
+  // root, never a cloud bucket). Created on first upload, mode 0700.
+  FILE_STORAGE_DIR: z.string().default('/var/lib/acisi/uploads'),
+
   STAFF_PIN_SALT_ROUNDS: z.coerce.number().int().min(4).max(15).default(10),
 
   USSD_SESSION_TTL_SECONDS: z.coerce.number().int().positive().default(170),

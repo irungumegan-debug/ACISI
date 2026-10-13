@@ -44,6 +44,8 @@ const PAGE_TITLES: [string, string][] = [
   ['/walk-in', 'Walk-in check-in'],
   ['/checkout', 'Checkout'],
   ['/reports/daily', 'Daily summary'],
+  ['/patients/new', 'Add patient'],
+  ['/patients/import', 'Import patients'],
   ['/patients', 'Patients'],
   ['/appointments', 'Appointments'],
   ['/settings', 'Settings'],

@@ -15,6 +15,9 @@ import { publishWalkInCheckedIn } from './realtimeEvents';
 import { buildWalkInInviteSms } from './smsTemplates';
 import { recordLegalAcceptances, walkInNeedsPrivacyAck } from './legalService';
 import { PatientIdentityError, PatientIdentityInput, preparePatientIdentity } from './patientIdentity';
+import { parseDateOfBirth, splitFullName } from '../utils/patientInput';
+
+export { splitFullName };
 
 const PRIVACY_NOTICE_REQUIRED_MESSAGE =
   'Tell the patient how their data is used and where to read the Privacy Notice, then tick the box to confirm';
@@ -168,23 +171,11 @@ export interface WalkInCheckInResult {
   sms: WalkInSmsOutcome;
 }
 
-/** "Jane Wanjiru Mwangi" -> first "Jane", last "Wanjiru Mwangi". A single name is kept as the first name. */
-export function splitFullName(fullName: string): { firstName: string; lastName: string } {
-  const parts = fullName.trim().split(/\s+/).filter(Boolean);
-  return { firstName: parts[0] ?? '', lastName: parts.slice(1).join(' ') };
-}
-
 /** Resolves the optional age / date of birth into the stored date of birth, or throws a WalkInError. */
 export function resolveDateOfBirth(details: Pick<NewWalkInPatientDetails, 'dateOfBirth' | 'age'>, now = new Date()): Date | undefined {
   if (details.dateOfBirth) {
-    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(details.dateOfBirth);
-    const [year, month, day] = match ? [Number(match[1]), Number(match[2]), Number(match[3])] : [NaN, NaN, NaN];
-    const dob = new Date(Date.UTC(year, month - 1, day));
-    // Round-trip check rejects impossible dates like 2001-02-30.
-    const isRealDate = dob.getUTCFullYear() === year && dob.getUTCMonth() === month - 1 && dob.getUTCDate() === day;
-    if (!match || !isRealDate || year < 1900 || dob > now) {
-      throw new WalkInError('Enter a valid date of birth', 400);
-    }
+    const dob = parseDateOfBirth(details.dateOfBirth, now);
+    if (!dob) throw new WalkInError('Enter a valid date of birth', 400);
     return dob;
   }
   if (details.age !== undefined) {

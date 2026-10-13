@@ -16,6 +16,9 @@ ALTER TYPE "ConsentType" ADD VALUE 'CLINIC_RECORD_ACCESS';
 -- AlterEnum
 ALTER TYPE "OtpPurpose" ADD VALUE 'FIRST_LOGIN';
 
+-- AlterEnum
+ALTER TYPE "LegalAcceptanceContext" ADD VALUE 'CLINIC_ADDED_PATIENT';
+
 -- DropIndex
 DROP INDEX "patients_phoneNumber_key";
 

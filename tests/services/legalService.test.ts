@@ -87,7 +87,7 @@ describe('who needs to be asked', () => {
     expect(mockFindFirst.mock.calls[0][0].where).toEqual({
       patientId: 'p-1',
       clinicId: 'clinic-A',
-      context: { in: ['WALK_IN_CHECKIN', 'PATIENT_WEB_CHECKIN'] },
+      context: { in: ['WALK_IN_CHECKIN', 'PATIENT_WEB_CHECKIN', 'CLINIC_ADDED_PATIENT'] },
       document: 'PRIVACY_NOTICE',
       version: PRIVACY_NOTICE_VERSION,
     });

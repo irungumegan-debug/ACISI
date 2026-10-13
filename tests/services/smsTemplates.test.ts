@@ -1,4 +1,5 @@
 import {
+  buildRegistrationSms,
   appendIfNoExtraPart,
   buildPaymentReceiptSms,
   buildVisitSummarySms,
@@ -157,5 +158,27 @@ describe('privacy line on receipts and visit summaries', () => {
     // 62 UCS-2 characters, one SMS: adding the line would make it 2 parts, so it's left off.
     expect(sms).not.toContain('Privacy');
     expect(smsPartCount(sms)).toBe(1);
+  });
+});
+
+describe('buildRegistrationSms', () => {
+  it('reads exactly as agreed, without the STOP line until replies are enabled', () => {
+    expect(buildRegistrationSms('Sunrise Clinic', { replyStop: false })).toBe(
+      "You're registered with Sunrise Clinic on ACISI. Check in from home next time at acisi.co.ke.",
+    );
+    expect(buildRegistrationSms('Sunrise Clinic', { replyStop: true })).toBe(
+      "You're registered with Sunrise Clinic on ACISI. Check in from home next time at acisi.co.ke. Reply STOP to opt out.",
+    );
+  });
+
+  it('always fits one SMS, shortening a long clinic name', () => {
+    const msg = buildRegistrationSms('The Very Long Name Family Health And Wellness Centre Of Greater Nairobi East', { replyStop: true });
+    expect(msg.length).toBeLessThanOrEqual(160);
+    expect(smsPartCount(msg)).toBe(1);
+    expect(msg).toContain('...');
+  });
+
+  it('never contains medical wording', () => {
+    expect(buildRegistrationSms('Sunrise', { replyStop: true })).not.toMatch(/health|medical|treat|diagnos/i);
   });
 });
