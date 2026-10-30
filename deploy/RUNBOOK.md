@@ -102,14 +102,18 @@ release is merged. Each command is safe to copy as-is.
 7. **Check:** log in to the console as front desk and as a doctor, and open
    the patient portal. See the manual checklist in the release notes.
 
-Step 3 runs two migrations: `20261030090000_odpc_alignment` and
+Step 3 runs three migrations: `20261030090000_odpc_alignment`,
 `20261031090000_clinic_sms_usage` (clinic plan, SMS allowance and SMS
-count; every existing clinic starts on Starter, 500 SMS a month).
+count; every existing clinic starts on Starter, 500 SMS a month) and
+`20261101090000_checkin_prompt_resends` (the "Resend prompt" counter on
+check-ins; existing check-ins start at 0).
 
 **Undo (only if something goes badly wrong):** deploy the previous version
 (`git checkout <previous commit>` in step 3), then undo the migrations,
 newest first:
 ```
+sudo -u postgres psql acisi -f /opt/acisi/app/prisma/rollback/20261101090000_checkin_prompt_resends.down.sql
+sudo -u postgres psql acisi -c "DELETE FROM _prisma_migrations WHERE migration_name = '20261101090000_checkin_prompt_resends'"
 sudo -u postgres psql acisi -f /opt/acisi/app/prisma/rollback/20261031090000_clinic_sms_usage.down.sql
 sudo -u postgres psql acisi -c "DELETE FROM _prisma_migrations WHERE migration_name = '20261031090000_clinic_sms_usage'"
 sudo -u postgres psql acisi -f /opt/acisi/app/prisma/rollback/20261030090000_odpc_alignment.down.sql
