@@ -10,6 +10,7 @@ import { appointmentsRouter } from './appointments';
 import { walkInRouter } from './walkIn';
 import { billingRouter } from './billing';
 import { legalRouter } from './legal';
+import { phoneVerificationRouter } from './phoneVerification';
 
 export const dashboardRouter = Router();
 
@@ -24,3 +25,4 @@ dashboardRouter.use('/walk-in', walkInRouter);
 dashboardRouter.use('/billing', billingRouter);
 dashboardRouter.use('/events', eventsRouter);
 dashboardRouter.use('/legal', legalRouter);
+dashboardRouter.use('/phone-verification', phoneVerificationRouter);

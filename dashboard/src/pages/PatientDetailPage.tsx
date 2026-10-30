@@ -5,6 +5,7 @@ import { api, ApiError, PatientDetail, PatientIdentity, PatientIdentityRecord } 
 import { ArrowLeft, Building2, CalendarDays, FileText, IdCard, Lock, MessageSquareOff, Phone, Pill, Printer, Stethoscope } from 'lucide-react';
 import { Avatar, btn, Card, EmptyState, SkeletonList } from '../components/ui';
 import { ID_TYPE_LABEL, IdentityFields } from '../components/IdentityFields';
+import { PortalSetupCode } from '../components/PhoneVerification';
 
 export function PatientDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -66,6 +67,12 @@ export function PatientDetailPage() {
       <SmsPreference patientId={patient.id} initial={patient.smsOptOut} onChange={(smsOptOut) => setPatient({ ...patient, smsOptOut })} />
 
       <IdentityCard patient={patient} onSaved={(saved) => setPatient({ ...patient, ...saved })} />
+
+      {!isDoctor && (
+        <div className="mb-6">
+          <PortalSetupCode patientId={patient.id} phoneNumber={patient.phoneNumber} />
+        </div>
+      )}
 
       <Card title="Visit history" icon={FileText}>
       {!isDoctor && (

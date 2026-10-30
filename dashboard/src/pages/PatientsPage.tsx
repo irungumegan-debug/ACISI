@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api, PatientListItem } from '../lib/api';
 import { ChevronRight, Search, SearchX, UserRound } from 'lucide-react';
 import { Avatar, btn, Card, EmptyState, field, SkeletonList } from '../components/ui';
+import { FinishWebSignup } from '../components/PhoneVerification';
 
 export function PatientsPage() {
   const [query, setQuery] = useState('');
@@ -42,6 +43,10 @@ export function PatientsPage() {
           Search
         </button>
       </form>
+
+      <div className="mb-6">
+        <FinishWebSignup />
+      </div>
 
       {loading && <SkeletonList rows={3} label="Searching" />}
       {!loading && !searched && results.length === 0 && (

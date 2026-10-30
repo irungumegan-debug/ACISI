@@ -1,5 +1,6 @@
 import bcrypt from 'bcrypt';
 import { clearLockout } from './pinLockout';
+import type { PatientIdentityUpdate } from './patientIdentity';
 import { crossClinicAccessBasis, CrossClinicBasis } from './recordSharingService';
 import { revokeSessionsFor } from './sessionRevocation';
 import { Patient, Sex } from '@prisma/client';
@@ -68,6 +69,12 @@ interface RegisterPatientInput {
    * the web portal sets one immediately.
    */
   pin?: string;
+  /** Already-hashed PIN (a verified pending signup); used instead of `pin`. */
+  pinHash?: string;
+  /** Optional ID document and next of kin, already validated by patientIdentity.preparePatientIdentity. */
+  identity?: PatientIdentityUpdate;
+  /** Set when the phone was verified as part of registering (SMS code, or rung in person at the clinic). */
+  phoneVerifiedVia?: 'SMS' | 'IN_PERSON';
   /**
    * Optional, web-portal-only (USSD has no practical way to collect one).
    * Used solely for the staff-initiated visit-summary email at checkout —
@@ -90,7 +97,7 @@ interface RegisterPatientInput {
  */
 export async function registerPatient(input: RegisterPatientInput): Promise<Patient> {
   const patientCode = await generateUniquePatientCode();
-  const pinHash = input.pin ? await bcrypt.hash(input.pin, env.STAFF_PIN_SALT_ROUNDS) : null;
+  const pinHash = input.pinHash ?? (input.pin ? await bcrypt.hash(input.pin, env.STAFF_PIN_SALT_ROUNDS) : null);
 
   const patient = await prisma.$transaction(async (tx) => {
     const created = await tx.patient.create({
@@ -103,6 +110,8 @@ export async function registerPatient(input: RegisterPatientInput): Promise<Pati
         sex: input.sex,
         email: input.email,
         pinHash,
+        ...(input.identity ?? {}),
+        ...(input.phoneVerifiedVia ? { phoneVerifiedAt: new Date(), phoneVerifiedVia: input.phoneVerifiedVia } : {}),
       },
     });
 
@@ -170,6 +179,11 @@ export async function verifyPatientPin(patient: Patient, pin: string): Promise<b
  * session (the old PIN may be what someone else was using) and writes the
  * audit row for the PIN change itself.
  */
+/** bcrypt hash of a patient PIN (same cost as everywhere else). */
+export async function hashPatientPin(pin: string): Promise<string> {
+  return bcrypt.hash(pin, env.STAFF_PIN_SALT_ROUNDS);
+}
+
 export async function setPatientPin(patientId: string, pin: string, via: 'SMS_CODE' | 'IN_PERSON_CODE'): Promise<void> {
   const pinHash = await bcrypt.hash(pin, env.STAFF_PIN_SALT_ROUNDS);
   const patient = await prisma.patient.findUniqueOrThrow({ where: { id: patientId }, select: { phoneVerifiedAt: true } });

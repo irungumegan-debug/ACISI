@@ -3,6 +3,7 @@ import { redisQueueConnection } from '../../config/redis';
 import { logger } from '../../utils/logger';
 import { MaintenanceJobData } from '../queue';
 import { sendDueAppointmentReminders } from '../../services/appointmentReminderService';
+import { deleteExpiredPendingSignups } from '../../services/pendingSignupService';
 
 /**
  * Hourly housekeeping (scheduled by scheduleHourlyMaintenance). Each task
@@ -10,6 +11,7 @@ import { sendDueAppointmentReminders } from '../../services/appointmentReminderS
  */
 export const MAINTENANCE_TASKS: { name: string; run: () => Promise<unknown> }[] = [
   { name: 'appointment-reminders', run: () => sendDueAppointmentReminders() },
+  { name: 'expired-pending-signups', run: () => deleteExpiredPendingSignups() },
 ];
 
 export async function runMaintenance(): Promise<void> {

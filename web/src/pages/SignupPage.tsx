@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { api, ApiError } from '../lib/api';
+import { api, ApiError, PatientIdentity, PatientSession } from '../lib/api';
+import { EMPTY_IDENTITY, IdentityFields } from '../components/IdentityFields';
 import { usePatientAuth } from '../context/PatientAuthContext';
 import { AuthShell, RoleCard } from '../components/AuthShell';
 import { Check, Plus, X } from 'lucide-react';
@@ -114,8 +115,10 @@ function PatientSignupForm({ onBack }: { onBack: () => void }) {
   const [pin, setPin] = useState('');
   const [crossClinicConsent, setCrossClinicConsent] = useState(false);
   const [acceptLegal, setAcceptLegal] = useState(false);
+  const [identity, setIdentity] = useState<PatientIdentity>(EMPTY_IDENTITY);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [pending, setPending] = useState<{ pendingId: string; smsSent: boolean; message?: string } | null>(null);
 
   async function handleSubmit(e: FormEvent): Promise<void> {
     e.preventDefault();
@@ -133,28 +136,40 @@ function PatientSignupForm({ onBack }: { onBack: () => void }) {
 
     setSubmitting(true);
     try {
-      const session = await api.registerPatient({
-        firstName: parts[0] as string,
-        lastName: parts.slice(1).join(' '),
-        phoneNumber,
-        dateOfBirth: dateOfBirth || undefined,
-        email: email || undefined,
-        pin,
-        crossClinicConsent,
-        acceptLegal,
-      });
-      // Same fix as patient login: update PatientAuthContext's session
-      // directly (registration already returns it) before navigating
-      // client-side — PatientLayout's guard reads context state, not a
-      // fresh fetch, and this stays within the same SPA so there's no
-      // reload to trigger that fetch for us.
-      setSession(session);
-      navigate('/patient', { replace: true });
+      setPending(
+        await api.registerPatient({
+          firstName: parts[0] as string,
+          lastName: parts.slice(1).join(' '),
+          phoneNumber,
+          dateOfBirth: dateOfBirth || undefined,
+          email: email || undefined,
+          pin,
+          crossClinicConsent,
+          acceptLegal,
+          identity,
+        }),
+      );
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.');
     } finally {
       setSubmitting(false);
     }
+  }
+
+  if (pending) {
+    return (
+      <VerifySignupPhone
+        pending={pending}
+        phoneNumber={phoneNumber}
+        onBack={() => setPending(null)}
+        onVerified={(session) => {
+          // Update PatientAuthContext's session directly before navigating
+          // client-side: PatientLayout's guard reads context state.
+          setSession(session);
+          navigate('/patient', { replace: true });
+        }}
+      />
+    );
   }
 
   return (
@@ -191,6 +206,10 @@ function PatientSignupForm({ onBack }: { onBack: () => void }) {
         <input type="password" inputMode="numeric" required minLength={6} maxLength={6} pattern="\d{6}" placeholder="6-digit PIN" value={pin} onChange={(e) => setPin(e.target.value)} />
         <p className="field-hint">6 digits. Avoid birthdays, your phone number, and easy patterns like 123456 or 111111.</p>
       </div>
+      <details style={{ marginBottom: 16 }}>
+        <summary style={{ cursor: 'pointer', fontSize: 14 }}>ID document and next of kin (optional)</summary>
+        <IdentityFields value={identity} onChange={setIdentity} />
+      </details>
       <label style={{ display: 'flex', gap: 8, fontSize: 13, color: 'var(--ink-dim)', marginBottom: 16, alignItems: 'flex-start' }}>
         <input type="checkbox" checked={crossClinicConsent} onChange={(e) => setCrossClinicConsent(e.target.checked)} style={{ width: 'auto', marginTop: 3 }} />
         <span>Allow ACISI clinics I visit to see my records from other ACISI clinics (optional, off by default). You can change this any time in your Account. If you leave it off, a clinic can only see them if you give it a one-time code.</span>
@@ -200,6 +219,84 @@ function PatientSignupForm({ onBack }: { onBack: () => void }) {
       {error && <p className="auth-error">{error}</p>}
       <button className="auth-submit" type="submit" disabled={submitting || !acceptLegal}>
         {submitting ? 'Creating account…' : 'Create account'}
+      </button>
+    </form>
+  );
+}
+
+/**
+ * Step 2 of patient signup: the code sent by SMS. If it couldn't be sent,
+ * the signup is kept and the clinic's front desk can finish it.
+ */
+function VerifySignupPhone({
+  pending,
+  phoneNumber,
+  onBack,
+  onVerified,
+}: {
+  pending: { pendingId: string; smsSent: boolean; message?: string };
+  phoneNumber: string;
+  onBack: () => void;
+  onVerified: (session: PatientSession) => void;
+}) {
+  const [code, setCode] = useState('');
+  const [notice, setNotice] = useState<string | null>(pending.smsSent ? null : (pending.message ?? null));
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function verify(e: FormEvent): Promise<void> {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      onVerified(await api.verifySignup(pending.pendingId, code.trim()));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function resend(): Promise<void> {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await api.resendSignupCode(pending.pendingId);
+      setNotice(res.smsSent ? 'A new code is on its way.' : (res.message ?? null));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="auth-form" onSubmit={(e) => void verify(e)}>
+      <button type="button" className="auth-back" onClick={onBack}>
+        &larr; Back
+      </button>
+      <h1 className="auth-h1">Confirm your phone number</h1>
+      <p className="auth-sub">
+        {pending.smsSent ? `We sent a 6-digit code to ${phoneNumber}. Enter it to finish creating your account.` : 'Your details are saved.'}
+      </p>
+      {notice && <p className="auth-notice" role="status">{notice}</p>}
+      <div className="field">
+        <label>Code from the SMS</label>
+        <input
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          maxLength={6}
+          pattern="\d{6}"
+          value={code}
+          onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+        />
+      </div>
+      {error && <p className="auth-error">{error}</p>}
+      <button className="auth-submit" type="submit" disabled={busy || code.length !== 6}>
+        {busy ? 'Checking…' : 'Confirm and create account'}
+      </button>
+      <button type="button" className="auth-back" style={{ marginTop: 12 }} disabled={busy} onClick={() => void resend()}>
+        Send the code again
       </button>
     </form>
   );

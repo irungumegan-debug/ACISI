@@ -158,11 +158,22 @@ export const api = {
     email?: string;
     /** "I accept the Terms of Service and have read the Privacy Notice" — required by the server. */
     acceptLegal: boolean;
+    /** Optional ID document and next of kin. */
+    identity?: PatientIdentity;
   }) {
-    return request<PatientSession>('/patients/register', {
+    // No account yet: the phone is verified first (SMS code, or at the clinic).
+    return request<{ pendingId: string; smsSent: boolean; message?: string }>('/patients/register', {
       method: 'POST',
       body: JSON.stringify(input),
     });
+  },
+
+  verifySignup(pendingId: string, code: string) {
+    return request<PatientSession>('/patients/register/verify', { method: 'POST', body: JSON.stringify({ pendingId, code }) });
+  },
+
+  resendSignupCode(pendingId: string) {
+    return request<{ smsSent: boolean; message?: string }>('/patients/register/resend', { method: 'POST', body: JSON.stringify({ pendingId }) });
   },
 
   patientLogin(identifier: string, pin: string) {

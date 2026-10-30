@@ -71,3 +71,10 @@ export const ONE_TIME_CODE_MAX_ATTEMPTS = 5;
 
 /** Appointment reminder SMS go out the day before, from this hour (Kenya time). */
 export const APPOINTMENT_REMINDER_HOUR = 9;
+
+/** A portal signup waiting for phone verification is kept this long, then deleted automatically. */
+export const PENDING_SIGNUP_KEEP_DAYS = 14;
+
+/** Shown when a signup or first-PIN code could not be sent (wording agreed with the owner). */
+export const CODE_NOT_SENT_MESSAGE =
+  "We couldn't send your code. You can still visit your clinic as normal – the front desk will verify your phone and finish setting up your account.";

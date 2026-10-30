@@ -503,6 +503,26 @@ export const api = {
     return request<PatientDetail>(`/patients/${id}`);
   },
 
+  findPendingSignups(phone: string) {
+    return request<{ phoneNumber: string; signups: { pendingId: string; name: string; signedUpAt: string }[] }>(
+      `/phone-verification/pending-signups?phone=${encodeURIComponent(phone)}`,
+    );
+  },
+
+  completePendingSignup(pendingId: string) {
+    return request<{ patientCode: string }>(`/phone-verification/pending-signups/${encodeURIComponent(pendingId)}/complete`, {
+      method: 'POST',
+      body: JSON.stringify({ phoneConfirmedInPerson: true }),
+    });
+  },
+
+  issueSetupCode(patientId: string) {
+    return request<{ code: string; expiresAt: string; patientCode: string }>(
+      `/phone-verification/patients/${encodeURIComponent(patientId)}/setup-code`,
+      { method: 'POST', body: JSON.stringify({ phoneConfirmedInPerson: true }) },
+    );
+  },
+
   requestRecords(patientId: string) {
     return request<{ smsSent: boolean }>(`/patients/${encodeURIComponent(patientId)}/record-requests`, { method: 'POST' });
   },

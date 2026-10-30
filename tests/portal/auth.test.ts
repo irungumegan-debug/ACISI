@@ -41,9 +41,22 @@ jest.mock('../../src/config/redis', () => ({
 jest.mock('../../src/services/patientService', () => ({
   findPatientByPhoneOrCode: jest.fn(),
   registerPatient: jest.fn(),
+  hashPatientPin: jest.fn(async () => 'hashed-pin'),
   verifyPatientPin: jest.fn(),
   setPatientPin: jest.fn(),
 }));
+
+jest.mock('../../src/services/pendingSignupService', () => {
+  class PendingSignupError extends Error {
+    constructor(
+      message: string,
+      public status = 400,
+    ) {
+      super(message);
+    }
+  }
+  return { startPendingSignup: jest.fn(), verifyPendingSignup: jest.fn(), resendSignupCode: jest.fn(), PendingSignupError };
+});
 
 jest.mock('../../src/services/otpService', () => ({
   requestPinResetOtp: jest.fn(),
@@ -52,17 +65,19 @@ jest.mock('../../src/services/otpService', () => ({
 
 import {
   findPatientByPhoneOrCode,
-  registerPatient,
   verifyPatientPin,
   setPatientPin,
 } from '../../src/services/patientService';
 import { requestPinResetOtp, verifyPinResetOtp } from '../../src/services/otpService';
+import { PendingSignupError, resendSignupCode, startPendingSignup, verifyPendingSignup } from '../../src/services/pendingSignupService';
 import { portalAuthRouter } from '../../src/portal/auth';
 import { PIN_LOCKOUT } from '../../src/config/constants';
 import { clearLockout } from '../../src/services/pinLockout';
 
 const mockFindPatient = findPatientByPhoneOrCode as jest.Mock;
-const mockRegisterPatient = registerPatient as jest.Mock;
+const mockStartPending = startPendingSignup as jest.Mock;
+const mockVerifyPending = verifyPendingSignup as jest.Mock;
+const mockResendCode = resendSignupCode as jest.Mock;
 const mockVerifyPin = verifyPatientPin as jest.Mock;
 const mockSetPin = setPatientPin as jest.Mock;
 const mockRequestOtp = requestPinResetOtp as jest.Mock;
@@ -83,108 +98,94 @@ beforeEach(() => {
   mockRedisStore.clear();
 });
 
-describe('POST /patients/register', () => {
+describe('POST /patients/register (C3: phone verified before the account exists)', () => {
+  const BODY = { firstName: 'Jane', lastName: 'Wanjiru', phoneNumber: '0712345678', pin: '730194', acceptLegal: true };
+
   it('rejects a PIN that is not 6 digits', async () => {
-    const res = await request(buildApp()).post('/patients/register').send({
-      firstName: 'Jane',
-      lastName: 'Wanjiru',
-      phoneNumber: '0712345678',
-      pin: '12',
-    });
+    const res = await request(buildApp()).post('/patients/register').send({ ...BODY, pin: '12' });
     expect(res.status).toBe(400);
+    expect(mockStartPending).not.toHaveBeenCalled();
   });
 
-  it('creates an account and returns the generated patient code', async () => {
-    mockRegisterPatient.mockResolvedValue(PATIENT);
-    const res = await request(buildApp()).post('/patients/register').send({
-      firstName: 'Jane',
-      lastName: 'Wanjiru',
-      phoneNumber: '0712345678',
-      pin: '730194',
-      crossClinicConsent: false,
-      acceptLegal: true,
-    });
-
-    expect(res.status).toBe(201);
-    expect(res.body.patientCode).toBe('ACI-7F2K');
-    expect(mockRegisterPatient).toHaveBeenCalledWith(
-      expect.objectContaining({ crossClinicConsent: false, pin: '730194' }),
-    );
-    expect(res.headers['set-cookie']?.[0]).toContain('acisi_patient_session=');
+  it('creates NO account and NO session yet: it saves a pending signup and texts a code', async () => {
+    mockStartPending.mockResolvedValue({ pendingId: 'pend-1', smsSent: true });
+    const res = await request(buildApp()).post('/patients/register').send({ ...BODY, crossClinicConsent: false, email: 'jane@example.com' });
+    expect(res.status).toBe(202);
+    expect(res.body).toEqual({ pendingId: 'pend-1', smsSent: true });
+    expect(res.headers['set-cookie']).toBeUndefined();
+    const saved = mockStartPending.mock.calls[0][0];
+    expect(saved).toMatchObject({ phoneNumberE164: '+254712345678', crossClinicConsent: false, email: 'jane@example.com', pinHash: 'hashed-pin' });
+    expect(JSON.stringify(saved)).not.toContain('730194');
   });
 
-  it('returns 409 on a duplicate phone number', async () => {
-    mockRegisterPatient.mockRejectedValue({ code: 'P2002' });
-    const res = await request(buildApp()).post('/patients/register').send({
-      firstName: 'Jane',
-      lastName: 'Wanjiru',
-      phoneNumber: '0712345678',
-      pin: '730194',
-      acceptLegal: true,
+  it('when the SMS cannot be sent, says so in the agreed words and keeps the signup', async () => {
+    mockStartPending.mockResolvedValue({ pendingId: 'pend-1', smsSent: false });
+    const res = await request(buildApp()).post('/patients/register').send(BODY);
+    expect(res.status).toBe(202);
+    expect(res.body).toEqual({
+      pendingId: 'pend-1',
+      smsSent: false,
+      message: "We couldn't send your code. You can still visit your clinic as normal – the front desk will verify your phone and finish setting up your account.",
     });
+  });
+
+  it('passes optional ID and next of kin, checked and normalised (C11)', async () => {
+    mockStartPending.mockResolvedValue({ pendingId: 'pend-1', smsSent: true });
+    await request(buildApp())
+      .post('/patients/register')
+      .send({ ...BODY, identity: { idType: 'NATIONAL_ID', idNumber: '1234 5678', nextOfKinName: 'Peter', nextOfKinPhone: '0722000111' } });
+    expect(mockStartPending.mock.calls[0][0].identity).toEqual({
+      idType: 'NATIONAL_ID',
+      idNumber: '12345678',
+      nextOfKinName: 'Peter',
+      nextOfKinPhone: '+254722000111',
+    });
+  });
+
+  it('returns 409 when the number already has an account', async () => {
+    mockStartPending.mockRejectedValue(new PendingSignupError('An account with that phone number already exists', 409));
+    const res = await request(buildApp()).post('/patients/register').send(BODY);
     expect(res.status).toBe(409);
   });
 
-  it('registers successfully with no email at all — it stays fully optional', async () => {
-    mockRegisterPatient.mockResolvedValue(PATIENT);
-    const res = await request(buildApp()).post('/patients/register').send({
-      firstName: 'Jane',
-      lastName: 'Wanjiru',
-      phoneNumber: '0712345678',
-      pin: '730194',
-      acceptLegal: true,
-    });
-
-    expect(res.status).toBe(201);
-    expect(mockRegisterPatient).toHaveBeenCalledWith(expect.objectContaining({ email: undefined }));
-  });
-
-  it('passes a provided email through to registerPatient', async () => {
-    mockRegisterPatient.mockResolvedValue(PATIENT);
-    const res = await request(buildApp()).post('/patients/register').send({
-      firstName: 'Jane',
-      lastName: 'Wanjiru',
-      phoneNumber: '0712345678',
-      pin: '730194',
-      email: 'jane@example.com',
-      acceptLegal: true,
-    });
-
-    expect(res.status).toBe(201);
-    expect(mockRegisterPatient).toHaveBeenCalledWith(expect.objectContaining({ email: 'jane@example.com' }));
-  });
-
-  it('cannot create an account without accepting the Terms of Service and Privacy Notice', async () => {
-    for (const extra of [{}, { acceptLegal: false }]) {
-      const res = await request(buildApp())
-        .post('/patients/register')
-        .send({ firstName: 'Jane', lastName: 'Wanjiru', phoneNumber: '0712345678', pin: '730194', ...extra });
+  it('cannot sign up without accepting the Terms of Service and Privacy Notice', async () => {
+    for (const extra of [{ acceptLegal: undefined }, { acceptLegal: false }]) {
+      const res = await request(buildApp()).post('/patients/register').send({ ...BODY, ...extra });
       expect(res.status).toBe(400);
       expect(res.body.error).toContain('Terms of Service');
     }
-    expect(mockRegisterPatient).not.toHaveBeenCalled();
+    expect(mockStartPending).not.toHaveBeenCalled();
   });
+});
 
-  it('records the acceptance with the new account when the box is ticked', async () => {
-    mockRegisterPatient.mockResolvedValue(PATIENT);
-    const res = await request(buildApp())
-      .post('/patients/register')
-      .send({ firstName: 'Jane', lastName: 'Wanjiru', phoneNumber: '0712345678', pin: '730194', acceptLegal: true });
+describe('POST /patients/register/verify', () => {
+  it('a correct code creates the account and logs the patient in', async () => {
+    mockVerifyPending.mockResolvedValue(PATIENT);
+    const res = await request(buildApp()).post('/patients/register/verify').send({ pendingId: 'pend-1', code: '123456' });
     expect(res.status).toBe(201);
-    expect(mockRegisterPatient).toHaveBeenCalledWith(expect.objectContaining({ acceptedTermsAndPrivacyNotice: true }));
+    expect(res.body.patientCode).toBe('ACI-7F2K');
+    expect(res.headers['set-cookie']?.[0]).toContain('acisi_patient_session=');
   });
 
-  it('rejects a malformed email', async () => {
-    const res = await request(buildApp()).post('/patients/register').send({
-      firstName: 'Jane',
-      lastName: 'Wanjiru',
-      phoneNumber: '0712345678',
-      pin: '730194',
-      email: 'not-an-email',
-    });
-
+  it('a wrong code gets a clear message and no session', async () => {
+    mockVerifyPending.mockRejectedValue(new PendingSignupError('That code is not right. Check the SMS and try again.', 400));
+    const res = await request(buildApp()).post('/patients/register/verify').send({ pendingId: 'pend-1', code: '000000' });
     expect(res.status).toBe(400);
-    expect(mockRegisterPatient).not.toHaveBeenCalled();
+    expect(res.headers['set-cookie']).toBeUndefined();
+  });
+
+  it('checks the code format first', async () => {
+    const res = await request(buildApp()).post('/patients/register/verify').send({ pendingId: 'pend-1', code: '12' });
+    expect(res.status).toBe(400);
+    expect(mockVerifyPending).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /patients/register/resend', () => {
+  it('sends a new code, or the agreed message when it cannot', async () => {
+    mockResendCode.mockResolvedValue({ smsSent: false });
+    const res = await request(buildApp()).post('/patients/register/resend').send({ pendingId: 'pend-1' });
+    expect(res.body.message).toContain("We couldn't send your code");
   });
 });
 
@@ -245,6 +246,9 @@ describe('POST /patients/forgot-pin', () => {
     mockFindPatient.mockResolvedValueOnce(PATIENT);
     const hitRes = await request(buildApp()).post('/patients/forgot-pin').send({ identifier: 'ACI-7F2K' });
     expect(hitRes.status).toBe(200);
+    // Same words either way, always offering the clinic fallback (C3).
+    expect(hitRes.body).toEqual(missRes.body);
+    expect(hitRes.body.message).toContain('the front desk will verify your phone');
     expect(mockRequestOtp).toHaveBeenCalledWith(PATIENT);
   });
 });
@@ -252,7 +256,7 @@ describe('POST /patients/forgot-pin', () => {
 describe('POST /patients/reset-pin', () => {
   it('rejects an invalid or expired code', async () => {
     mockFindPatient.mockResolvedValue(PATIENT);
-    mockVerifyOtp.mockResolvedValue(false);
+    mockVerifyOtp.mockResolvedValue(null);
 
     const res = await request(buildApp())
       .post('/patients/reset-pin')
@@ -264,7 +268,7 @@ describe('POST /patients/reset-pin', () => {
 
   it('sets the new PIN on a valid code', async () => {
     mockFindPatient.mockResolvedValue(PATIENT);
-    mockVerifyOtp.mockResolvedValue(true);
+    mockVerifyOtp.mockResolvedValue('SMS_CODE');
 
     const res = await request(buildApp())
       .post('/patients/reset-pin')
@@ -272,6 +276,14 @@ describe('POST /patients/reset-pin', () => {
 
     expect(res.status).toBe(200);
     expect(mockSetPin).toHaveBeenCalledWith('patient-1', '730194', 'SMS_CODE');
+  });
+
+  it('a setup code from the front desk (phone rung in person) sets the PIN and marks the phone verified that way (C3)', async () => {
+    mockFindPatient.mockResolvedValue(PATIENT);
+    mockVerifyOtp.mockResolvedValue('IN_PERSON_CODE');
+    const res = await request(buildApp()).post('/patients/reset-pin').send({ identifier: '0712345678', code: '654321', newPin: '730194' });
+    expect(res.status).toBe(200);
+    expect(mockSetPin).toHaveBeenCalledWith('patient-1', '730194', 'IN_PERSON_CODE');
   });
 
   it('a reset unlocks a locked-out patient under every identifier (setPatientPin lifts the lock)', async () => {
@@ -287,7 +299,7 @@ describe('POST /patients/reset-pin', () => {
     mockVerifyPin.mockResolvedValue(true);
     expect((await request(app).post('/patients/login').send({ identifier: 'ACI-7F2K', pin: '730194' })).status).toBe(429);
 
-    mockVerifyOtp.mockResolvedValue(true);
+    mockVerifyOtp.mockResolvedValue('SMS_CODE');
     await request(app).post('/patients/reset-pin').send({ identifier: 'ACI-7F2K', code: '123456', newPin: '730194' });
 
     expect((await request(app).post('/patients/login').send({ identifier: 'ACI-7F2K', pin: '730194' })).status).toBe(200);
