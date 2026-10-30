@@ -321,6 +321,104 @@ export async function applyPaymentResult(
  */
 const DEFINITE_FAILURE_CODES = new Set([1, 1019, 1032, 1037, 2001]);
 
+/**
+ * A success callback Safaricom couldn't confirm yet: its receipt details
+ * (never the phone number) wait here until the status query confirms the
+ * payment, so the receipt is still recorded.
+ */
+const unconfirmedCallbackKey = (checkoutRequestId: string) => `mpesa:unconfirmed-callback:${checkoutRequestId}`;
+const UNCONFIRMED_CALLBACK_TTL_SECONDS = 2 * 60 * 60;
+
+type CallbackReceipt = Pick<ParsedStkCallback, 'merchantRequestId' | 'mpesaReceiptNumber' | 'amountKes'> & { transactionDate?: Date };
+
+async function keepUnconfirmedCallback(parsed: ParsedStkCallback): Promise<void> {
+  const receipt = {
+    merchantRequestId: parsed.merchantRequestId,
+    mpesaReceiptNumber: parsed.mpesaReceiptNumber,
+    amountKes: parsed.amountKes,
+    transactionDate: parsed.transactionDate?.toISOString(),
+  };
+  try {
+    await redis.set(unconfirmedCallbackKey(parsed.checkoutRequestId), JSON.stringify(receipt), 'EX', UNCONFIRMED_CALLBACK_TTL_SECONDS);
+  } catch (err) {
+    logger.warn({ err: errorSummary(err) }, 'Could not keep unconfirmed M-Pesa callback');
+  }
+}
+
+async function takeUnconfirmedCallback(checkoutRequestId: string): Promise<CallbackReceipt | null> {
+  try {
+    const raw = await redis.get(unconfirmedCallbackKey(checkoutRequestId));
+    if (!raw) return null;
+    await redis.del(unconfirmedCallbackKey(checkoutRequestId));
+    const kept = JSON.parse(raw) as Omit<CallbackReceipt, 'transactionDate'> & { transactionDate?: string };
+    return { ...kept, transactionDate: kept.transactionDate ? new Date(kept.transactionDate) : undefined };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Daraja's callback for ACISI's check-in fee. The callback alone is never
+ * trusted to mark a fee PAID: anyone can POST to a public URL. A success is
+ * applied only once Safaricom's STK push status query (the same check the
+ * portal and the sweep use) says ResultCode 0 for that prompt.
+ *
+ * - Query confirms: applied as PAID, with the callback's receipt details.
+ * - Query gives a definite failure: the query's answer is applied instead,
+ *   and the mismatch is logged (CHECK_IN_CALLBACK_NOT_CONFIRMED).
+ * - Query can't answer yet: nothing changes; the receipt details are kept
+ *   and the portal's polling or the once-a-minute sweep confirms it.
+ *
+ * A failure callback marks nothing PAID and is applied as before.
+ */
+export async function handleStkCallback(
+  parsed: ParsedStkCallback,
+  rawPayload: unknown,
+): Promise<{ checkInId: string; status: CheckInStatus } | null> {
+  if (parsed.resultCode !== 0) return applyPaymentResult(parsed, rawPayload, 'callback');
+
+  const checkIn = await prisma.checkIn.findUnique({
+    where: { mpesaCheckoutRequestId: parsed.checkoutRequestId },
+    select: { id: true, status: true },
+  });
+  // Unknown prompt, or already decided: applyPaymentResult changes nothing and writes the log line.
+  if (!checkIn || !AWAITING_MPESA.includes(checkIn.status)) return applyPaymentResult(parsed, rawPayload, 'callback');
+
+  let answer: Awaited<ReturnType<typeof queryStkPushStatus>> | null = null;
+  try {
+    answer = await queryStkPushStatus(parsed.checkoutRequestId);
+  } catch {
+    // "Still processing" or a network blip: confirmed later (below).
+  }
+  const confirmedCode = answer ? Number(answer.resultCode) : NaN;
+
+  if (confirmedCode === 0) return applyPaymentResult(parsed, rawPayload, 'callback');
+
+  if (DEFINITE_FAILURE_CODES.has(confirmedCode)) {
+    await recordAuditEvent({
+      actorType: 'SYSTEM',
+      action: 'CHECK_IN_CALLBACK_NOT_CONFIRMED',
+      entityType: 'CheckIn',
+      entityId: checkIn.id,
+      metadata: { callbackResultCode: parsed.resultCode, queryResultCode: confirmedCode },
+    });
+    return applyPaymentResult(
+      {
+        merchantRequestId: answer?.merchantRequestId ?? parsed.merchantRequestId,
+        checkoutRequestId: parsed.checkoutRequestId,
+        resultCode: confirmedCode,
+        resultDesc: answer?.resultDesc ?? '',
+      },
+      { source: 'stk-status-query', resultCode: answer?.resultCode, resultDesc: answer?.resultDesc, contradictedCallback: true },
+      'query',
+    );
+  }
+
+  await keepUnconfirmedCallback(parsed);
+  logPaymentOutcome(checkIn.id, 'callback', parsed.resultCode, checkIn.status);
+  return { checkInId: checkIn.id, status: checkIn.status };
+}
+
 /** Ask Safaricom about a given check-in at most this often, however many tabs poll and workers run. */
 const QUERY_THROTTLE_SECONDS = 10;
 
@@ -365,6 +463,8 @@ export async function queryCheckInPayment(checkInId: string): Promise<CheckInSta
     return checkIn.status;
   }
 
+  // A success callback that arrived before Safaricom could confirm it left its receipt details here.
+  const earlierCallback = resultCode === 0 ? await takeUnconfirmedCallback(checkIn.mpesaCheckoutRequestId) : null;
   const applied = await applyPaymentResult(
     {
       merchantRequestId: result.merchantRequestId ?? checkIn.mpesaMerchantRequestId ?? '',
@@ -372,8 +472,9 @@ export async function queryCheckInPayment(checkInId: string): Promise<CheckInSta
       resultCode,
       resultDesc: result.resultDesc,
       amountKes: resultCode === 0 ? Number(checkIn.amountKes) : undefined,
+      ...(earlierCallback ?? {}),
     },
-    { source: 'stk-status-query', resultCode: result.resultCode, resultDesc: result.resultDesc },
+    { source: 'stk-status-query', resultCode: result.resultCode, resultDesc: result.resultDesc, confirmedCallback: Boolean(earlierCallback) },
     'query',
   );
   return applied?.status ?? checkIn.status;

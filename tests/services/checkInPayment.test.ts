@@ -113,7 +113,7 @@ jest.mock('../../src/db/prisma', () => {
   return { prisma };
 });
 
-jest.mock('../../src/config/redis', () => ({ redis: { set: jest.fn() } }));
+jest.mock('../../src/config/redis', () => ({ redis: { set: jest.fn(), get: jest.fn(), del: jest.fn() } }));
 jest.mock('../../src/mpesa/verify', () => ({ queryStkPushStatus: jest.fn() }));
 jest.mock('../../src/mpesa/stkPush', () => ({ initiateStkPush: jest.fn() }));
 jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
@@ -146,6 +146,7 @@ import {
   applyPaymentResult,
   CheckInNotPendingError,
   confirmCheckInPaidManually,
+  handleStkCallback,
   InvalidMpesaCodeError,
   queryCheckInPayment,
   sweepPendingCheckInPayments,
@@ -569,5 +570,59 @@ describe('owner warning when M-Pesa prompts keep failing (C20)', () => {
     await confirmCheckInPaidManually('ci-1', 'clinic-A', 'staff-1', 'QAB12CD34E').catch(() => undefined);
     expect(notePromptResult).not.toHaveBeenCalled();
     expect(notePromptFailed).not.toHaveBeenCalled();
+  });
+});
+
+describe('a success callback is never trusted alone: Safaricom confirms it first', () => {
+  const mockRedisGet = redis.get as jest.Mock;
+  const paidCallback = () => ({ ...callback('ci-1', 0), transactionDate: new Date('2026-10-10T08:59:00Z') });
+
+  it('marked PAID only after the status query also says paid, keeping the receipt', async () => {
+    addCheckIn();
+    queryAnswers('0');
+    await expect(handleStkCallback(paidCallback(), {})).resolves.toEqual({ checkInId: 'ci-1', status: 'PAID' });
+    expect(mockQuery).toHaveBeenCalledWith('ws_CO_ci-1');
+    expect(db.transactions[0]).toMatchObject({ mpesaReceiptNumber: RECEIPT, resultCode: 0 });
+  });
+
+  it('a forged or mistaken "paid" callback that Safaricom contradicts is not marked PAID, and is logged', async () => {
+    addCheckIn();
+    queryAnswers('1032');
+    await expect(handleStkCallback(paidCallback(), {})).resolves.toEqual({ checkInId: 'ci-1', status: 'FAILED' });
+    expect(db.encounters).toHaveLength(0);
+    expect(recordAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'CHECK_IN_CALLBACK_NOT_CONFIRMED', entityId: 'ci-1', metadata: { callbackResultCode: 0, queryResultCode: 1032 } }),
+    );
+  });
+
+  it('if Safaricom cannot confirm yet, nothing changes; a later status check confirms it with the receipt', async () => {
+    addCheckIn();
+    mockQuery.mockRejectedValueOnce(new Error('The transaction is being processed'));
+    await expect(handleStkCallback(paidCallback(), {})).resolves.toEqual({ checkInId: 'ci-1', status: 'PENDING_PAYMENT' });
+    expect(status()).toBe('PENDING_PAYMENT');
+    expect(publishCheckInPaid).not.toHaveBeenCalled();
+
+    // Receipt details kept for later, never the phone number.
+    const keep = mockRedisSet.mock.calls.find((c) => c[0] === 'mpesa:unconfirmed-callback:ws_CO_ci-1');
+    expect(keep).toBeDefined();
+    expect(keep![1]).toContain(RECEIPT);
+    expect(keep![1]).not.toContain(PHONE);
+
+    mockRedisGet.mockResolvedValueOnce(keep![1]);
+    queryAnswers('0');
+    await expect(queryCheckInPayment('ci-1')).resolves.toBe('PAID');
+    expect(db.transactions[0]).toMatchObject({ mpesaReceiptNumber: RECEIPT });
+  });
+
+  it('a callback for an unknown prompt changes nothing and asks Safaricom nothing', async () => {
+    await expect(handleStkCallback(paidCallback(), {})).resolves.toBeNull();
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
+  it('a failure callback marks nothing PAID and needs no confirmation', async () => {
+    addCheckIn();
+    await handleStkCallback(callback('ci-1', 1032), {});
+    expect(status()).toBe('FAILED');
+    expect(mockQuery).not.toHaveBeenCalled();
   });
 });
