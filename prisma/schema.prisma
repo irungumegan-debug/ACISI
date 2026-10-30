@@ -90,6 +90,10 @@ enum ConsentType {
   /// walk-in "check in from home next time" invite). Never assumed: no such
   /// SMS is sent unless the latest row of this type is granted=true.
   SMS_CLINIC_MESSAGES
+  /// One-off access for one clinic to the patient's records from other
+  /// clinics, given by the patient reading a "Request records" code to that
+  /// clinic's front desk. Consent.clinicId/staffId say where and who.
+  CLINIC_RECORD_ACCESS
 }
 
 enum ActorType {
@@ -104,6 +108,13 @@ enum ActorType {
 /// Purpose of a one-time code sent to a patient's phone. Currently only PIN reset.
 enum OtpPurpose {
   PIN_RESET
+  /// Sent to confirm a patient really holds their phone number (first PIN
+  /// for a walk-in/USSD patient). Same rules as PIN_RESET.
+  PHONE_VERIFICATION
+  /// Shown on a staff screen after front desk confirmed the patient's phone
+  /// in person (rang it in front of them) because SMS could not be sent. The
+  /// patient types it to set their first PIN. Never sent by SMS.
+  IN_PERSON_SETUP
 }
 
 /// Clinical lifecycle of a visit, independent of CheckInStatus (which is
@@ -221,6 +232,8 @@ model Staff {
   /// E.164 phone number, e.g. "+2547XXXXXXXX". Contact/SMS purposes only —
   /// never used to authenticate.
   phoneNumber        String                 @unique
+  /// Optional work email. Contact only; never used to log in.
+  email              String?
   name               String
   /// bcrypt hash of a staff-chosen numeric PIN. Never store or log the raw PIN.
   pinHash            String
@@ -317,6 +330,15 @@ model Patient {
   /// behalf. Phone is E.164. Wiped on account deletion.
   nextOfKinName      String?
   nextOfKinPhone     String?
+  /// When the patient proved they hold phoneNumber: an SMS code, or front
+  /// desk ringing the number in front of them (phoneVerifiedVia "SMS" or
+  /// "IN_PERSON"). Null for accounts created before this existed.
+  phoneVerifiedAt    DateTime?
+  phoneVerifiedVia   String?
+  /// Set while remote check-in and booking are restricted over an ACISI
+  /// check-in fee unpaid for FEE_RESTRICTION_DAY days (see feeService).
+  /// Cleared the moment the fee is paid.
+  feeRestrictedAt    DateTime?
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt
 
@@ -381,6 +403,10 @@ model Consent {
   /// Version identifier of the consent copy shown, so we can reproduce
   /// exactly what the patient agreed to.
   version   String
+  /// CLINIC_RECORD_ACCESS only: the clinic that got access, and the staff
+  /// member who entered the patient's code.
+  clinicId  String?
+  staffId   String?
   createdAt DateTime    @default(now())
 
   @@index([patientId])
@@ -473,6 +499,16 @@ model CheckIn {
   paymentConfirmedByStaffId String?
   paymentConfirmedBy        Staff?        @relation("CheckInPaymentConfirmedBy", fields: [paymentConfirmedByStaffId], references: [id])
   paymentConfirmedAt        DateTime?
+  /// Pay later: set when the patient was put in the queue at check-in,
+  /// before M-Pesa confirmed the fee (nobody waits on M-Pesa to be seen). If
+  /// the payment then fails, the fee is owed — see feeService.
+  queuedBeforePaymentAt     DateTime?
+  /// Part of amountKes that paid earlier unpaid fees (the "old fee + new
+  /// fee" prompt). 0 for an ordinary check-in.
+  includesOutstandingKes    Int           @default(0)
+  /// An owed fee paid off by a later check-in's combined prompt: when, and by which check-in.
+  feeSettledAt              DateTime?
+  feeSettledByCheckInId     String?
 
   encounter         Encounter?
   mpesaTransactions MpesaTransaction[]
@@ -514,6 +550,9 @@ model Appointment {
   cancelledByStaffId String?
   cancelledByStaff   Staff?     @relation("AppointmentCancelledBy", fields: [cancelledByStaffId], references: [id])
   cancelledAt        DateTime?
+
+  /// Set (once, atomically) when the reminder SMS went out, so it's never sent twice.
+  reminderSmsSentAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -713,6 +752,8 @@ model MpesaTransaction {
 enum LegalDocument {
   PRIVACY_NOTICE
   TERMS_OF_SERVICE
+  /// Staff confidentiality undertaking (src/config/legal.ts holds its text and version).
+  CONFIDENTIALITY_UNDERTAKING
 }
 
 /// Where an acceptance or acknowledgment was captured.
@@ -730,6 +771,8 @@ enum LegalAcceptanceContext {
   CLINIC_REGISTRATION
   /// Staff member accepted the current Terms on the one-time screen after logging in to the console.
   STAFF_LOGIN
+  /// Staff member accepted at signup (with a clinic invite code).
+  STAFF_SIGNUP
 }
 
 /// One row per document accepted or acknowledged. Append-only, like Consent:
@@ -795,10 +838,71 @@ model AuditLog {
   action     String
   entityType String
   entityId   String?
+  /// The clinic the action happened at, when there is one. Null for older
+  /// rows and for actions with no clinic (patient self-service, owner).
+  clinicId   String?
   metadata   Json?
   createdAt  DateTime  @default(now())
 
   @@index([entityType, entityId])
+  @@index([clinicId, createdAt])
   @@index([actorType, actorId])
   @@map("audit_logs")
+}
+
+/// A portal signup waiting for its phone to be verified. Holds what the
+/// patient typed so they never retype it: verified by SMS code, or at the
+/// clinic by front desk ("Finish setup"). Becomes a real Patient only once
+/// verified, so nobody can claim someone else's number. Deleted
+/// automatically PENDING_SIGNUP_KEEP_DAYS after it was made.
+model PendingPatientSignup {
+  id                 String         @id @default(cuid())
+  /// E.164. Not unique: a second signup attempt for the same number replaces the first.
+  phoneNumber        String
+  firstName          String
+  lastName           String
+  dateOfBirth        DateTime?
+  sex                Sex            @default(UNKNOWN)
+  email              String?
+  idType             PatientIdType?
+  idNumber           String?
+  nextOfKinName      String?
+  nextOfKinPhone     String?
+  pinHash            String
+  crossClinicConsent Boolean        @default(false)
+  /// bcrypt hash of the SMS code, its expiry and wrong guesses.
+  codeHash           String?
+  codeExpiresAt      DateTime?
+  codeAttempts       Int            @default(0)
+  expiresAt          DateTime
+  createdAt          DateTime       @default(now())
+
+  @@index([phoneNumber])
+  @@index([expiresAt])
+  @@map("pending_patient_signups")
+}
+
+/// "Request records": a clinic asking to see a patient's records from other
+/// clinics when the patient has not switched sharing on. The patient sees
+/// the code on their profile (and by SMS when it works) and reads it to the
+/// front desk. A correct code gives that clinic access until accessUntil
+/// (end of that day, Kenya time).
+model RecordAccessRequest {
+  id                 String    @id @default(cuid())
+  patientId          String
+  clinicId           String
+  requestedByStaffId String
+  /// bcrypt hash of the 6-digit code. The code itself is never stored.
+  codeHash           String
+  attempts           Int       @default(0)
+  codeExpiresAt      DateTime
+  usedAt             DateTime?
+  usedByStaffId      String?
+  accessUntil        DateTime?
+  /// Set when the patient turns sharing off while access is still running.
+  revokedAt          DateTime?
+  createdAt          DateTime  @default(now())
+
+  @@index([patientId, clinicId])
+  @@map("record_access_requests")
 }
