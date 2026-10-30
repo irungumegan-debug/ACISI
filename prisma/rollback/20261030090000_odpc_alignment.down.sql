@@ -27,7 +27,8 @@ ALTER TABLE "consents" DROP COLUMN IF EXISTS "clinicId",
 ALTER TABLE "check_ins" DROP COLUMN IF EXISTS "feeSettledAt",
   DROP COLUMN IF EXISTS "feeSettledByCheckInId",
   DROP COLUMN IF EXISTS "includesOutstandingKes",
-  DROP COLUMN IF EXISTS "queuedBeforePaymentAt";
+  DROP COLUMN IF EXISTS "queuedBeforePaymentAt",
+  DROP COLUMN IF EXISTS "paymentRequestedAt";
 ALTER TABLE "appointments" DROP COLUMN IF EXISTS "reminderSmsSentAt";
 DROP TABLE IF EXISTS "pending_patient_signups";
 DROP TABLE IF EXISTS "record_access_requests";

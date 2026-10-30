@@ -78,3 +78,8 @@ export const PENDING_SIGNUP_KEEP_DAYS = 14;
 /** Shown when a signup or first-PIN code could not be sent (wording agreed with the owner). */
 export const CODE_NOT_SENT_MESSAGE =
   "We couldn't send your code. You can still visit your clinic as normal – the front desk will verify your phone and finish setting up your account.";
+
+/** Unpaid ACISI check-in fee (C20): from this many days the profile shows a reminder (no SMS). */
+export const FEE_REMINDER_DAY = 7;
+/** …and from this many days remote check-in and booking are restricted (only when FEE_RESTRICTION_ENABLED=true). */
+export const FEE_RESTRICTION_DAY = 14;

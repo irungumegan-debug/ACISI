@@ -4,6 +4,7 @@ import { usePatientAuth } from '../context/PatientAuthContext';
 import { legalBoxSatisfied, PRIVACY_PATH, TERMS_PATH } from '../lib/legal';
 import { EMPTY_IDENTITY, IdentityFields } from '../components/IdentityFields';
 import { RecordRequestsNotice, SharingPanel } from '../components/RecordSharing';
+import { FeeNotice } from '../components/FeeNotice';
 import type { PatientIdentity } from '../lib/api';
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -77,6 +78,7 @@ export function PatientHomePage() {
         ))}
       </nav>
 
+      <FeeNotice />
       <RecordRequestsNotice />
 
       {tab === 'checkin' && <CheckInPanel patientCode={session?.patientCode ?? ''} />}
@@ -178,6 +180,11 @@ function CheckInPanel({ patientCode }: { patientCode: string }) {
           setStage({ kind: 'paid', checkIn, existing: false });
           return;
         }
+        // Pay later: already in the queue, whatever happens to the fee.
+        if (checkIn.inQueue && (checkIn.status === 'FAILED' || checkIn.status === 'NEEDS_REVIEW')) {
+          setStage({ kind: 'paid', checkIn, existing: false });
+          return;
+        }
         if (checkIn.status === 'FAILED' || checkIn.status === 'CANCELLED') {
           setStage({ kind: 'failed' });
           return;
@@ -259,7 +266,11 @@ function CheckInPanel({ patientCode }: { patientCode: string }) {
         {checkIn.queuePosition !== null && (
           <p>{checkIn.queuePosition === 1 ? 'You’re next in line.' : `You’re number ${checkIn.queuePosition} in the queue.`}</p>
         )}
-        <p>Payment received. Show your patient ID at the front desk when you arrive.</p>
+        <p>
+          {checkIn.status === 'PAID'
+            ? 'Payment received. Show your patient ID at the front desk when you arrive.'
+            : 'You’re in the queue. Your ACISI check-in fee didn’t go through: you can pay it from the notice at the top of this page. Show your patient ID at the front desk when you arrive.'}
+        </p>
       </div>
     );
   }

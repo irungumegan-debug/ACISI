@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { ownerFeesRouter } from './fees';
 import { ownerAuthRouter, requireOwnerSession } from './auth';
 import { ownerOverviewRouter } from './overview';
 import { ownerClinicsRouter } from './clinics';
@@ -20,3 +21,4 @@ ownerRouter.use('/clinics', ownerClinicsRouter);
 ownerRouter.use('/staff', ownerStaffRouter);
 ownerRouter.use('/patients', ownerPatientsRouter);
 ownerRouter.use('/activity', ownerActivityRouter);
+ownerRouter.use('/pending-fees', ownerFeesRouter);

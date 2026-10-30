@@ -28,12 +28,23 @@ import { ConfirmFeeDialog } from '../components/ConfirmFeeDialog';
 
 /** Payment isn't resolved (still pending, failed, or unknown and awaiting a manual check) — the encounter, if any, hasn't started yet. */
 function isUnresolvedPayment(item: QueueItem): boolean {
+  // Pay-later check-ins are in the queue whatever the fee's state.
+  if (item.queuedBeforePayment) return false;
   return item.checkInStatus === 'PENDING_PAYMENT' || isPaymentProblem(item);
 }
 
 /** Kept out of the main queue, in "Payment didn't go through": failed, or no answer from M-Pesa within an hour. */
 function isPaymentProblem(item: QueueItem): boolean {
+  if (item.queuedBeforePayment) return false;
   return item.checkInStatus === 'FAILED' || item.checkInStatus === 'NEEDS_REVIEW';
+}
+
+/** ACISI's own fee for a pay-later check-in that isn't confirmed (yet). Shown as a label only: the clinic doesn't collect it. */
+function acisiFeeLabel(item: QueueItem): string | null {
+  if (!item.queuedBeforePayment) return null;
+  if (item.checkInStatus === 'PENDING_PAYMENT') return 'ACISI fee pending';
+  if (item.checkInStatus === 'FAILED' || item.checkInStatus === 'NEEDS_REVIEW') return 'ACISI fee unpaid';
+  return null;
 }
 
 function displayStatus(item: QueueItem): string {
@@ -480,6 +491,11 @@ function QueueCard({
           )}
         </span>
         <span>{item.checkInStatus === 'NO_FEE' ? 'No fee' : `KES ${item.amountKes}`}</span>
+        {acisiFeeLabel(item) && (
+          <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800" title="The patient pays this to ACISI from their profile; the clinic doesn't collect it.">
+            {acisiFeeLabel(item)}
+          </span>
+        )}
         {canChangeDoctor && (
           <button
             type="button"

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { getFeeStatus } from '../services/feeService';
 import { z } from 'zod';
 import { prisma } from '../db/prisma';
 import { requirePatientSession, AuthenticatedPatientRequest } from './auth';
@@ -27,6 +28,12 @@ const requestSchema = z.object({
  * route, so a booking can only ever target a real, active clinic+department.
  */
 portalAppointmentsRouter.post('/', async (req, res) => {
+  // C20: booking is blocked while the account is restricted over an unpaid fee.
+  const restriction = await getFeeStatus((req as AuthenticatedPatientRequest).patientSession.patientId);
+  if (restriction.restricted) {
+    res.status(403).json({ error: restriction.restrictionMessage, code: 'FEE_RESTRICTED' });
+    return;
+  }
   const parsed = requestSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: 'clinicId, departmentId, and scheduledFor are required' });

@@ -18,6 +18,9 @@ jest.mock('../../src/db/prisma', () => {
 });
 jest.mock('../../src/config/africastalking', () => ({ smsClient: { send: jest.fn() } }));
 jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
+jest.mock('../../src/services/feeService', () => ({
+  getFeeStatus: jest.fn(async () => ({ restricted: true, restrictionMessage: 'restricted', owedKes: 100 })),
+}));
 jest.mock('../../src/services/patientService', () => ({ findPatientByPhone: jest.fn(), registerPatient: jest.fn() }));
 jest.mock('../../src/services/departmentService', () => ({ findActiveDepartment: jest.fn() }));
 jest.mock('../../src/services/doctorAssignmentService', () => ({ assignDoctorForCheckIn: jest.fn() }));
@@ -180,6 +183,16 @@ describe('finding or creating the patient', () => {
     });
     expect(mockRegister).not.toHaveBeenCalled();
     expect(tx.checkIn!.create).not.toHaveBeenCalled();
+  });
+
+  it('a patient restricted over an unpaid ACISI fee is still checked in as a walk-in, and no fee is involved (C20)', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fees = require('../../src/services/feeService');
+    mockFindPatient.mockResolvedValue(PATIENT);
+    const result = await checkInWalkIn(input());
+    expect(result).toMatchObject({ patientId: 'p-1' });
+    expect(tx.checkIn!.create).toHaveBeenCalledTimes(1);
+    expect(fees.getFeeStatus).not.toHaveBeenCalled();
   });
 
   it('asks for details when the phone is new and none were given', async () => {

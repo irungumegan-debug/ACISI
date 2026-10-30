@@ -1,8 +1,16 @@
+jest.mock('../../src/services/feeService', () => ({
+  getFeeStatus: jest.fn(async () => ({ owedKes: 0, restricted: false, restrictionMessage: null })),
+  getOutstandingFees: jest.fn(async () => ({ checkIns: [], totalKes: 0, oldestAt: null })),
+  settleOutstandingFees: jest.fn(async () => []),
+  liftRestrictionIfClear: jest.fn(async () => false),
+}));
 jest.mock('../../src/db/prisma', () => ({
   prisma: {
     checkIn: { findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
     encounter: { create: jest.fn() },
     mpesaTransaction: { create: jest.fn() },
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    $transaction: jest.fn(async (fn: (tx: unknown) => unknown) => fn(require('../../src/db/prisma').prisma)),
   },
 }));
 
@@ -10,6 +18,7 @@ jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn(
 jest.mock('../../src/services/realtimeEvents', () => ({
   publishCheckInPaid: jest.fn(),
   publishCheckInFailed: jest.fn(),
+  publishQueueChanged: jest.fn(),
 }));
 jest.mock('../../src/jobs/queue', () => ({
   enqueueSmsReceipt: jest.fn(),
@@ -194,5 +203,55 @@ describe('checkInPatientForAppointment', () => {
 
     await expect(checkInPatientForAppointment('appt-404', 'clinic-A', 'staff-1')).rejects.toThrow('nope');
     expect(mockCreateCheckIn).not.toHaveBeenCalled();
+  });
+});
+
+describe('pay later: nobody waits on M-Pesa to be seen (C20)', () => {
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const fees = require('../../src/services/feeService');
+  const { assignDoctorForCheckIn } = require('../../src/services/doctorAssignmentService');
+  /* eslint-enable @typescript-eslint/no-require-imports */
+  const INPUT = {
+    ussdSessionId: 'session-paylater',
+    patientId: 'patient-1',
+    clinicId: 'clinic-A',
+    clinicName: 'Sunrise Family Clinic',
+    departmentId: 'dept-1',
+    phoneNumberE164: '+254712345678',
+  };
+
+  beforeEach(() => {
+    mockFindUniqueCheckIn.mockResolvedValue(null);
+    mockCreateCheckIn.mockResolvedValue({ ...PENDING_CHECK_IN, id: 'ci-pl' });
+    mockInitiateStkPush.mockResolvedValue({ checkoutRequestId: 'co-1', merchantRequestId: 'm-1' });
+    mockUpdateCheckIn.mockResolvedValue({ ...PENDING_CHECK_IN, id: 'ci-pl' });
+    assignDoctorForCheckIn.mockResolvedValue('doc-1');
+  });
+
+  it('puts the patient in the queue at check-in, before any payment', async () => {
+    fees.getOutstandingFees.mockResolvedValue({ checkIns: [], totalKes: 0, oldestAt: null });
+    await initiateCheckIn(INPUT);
+    expect((prisma.encounter.create as jest.Mock).mock.calls[0][0].data).toEqual({
+      patientId: 'patient-1',
+      clinicId: 'clinic-A',
+      checkInId: 'ci-pl',
+      assignedDoctorId: 'doc-1',
+    });
+    expect(mockCreateCheckIn.mock.calls[0][0].data).toMatchObject({ status: 'PENDING_PAYMENT', queuedBeforePaymentAt: expect.any(Date), includesOutstandingKes: 0 });
+  });
+
+  it('stays in the queue even when the M-Pesa prompt cannot be sent (the fee becomes owed)', async () => {
+    fees.getOutstandingFees.mockResolvedValue({ checkIns: [], totalKes: 0, oldestAt: null });
+    mockInitiateStkPush.mockRejectedValue(new Error('Daraja down'));
+    await initiateCheckIn(INPUT);
+    expect(prisma.encounter.create).toHaveBeenCalled();
+  });
+
+  it('the next remote check-in asks for the old fee plus the new one in ONE prompt', async () => {
+    fees.getOutstandingFees.mockResolvedValue({ checkIns: [{ id: 'old' }], totalKes: 100, oldestAt: new Date() });
+    await initiateCheckIn(INPUT);
+    expect(mockCreateCheckIn.mock.calls[0][0].data).toMatchObject({ amountKes: 200, includesOutstandingKes: 100 });
+    expect(mockInitiateStkPush).toHaveBeenCalledTimes(1);
+    expect(mockInitiateStkPush.mock.calls[0][0].amountKes).toBe(200);
   });
 });

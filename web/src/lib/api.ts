@@ -68,6 +68,17 @@ export interface CheckInSummary {
   departmentName: string;
   /** 1 = next in line. Null when not known (not paid yet, or already with the doctor). */
   queuePosition: number | null;
+  /** Pay later: already in the clinic's queue while the ACISI fee is confirmed. */
+  inQueue?: boolean;
+}
+
+export interface FeeStatus {
+  owedKes: number;
+  oldestOwedAt: string | null;
+  daysOwed: number;
+  reminder: boolean;
+  restricted: boolean;
+  restrictionMessage: string | null;
 }
 
 export interface StaffSessionSummary {
@@ -188,6 +199,15 @@ export const api = {
   },
 
   /** Permanently deletes the logged-in patient's account. Requires their PIN again. */
+  // ---- Unpaid ACISI check-in fee ----
+  getFees() {
+    return request<FeeStatus>('/patients/fees');
+  },
+
+  payFees() {
+    return request<{ checkInId: string; amountKes: number }>('/patients/fees/pay', { method: 'POST' });
+  },
+
   // ---- Sharing records with other clinics ----
   getSharing() {
     return request<SharingOverview>('/patients/sharing');

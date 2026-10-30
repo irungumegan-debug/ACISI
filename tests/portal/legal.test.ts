@@ -2,6 +2,12 @@ import express from 'express';
 import cookieParser from 'cookie-parser';
 import request from 'supertest';
 
+jest.mock('../../src/services/feeService', () => ({
+  getFeeStatus: jest.fn(async () => ({ owedKes: 0, restricted: false, restrictionMessage: null })),
+  getOutstandingFees: jest.fn(async () => ({ checkIns: [], totalKes: 0, oldestAt: null })),
+  settleOutstandingFees: jest.fn(async () => []),
+  liftRestrictionIfClear: jest.fn(async () => false),
+}));
 jest.mock('../../src/portal/session', () => ({
   ...jest.requireActual('../../src/portal/session'),
   loadPatientSession: jest.fn(),
@@ -95,6 +101,19 @@ describe('web check-in: Privacy Notice checkbox', () => {
       patientId: 'patient-1',
       clinicId: 'clinic-A',
     });
+  });
+
+  it('a restricted account (unpaid ACISI fee, C20) cannot check in remotely, with the agreed message', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fees = require('../../src/services/feeService');
+    fees.getFeeStatus.mockResolvedValueOnce({
+      restricted: true,
+      restrictionMessage: 'Your account is restricted until your unpaid check-in fee of KSh 100 is paid.',
+    });
+    const res = await withCookie(request(buildApp()).post('/checkin').send({ ...body, privacyNoticeAcknowledged: true }));
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('Your account is restricted until your unpaid check-in fee of KSh 100 is paid.');
+    expect(mockInitiate).not.toHaveBeenCalled();
   });
 
   it('cannot check in without ticking it, and nothing is recorded or charged', async () => {
@@ -285,6 +304,8 @@ describe('web check-in: one check-in per clinic per day, and status polling', ()
       status: 'PENDING_PAYMENT',
       clinicName: 'Sunrise Family Clinic',
       departmentName: 'General',
+      inQueue: false,
+      amountKes: null,
       queuePosition: null,
       existing: false,
     });
@@ -343,6 +364,8 @@ describe('web check-in: one check-in per clinic per day, and status polling', ()
       status: 'FAILED',
       clinicName: 'Sunrise Family Clinic',
       departmentName: 'General',
+      inQueue: false,
+      amountKes: null,
       queuePosition: null,
     });
     expect(mockFindCheckIn.mock.calls[0][0].where).toEqual({ id: 'ci-1', patientId: 'patient-1' });

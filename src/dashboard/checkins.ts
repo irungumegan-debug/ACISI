@@ -111,6 +111,9 @@ checkinsRouter.get('/today', async (req, res) => {
       departmentCode: c.department.code,
       amountKes: Number(c.amountKes),
       checkInStatus: c.status,
+      // Pay later (C20): in the queue already while ACISI's fee is confirmed
+      // in the background. The clinic never collects it.
+      queuedBeforePayment: c.queuedBeforePaymentAt !== null,
       source: c.source,
       checkedInByName: c.staff?.name ?? null,
       encounterStatus: c.encounter?.status ?? null,

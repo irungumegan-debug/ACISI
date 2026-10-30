@@ -509,6 +509,10 @@ model CheckIn {
   /// An owed fee paid off by a later check-in's combined prompt: when, and by which check-in.
   feeSettledAt              DateTime?
   feeSettledByCheckInId     String?
+  /// When the latest M-Pesa prompt for this fee was sent (the original one,
+  /// or a later "Pay now"). The payment sweep times out from here, not from
+  /// createdAt, so a fee paid days later isn't marked "needs review" at once.
+  paymentRequestedAt        DateTime?
 
   encounter         Encounter?
   mpesaTransactions MpesaTransaction[]

@@ -2,6 +2,12 @@ import express from 'express';
 import cookieParser from 'cookie-parser';
 import request from 'supertest';
 
+jest.mock('../../src/services/feeService', () => ({
+  getFeeStatus: jest.fn(async () => ({ owedKes: 0, restricted: false, restrictionMessage: null })),
+  getOutstandingFees: jest.fn(async () => ({ checkIns: [], totalKes: 0, oldestAt: null })),
+  settleOutstandingFees: jest.fn(async () => []),
+  liftRestrictionIfClear: jest.fn(async () => false),
+}));
 jest.mock('../../src/portal/session', () => ({
   ...jest.requireActual('../../src/portal/session'),
   loadPatientSession: jest.fn(),
@@ -167,5 +173,22 @@ describe('POST /appointments/:id/cancel', () => {
     const res = await withCookie(request(buildApp()).post('/appointments/appt-1/cancel'));
     expect(res.status).toBe(200);
     expect(mockCancelOwn).toHaveBeenCalledWith('patient-1', 'appt-1');
+  });
+});
+
+describe('restricted over an unpaid ACISI fee (C20)', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const fees = require('../../src/services/feeService');
+
+  it('booking is blocked with the agreed message', async () => {
+    fees.getFeeStatus.mockResolvedValueOnce({
+      restricted: true,
+      restrictionMessage: 'Your account is restricted until your unpaid check-in fee of KSh 100 is paid.',
+    });
+    const res = await withCookie(
+      request(buildApp()).post('/appointments').send({ clinicId: 'clinic-A', departmentId: 'dept-1', scheduledFor: FUTURE_ISO }),
+    );
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('Your account is restricted until your unpaid check-in fee of KSh 100 is paid.');
   });
 });

@@ -10,7 +10,8 @@ import { recordAuditEvent } from './auditService';
 import { initiateStkPush } from '../mpesa/stkPush';
 import { ParsedStkCallback } from '../mpesa/types';
 import { enqueueSmsReceipt } from '../jobs/queue';
-import { publishCheckInFailed, publishCheckInPaid } from './realtimeEvents';
+import { publishCheckInFailed, publishCheckInPaid, publishQueueChanged } from './realtimeEvents';
+import { getOutstandingFees, liftRestrictionIfClear, settleOutstandingFees } from './feeService';
 import { assignDoctorForCheckIn } from './doctorAssignmentService';
 import { findArrivalMatch, getAppointmentForArrival, markAppointmentCompleted } from './appointmentService';
 
@@ -54,17 +55,35 @@ export async function initiateCheckIn(input: InitiateCheckInInput): Promise<Init
       ? input.appointmentId
       : ((await findArrivalMatch(input.patientId, input.clinicId, input.departmentId))?.id ?? null);
 
-  const checkIn = await prisma.checkIn.create({
-    data: {
-      patientId: input.patientId,
-      clinicId: input.clinicId,
-      departmentId: input.departmentId,
-      ussdSessionId: input.ussdSessionId,
-      amountKes: env.CHECKIN_FEE_AMOUNT_KES,
-      status: 'PENDING_PAYMENT',
-      appointmentId,
-    },
+  // Pay later (C20): the patient joins the queue now and the fee is
+  // confirmed in the background, so a slow or failed M-Pesa never keeps
+  // anyone from being seen. Any fee still owed from earlier is collected in
+  // the same prompt ("old fee + new fee").
+  const outstanding = await getOutstandingFees(input.patientId);
+  const amountKes = env.CHECKIN_FEE_AMOUNT_KES + outstanding.totalKes;
+  const assignedDoctorId = await assignDoctorForCheckIn(input.clinicId, input.departmentId);
+  const now = new Date();
+  const checkIn = await prisma.$transaction(async (tx) => {
+    const created = await tx.checkIn.create({
+      data: {
+        patientId: input.patientId,
+        clinicId: input.clinicId,
+        departmentId: input.departmentId,
+        ussdSessionId: input.ussdSessionId,
+        amountKes,
+        includesOutstandingKes: outstanding.totalKes,
+        status: 'PENDING_PAYMENT',
+        appointmentId,
+        queuedBeforePaymentAt: now,
+        paymentRequestedAt: now,
+      },
+    });
+    await tx.encounter.create({
+      data: { patientId: input.patientId, clinicId: input.clinicId, checkInId: created.id, assignedDoctorId },
+    });
+    return created;
   });
+  publishQueueChanged({ checkInId: checkIn.id, clinicId: checkIn.clinicId });
 
   // The appointment is "done" the moment it produces a real arrival — this
   // CheckIn's own status (PENDING_PAYMENT/PAID/FAILED) tracks payment
@@ -79,12 +98,12 @@ export async function initiateCheckIn(input: InitiateCheckInInput): Promise<Init
     action: 'CHECK_IN_CREATED',
     entityType: 'CheckIn',
     entityId: checkIn.id,
-    metadata: { clinicId: input.clinicId, departmentId: input.departmentId, appointmentId },
+    metadata: { clinicId: input.clinicId, departmentId: input.departmentId, appointmentId, includesOutstandingKes: outstanding.totalKes },
   });
 
   try {
     const stkResponse = await initiateStkPush({
-      amountKes: env.CHECKIN_FEE_AMOUNT_KES,
+      amountKes,
       phoneNumberE164: input.phoneNumberE164,
       // Daraja caps AccountReference at 12 chars.
       accountReference: checkIn.id.slice(-10),
@@ -104,6 +123,7 @@ export async function initiateCheckIn(input: InitiateCheckInInput): Promise<Init
 
     return { checkIn: updated, wasAlreadyInitiated: false };
   } catch (err) {
+    // The patient stays in the queue; the fee is now owed (see feeService).
     logger.error({ err, checkInId: checkIn.id }, 'STK push failed to initiate; marking check-in FAILED');
     const failed = await prisma.checkIn.update({ where: { id: checkIn.id }, data: { status: 'FAILED' } });
     // Without this, a staff member already watching the live queue would
@@ -158,7 +178,9 @@ async function claimPaid(
   extra: Prisma.CheckInUncheckedUpdateManyInput = {},
   withinTx?: (tx: Prisma.TransactionClient) => Promise<unknown>,
 ): Promise<CheckIn | null> {
-  const assignedDoctorId = await assignDoctorForCheckIn(checkIn.clinicId, checkIn.departmentId);
+  // Pay-later check-ins (C20) already have their visit; older ones get it now.
+  const alreadyQueued = Boolean(checkIn.queuedBeforePaymentAt);
+  const assignedDoctorId = alreadyQueued ? null : await assignDoctorForCheckIn(checkIn.clinicId, checkIn.departmentId);
 
   const updated = await prisma.$transaction(async (tx) => {
     const { count } = await tx.checkIn.updateMany({
@@ -167,17 +189,28 @@ async function claimPaid(
     });
     if (count === 0) return null;
     if (withinTx) await withinTx(tx);
-    await tx.encounter.create({
-      data: {
-        patientId: checkIn.patientId,
-        clinicId: checkIn.clinicId,
-        checkInId: checkIn.id,
-        assignedDoctorId,
-      },
-    });
+    if (!alreadyQueued) {
+      await tx.encounter.create({
+        data: {
+          patientId: checkIn.patientId,
+          clinicId: checkIn.clinicId,
+          checkInId: checkIn.id,
+          assignedDoctorId,
+        },
+      });
+    }
+    // Earlier owed fees this payment was also collecting are now paid off.
+    await settleOutstandingFees(tx, checkIn);
     return tx.checkIn.findUniqueOrThrow({ where: { id: checkIn.id }, include: { patient: true } });
   });
   if (!updated) return null;
+
+  if (checkIn.feeSettledAt) {
+    // A later payment had already covered this fee, and now M-Pesa (or front
+    // desk) says it was paid as well: flag it for a manual refund.
+    await recordAuditEvent({ actorType: 'SYSTEM', action: 'CHECK_IN_FEE_PAID_TWICE', entityType: 'CheckIn', entityId: checkIn.id });
+  }
+  await liftRestrictionIfClear(checkIn.patientId);
 
   publishCheckInPaid({
     checkInId: updated.id,
@@ -357,11 +390,14 @@ export async function sweepPendingCheckInPayments(
 ): Promise<{ queried: number; needsReview: number }> {
   const reviewCutoff = new Date(now.getTime() - NEEDS_REVIEW_AFTER_MS);
 
+  // Timed from the latest prompt (paymentRequestedAt), so a "Pay now" days
+  // after the check-in gets its full hour; older rows fall back to createdAt.
+  const sweepWindow = { gte: reviewCutoff, lte: new Date(now.getTime() - SWEEP_MIN_AGE_MS) };
   const pending = await prisma.checkIn.findMany({
     where: {
       status: 'PENDING_PAYMENT',
       mpesaCheckoutRequestId: { not: null },
-      createdAt: { gte: reviewCutoff, lte: new Date(now.getTime() - SWEEP_MIN_AGE_MS) },
+      OR: [{ paymentRequestedAt: sweepWindow }, { paymentRequestedAt: null, createdAt: sweepWindow }],
     },
     select: { id: true },
     orderBy: { createdAt: 'asc' },
@@ -375,7 +411,10 @@ export async function sweepPendingCheckInPayments(
   }
 
   const stale = await prisma.checkIn.findMany({
-    where: { status: 'PENDING_PAYMENT', createdAt: { lt: reviewCutoff } },
+    where: {
+      status: 'PENDING_PAYMENT',
+      OR: [{ paymentRequestedAt: { lt: reviewCutoff } }, { paymentRequestedAt: null, createdAt: { lt: reviewCutoff } }],
+    },
     select: { id: true, clinicId: true },
   });
   let needsReview = 0;
@@ -577,4 +616,71 @@ export async function checkInPatientForAppointment(
   });
 
   return result;
+}
+
+export class NothingOwedError extends Error {
+  constructor(message = 'You have no unpaid check-in fee') {
+    super(message);
+    this.name = 'NothingOwedError';
+  }
+}
+
+/**
+ * The profile's "Pay" button (C20): one M-Pesa prompt for everything owed.
+ * Re-uses the oldest owed check-in (it becomes PENDING_PAYMENT again, timed
+ * from now); when it's paid, the other owed fees it covers are settled.
+ * If this prompt fails too, the fees simply stay owed.
+ */
+export async function payOutstandingFees(patientId: string): Promise<{ checkInId: string; amountKes: number }> {
+  const owed = await getOutstandingFees(patientId);
+  const oldest = owed.checkIns[0];
+  if (!oldest) throw new NothingOwedError();
+  const waiting = await prisma.checkIn.findFirst({
+    where: { patientId, status: 'PENDING_PAYMENT', queuedBeforePaymentAt: { not: null }, paymentRequestedAt: { gt: new Date(Date.now() - 2 * 60 * 1000) } },
+  });
+  if (waiting) throw new NothingOwedError('A payment prompt was just sent to your phone. Check your phone, then try again in a minute.');
+
+  const patient = await prisma.patient.findUniqueOrThrow({ where: { id: patientId }, select: { phoneNumber: true } });
+  const clinic = await prisma.clinic.findUniqueOrThrow({ where: { id: oldest.clinicId }, select: { name: true } });
+  const ownFee = Number(oldest.amountKes) - oldest.includesOutstandingKes;
+  const includesOutstandingKes = owed.totalKes - ownFee;
+
+  const { count } = await prisma.checkIn.updateMany({
+    where: { id: oldest.id, status: { in: ['FAILED', 'NEEDS_REVIEW'] } },
+    data: {
+      status: 'PENDING_PAYMENT',
+      amountKes: owed.totalKes,
+      includesOutstandingKes,
+      paymentRequestedAt: new Date(),
+      mpesaCheckoutRequestId: null,
+      mpesaMerchantRequestId: null,
+    },
+  });
+  if (count === 0) throw new NothingOwedError();
+
+  try {
+    const stk = await initiateStkPush({
+      amountKes: owed.totalKes,
+      phoneNumberE164: patient.phoneNumber,
+      accountReference: oldest.id.slice(-10),
+      transactionDesc: `Check-in fee: ${clinic.name}`,
+    });
+    await prisma.checkIn.update({
+      where: { id: oldest.id },
+      data: { mpesaCheckoutRequestId: stk.checkoutRequestId, mpesaMerchantRequestId: stk.merchantRequestId },
+    });
+  } catch (err) {
+    logger.error({ err, checkInId: oldest.id }, 'Outstanding-fee STK push failed to initiate');
+    await prisma.checkIn.update({ where: { id: oldest.id }, data: { status: 'FAILED' } });
+  }
+
+  await recordAuditEvent({
+    actorType: 'PATIENT',
+    actorId: patientId,
+    action: 'OUTSTANDING_FEE_PAYMENT_REQUESTED',
+    entityType: 'CheckIn',
+    entityId: oldest.id,
+    metadata: { amountKes: owed.totalKes, checkInsCovered: owed.checkIns.length },
+  });
+  return { checkInId: oldest.id, amountKes: owed.totalKes };
 }

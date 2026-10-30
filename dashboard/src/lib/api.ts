@@ -109,6 +109,8 @@ export interface QueueItem {
   departmentName: string;
   amountKes: number;
   checkInStatus: CheckInStatus;
+  /** Pay later: in the queue while ACISI's fee is confirmed in the background. */
+  queuedBeforePayment?: boolean;
   source: CheckInSource;
   /** Who checked the patient in at the front desk (walk-ins); null for remote check-ins. */
   checkedInByName: string | null;

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Navigate, NavLink, Outlet, useLocation } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
-import { Building2, LayoutDashboard, LogOut, Menu, ScrollText, ShieldCheck, UserX, X } from 'lucide-react';
+import { Building2, LayoutDashboard, LogOut, Menu, ScrollText, ShieldCheck, UserX, X, Wallet } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { LogoMark } from './ui';
 
@@ -9,6 +9,7 @@ const NAV: { to: string; label: string; icon: LucideIcon }[] = [
   { to: '/overview', label: 'Overview', icon: LayoutDashboard },
   { to: '/clinics', label: 'Clinics', icon: Building2 },
   { to: '/activity', label: 'Activity log', icon: ScrollText },
+  { to: '/pending-fees', label: 'Unpaid fees', icon: Wallet },
   { to: '/delete-patient', label: 'Delete a patient', icon: UserX },
 ];
 

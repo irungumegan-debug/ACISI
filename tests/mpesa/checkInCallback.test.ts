@@ -1,6 +1,12 @@
 import express from 'express';
 import request from 'supertest';
 
+jest.mock('../../src/services/feeService', () => ({
+  getFeeStatus: jest.fn(async () => ({ owedKes: 0, restricted: false, restrictionMessage: null })),
+  getOutstandingFees: jest.fn(async () => ({ checkIns: [], totalKes: 0, oldestAt: null })),
+  settleOutstandingFees: jest.fn(async () => []),
+  liftRestrictionIfClear: jest.fn(async () => false),
+}));
 jest.mock('../../src/services/checkInService', () => ({ applyPaymentResult: jest.fn() }));
 jest.mock('../../src/services/billingService', () => ({ applyClinicStkResult: jest.fn() }));
 jest.mock('../../src/utils/logger', () => ({

@@ -30,6 +30,13 @@ const envSchema = z.object({
   MPESA_CALLBACK_URL: z.string().url('MPESA_CALLBACK_URL must be a valid URL'),
 
   CHECKIN_FEE_AMOUNT_KES: z.coerce.number().positive().default(100),
+  // Restricting accounts over an unpaid check-in fee (C20). Off unless this
+  // is exactly "true": switch it on only once the Terms of Service say so.
+  // The profile notices and the "old fee + new fee" prompt work either way.
+  FEE_RESTRICTION_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
 
   // --- Email (visit-summary delivery, opt-in at checkout) ---
   // Both optional, unlike the AT/Daraja vars above: email is a genuinely

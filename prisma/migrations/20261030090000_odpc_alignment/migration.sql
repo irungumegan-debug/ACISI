@@ -38,7 +38,8 @@ ADD COLUMN     "staffId" TEXT;
 ALTER TABLE "check_ins" ADD COLUMN     "feeSettledAt" TIMESTAMP(3),
 ADD COLUMN     "feeSettledByCheckInId" TEXT,
 ADD COLUMN     "includesOutstandingKes" INTEGER NOT NULL DEFAULT 0,
-ADD COLUMN     "queuedBeforePaymentAt" TIMESTAMP(3);
+ADD COLUMN     "queuedBeforePaymentAt" TIMESTAMP(3),
+ADD COLUMN     "paymentRequestedAt" TIMESTAMP(3);
 
 -- AlterTable
 ALTER TABLE "appointments" ADD COLUMN     "reminderSmsSentAt" TIMESTAMP(3);

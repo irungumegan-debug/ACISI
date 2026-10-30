@@ -19,6 +19,16 @@ function matchesStatus(row: Row, status: unknown): boolean {
   return (status as { in: string[] }).in.includes(row.status);
 }
 
+function matchesTimeBranch(row: Row, branch: Record<string, unknown>): boolean {
+  const range = (value: unknown, t: number) => {
+    const r = value as { gte?: Date; lte?: Date; lt?: Date };
+    return (!r.gte || t >= r.gte.getTime()) && (!r.lte || t <= r.lte.getTime()) && (!r.lt || t < r.lt.getTime());
+  };
+  const requested = row.paymentRequestedAt as Date | null | undefined;
+  if (branch.paymentRequestedAt === null) return !requested && range(branch.createdAt, row.createdAt.getTime());
+  return !!requested && range(branch.paymentRequestedAt, requested.getTime());
+}
+
 function matchesCreatedAt(row: Row, createdAt?: { gte?: Date; lte?: Date; lt?: Date }): boolean {
   if (!createdAt) return true;
   const t = row.createdAt.getTime();
@@ -31,6 +41,12 @@ function matchesCreatedAt(row: Row, createdAt?: { gte?: Date; lte?: Date; lt?: D
 
 const copy = (row: Row | undefined) => (row ? { ...row } : null);
 
+jest.mock('../../src/services/feeService', () => ({
+  getFeeStatus: jest.fn(async () => ({ owedKes: 0, restricted: false, restrictionMessage: null })),
+  getOutstandingFees: jest.fn(async () => ({ checkIns: [], totalKes: 0, oldestAt: null })),
+  settleOutstandingFees: jest.fn(async () => []),
+  liftRestrictionIfClear: jest.fn(async () => false),
+}));
 jest.mock('../../src/db/prisma', () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const prisma: any = {
@@ -53,6 +69,8 @@ jest.mock('../../src/db/prisma', () => {
       findMany: jest.fn(async ({ where }) =>
         [...db.checkIns.values()]
           .filter((r) => matchesStatus(r, where.status) && matchesCreatedAt(r, where.createdAt))
+          // The sweep times out from paymentRequestedAt, falling back to createdAt.
+          .filter((r) => !where.OR || (where.OR as Record<string, unknown>[]).some((branch) => matchesTimeBranch(r, branch)))
           .filter((r) => !where.mpesaCheckoutRequestId || r.mpesaCheckoutRequestId)
           .map((r) => ({ ...r })),
       ),
@@ -506,5 +524,19 @@ describe('staff confirming the fee with the M-Pesa code', () => {
     await expect(confirmCheckInPaidManually('ci-1', 'clinic-A', 'staff-1', 'QAB12CD34E')).rejects.toThrow(
       'Check-in not found',
     );
+  });
+});
+
+describe('pay later: a confirmed payment (C20)', () => {
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const fees = require('../../src/services/feeService');
+  /* eslint-enable @typescript-eslint/no-require-imports */
+
+  it('does not start a second visit for a patient already in the queue, settles older fees and can lift a restriction', async () => {
+    addCheckIn({ id: 'ci-pl', createdAt: minutesAgo(2), queuedBeforePaymentAt: minutesAgo(2), includesOutstandingKes: 100 });
+    await applyPaymentResult(callback('ci-pl', 0), {}, 'callback');
+    expect(db.encounters).toHaveLength(0);
+    expect(fees.settleOutstandingFees).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: 'ci-pl', includesOutstandingKes: 100 }));
+    expect(fees.liftRestrictionIfClear).toHaveBeenCalledWith('patient-1');
   });
 });

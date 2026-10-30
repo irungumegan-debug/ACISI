@@ -26,7 +26,7 @@ export function startSmsReceiptWorker(): Worker<SmsReceiptJobData> {
 
       const message = job.data.succeeded
         ? `ACISI: Check-in confirmed at ${checkIn.clinic.name}. Payment of KES ${checkIn.amountKes} received. Thank you.`
-        : `ACISI: Your check-in payment at ${checkIn.clinic.name} was not completed. Please try again at reception.`;
+        : `ACISI: Your check-in fee payment at ${checkIn.clinic.name} did not go through. You are still in the queue. You can pay it from your ACISI profile.`;
 
       // Not essential: respects "does not want SMS" (C13).
       const outcome = await sendPatientSms(checkIn.patient, message, { purpose: 'CHECK_IN_FEE_RECEIPT' });

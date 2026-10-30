@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { Router } from 'express';
+import { getFeeStatus } from '../services/feeService';
 import { z } from 'zod';
 import { prisma } from '../db/prisma';
 import { requirePatientSession, AuthenticatedPatientRequest } from './auth';
@@ -105,6 +106,9 @@ async function describeOwnCheckIn(checkInId: string, patientId: string) {
   return {
     checkInId: checkIn.id,
     status: checkIn.status,
+    /** Pay later (C20): already in the queue while the fee is still being confirmed. */
+    inQueue: checkIn.encounter !== null,
+    amountKes: Number(checkIn.amountKes),
     clinicName: checkIn.clinic.name,
     departmentName: checkIn.department.name,
     queuePosition: checkIn.encounter ? await queuePositionFor(checkIn.encounter, checkIn.departmentId) : null,
@@ -171,6 +175,14 @@ portalCheckinRouter.post('/', async (req, res) => {
   const active = await findActiveCheckInToday(patient.id, clinic.id);
   if (active) {
     res.status(200).json({ ...(await describeOwnCheckIn(active.id, patient.id)), existing: true });
+    return;
+  }
+
+  // C20: remote check-in is blocked while the account is restricted over an
+  // unpaid ACISI fee. Being seen as a walk-in at the desk is never affected.
+  const fees = await getFeeStatus(patient.id);
+  if (fees.restricted) {
+    res.status(403).json({ error: fees.restrictionMessage, code: 'FEE_RESTRICTED' });
     return;
   }
 

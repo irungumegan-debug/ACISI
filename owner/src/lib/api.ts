@@ -128,6 +128,14 @@ export const api = {
   overview() {
     return request<Overview>('/overview');
   },
+  pendingFees() {
+    return request<{
+      rows: { patientCode: string; owedKes: number; oldestAt: string; restricted: boolean; count: number }[];
+      totalKes: number;
+      restrictedCount: number;
+      restrictionEnabled: boolean;
+    }>('/pending-fees');
+  },
   smsHealth() {
     return request<SmsHealth>('/overview/sms-health');
   },
