@@ -124,7 +124,7 @@ export async function registerClinic(input: RegisterClinicInput): Promise<Regist
     action: 'CLINIC_REGISTERED',
     entityType: 'Clinic',
     entityId: clinic.id,
-    metadata: { departments: (input.departments ?? []).map((d) => d.name) },
+    metadata: { departmentCodes: (input.departments ?? []).map((d) => d.code) },
   });
 
   return { clinic, adminStaffId: adminStaff.id, adminStaffCode: adminStaff.staffCode };

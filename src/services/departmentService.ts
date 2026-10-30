@@ -220,7 +220,7 @@ export async function createDepartment(input: NewDepartmentInput & { clinicId: s
     action: 'DEPARTMENT_CREATED',
     entityType: 'Department',
     entityId: created.id,
-    metadata: { name, code, consultationFeeKes: created.consultationFeeKes },
+    metadata: { code, consultationFeeKes: created.consultationFeeKes },
   });
   return { id: created.id, name: created.name, code: created.code, consultationFeeKes: created.consultationFeeKes };
 }
@@ -280,7 +280,10 @@ export async function updateDepartment(input: {
     action: patch.isActive === false ? 'DEPARTMENT_DEACTIVATED' : patch.isActive === true ? 'DEPARTMENT_REACTIVATED' : 'DEPARTMENT_UPDATED',
     entityType: 'Department',
     entityId: department.id,
-    metadata: { before: { name: department.name, code: department.code, consultationFeeKes: department.consultationFeeKes, isActive: department.isActive }, patch },
+    metadata: {
+      before: { code: department.code, consultationFeeKes: department.consultationFeeKes, isActive: department.isActive },
+      changed: Object.keys(patch),
+    },
   });
   return { id: updated.id, name: updated.name, code: updated.code, consultationFeeKes: updated.consultationFeeKes, isActive: updated.isActive };
 }
@@ -304,7 +307,7 @@ export async function deleteDepartment(input: { departmentId: string; clinicId: 
     action: 'DEPARTMENT_DELETED',
     entityType: 'Department',
     entityId: department.id,
-    metadata: { name: department.name, code: department.code },
+    metadata: { code: department.code },
   });
 }
 

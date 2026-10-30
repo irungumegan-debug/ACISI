@@ -665,7 +665,8 @@ export async function voidPayment(input: { paymentId: string; clinicId: string; 
     action: 'PAYMENT_VOIDED',
     entityType: 'Payment',
     entityId: input.paymentId,
-    metadata: { reason },
+    // The reason is free text and stays on the payment row, not in the audit trail.
+    metadata: { billId: bill.id },
   });
   return bill;
 }
