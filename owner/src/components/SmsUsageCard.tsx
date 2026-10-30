@@ -5,7 +5,11 @@ import { Button, Card, ErrorText } from './ui';
 
 function monthName(month: string): string {
   const [y, m] = month.split('-').map(Number);
-  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-KE', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-KE', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
 }
 
 function UsageRow({ label, usage }: { label: string; usage: SmsUsage }) {
@@ -16,10 +20,18 @@ function UsageRow({ label, usage }: { label: string; usage: SmsUsage }) {
         <div className="text-xs text-stone-500">{monthName(usage.month)}</div>
       </td>
       <td className="py-2 pr-3 text-right tabular-nums">{usage.messages.toLocaleString()}</td>
-      <td className="py-2 pr-3 text-right font-medium tabular-nums text-stone-900">{usage.sms.toLocaleString()}</td>
+      <td className="py-2 pr-3 text-right font-medium tabular-nums text-stone-900">
+        {usage.sms.toLocaleString()}
+      </td>
       <td className="py-2 pr-3 text-right tabular-nums">{usage.allowance.toLocaleString()}</td>
-      <td className={`py-2 pr-3 text-right tabular-nums ${usage.over ? 'font-medium text-red-700' : ''}`}>{usage.over.toLocaleString()}</td>
-      <td className={`py-2 text-right tabular-nums ${usage.extraChargeKes ? 'font-medium text-red-700' : ''}`}>{formatKes(usage.extraChargeKes)}</td>
+      <td className={`py-2 pr-3 text-right tabular-nums ${usage.over ? 'font-medium text-red-700' : ''}`}>
+        {usage.over.toLocaleString()}
+      </td>
+      <td
+        className={`py-2 text-right tabular-nums ${usage.extraChargeKes ? 'font-medium text-red-700' : ''}`}
+      >
+        {formatKes(usage.extraChargeKes)}
+      </td>
     </tr>
   );
 }
@@ -66,14 +78,10 @@ export function SmsUsageCard({ clinic, onChanged }: { clinic: ClinicDetail; onCh
     <Card title="SMS to patients">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm">
         <p className="text-stone-600">
-          Plan: <span className="font-medium text-stone-900">{clinic.planLabel}</span> · {clinic.smsMonthlyAllowance.toLocaleString()} SMS a month.
-          Extra SMS are KES 2 each.
+          Plan: <span className="font-medium text-stone-900">{clinic.planLabel}</span> ·{' '}
+          {clinic.smsMonthlyAllowance.toLocaleString()} SMS a month. Extra SMS are KES 2 each.
         </p>
-        {!editing && (
-          <Button onClick={startEditing}>
-            Change plan
-          </Button>
-        )}
+        {!editing && <Button onClick={startEditing}>Change plan</Button>}
       </div>
 
       {editing && (
@@ -136,8 +144,9 @@ export function SmsUsageCard({ clinic, onChanged }: { clinic: ClinicDetail; onCh
         </table>
       </div>
       <p className="mt-2 text-xs text-stone-500">
-        Counts receipts, appointment reminders and walk-in invitations. Long messages count as more than one SMS. Security codes (PIN reset,
-        phone verification) are not counted. Last month is shown against today's allowance.
+        Counts receipts, appointment reminders and walk-in invitations. Long messages count as more than one
+        SMS. Security codes (PIN reset, phone verification) are not counted. Last month is shown against
+        today's allowance.
       </p>
     </Card>
   );

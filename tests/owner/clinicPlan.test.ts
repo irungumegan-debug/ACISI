@@ -41,7 +41,10 @@ describe('owner changes a clinic plan (C24)', () => {
     const res = await patchPlan({ plan: 'CLINIC' });
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ id: 'c1', plan: 'CLINIC', planLabel: 'Clinic', smsMonthlyAllowance: 1500 });
-    expect(clinicUpdate).toHaveBeenCalledWith({ where: { id: 'c1' }, data: { plan: 'CLINIC', smsMonthlyAllowance: 1500 } });
+    expect(clinicUpdate).toHaveBeenCalledWith({
+      where: { id: 'c1' },
+      data: { plan: 'CLINIC', smsMonthlyAllowance: 1500 },
+    });
     expect(recordAuditEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         actorType: 'OWNER',
@@ -58,7 +61,12 @@ describe('owner changes a clinic plan (C24)', () => {
     expect(res.body.smsMonthlyAllowance).toBe(5000);
   });
 
-  it.each([{ plan: 'GOLD' }, {}, { plan: 'CLINIC', smsMonthlyAllowance: -1 }, { plan: 'CLINIC', smsMonthlyAllowance: 2.5 }])('refuses %p', async (body) => {
+  it.each([
+    { plan: 'GOLD' },
+    {},
+    { plan: 'CLINIC', smsMonthlyAllowance: -1 },
+    { plan: 'CLINIC', smsMonthlyAllowance: 2.5 },
+  ])('refuses %p', async (body) => {
     expect((await patchPlan(body)).status).toBe(400);
     expect(clinicUpdate).not.toHaveBeenCalled();
   });

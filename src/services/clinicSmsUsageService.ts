@@ -39,7 +39,10 @@ export function overage(sms: number, allowance: number): { over: number; extraCh
   return { over, extraChargeKes: over * SMS_OVERAGE_KES };
 }
 
-async function countFor(clinicIds: string[], month: string): Promise<Map<string, { messages: number; sms: number }>> {
+async function countFor(
+  clinicIds: string[],
+  month: string,
+): Promise<Map<string, { messages: number; sms: number }>> {
   const { start, end } = kenyaMonthRange(month);
   const rows = await prisma.clinicSmsMessage.groupBy({
     by: ['clinicId'],
@@ -51,12 +54,21 @@ async function countFor(clinicIds: string[], month: string): Promise<Map<string,
 }
 
 /** Usage for several clinics in one month, using each clinic's current allowance. */
-export async function getSmsUsage(clinics: { id: string; smsMonthlyAllowance: number }[], month: string): Promise<Map<string, SmsUsage>> {
-  const counts = await countFor(clinics.map((c) => c.id), month);
+export async function getSmsUsage(
+  clinics: { id: string; smsMonthlyAllowance: number }[],
+  month: string,
+): Promise<Map<string, SmsUsage>> {
+  const counts = await countFor(
+    clinics.map((c) => c.id),
+    month,
+  );
   return new Map(
     clinics.map((c) => {
       const { messages, sms } = counts.get(c.id) ?? { messages: 0, sms: 0 };
-      return [c.id, { month, messages, sms, allowance: c.smsMonthlyAllowance, ...overage(sms, c.smsMonthlyAllowance) }];
+      return [
+        c.id,
+        { month, messages, sms, allowance: c.smsMonthlyAllowance, ...overage(sms, c.smsMonthlyAllowance) },
+      ];
     }),
   );
 }
