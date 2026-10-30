@@ -122,6 +122,7 @@ jest.mock('../../src/services/realtimeEvents', () => ({
   publishCheckInFailed: jest.fn(),
 }));
 jest.mock('../../src/jobs/queue', () => ({ enqueueSmsReceipt: jest.fn() }));
+jest.mock('../../src/services/mpesaHealth', () => ({ notePromptFailed: jest.fn(), notePromptResult: jest.fn() }));
 jest.mock('../../src/services/doctorAssignmentService', () => ({ assignDoctorForCheckIn: jest.fn() }));
 jest.mock('../../src/services/appointmentService', () => ({
   findArrivalMatch: jest.fn(),
@@ -138,6 +139,7 @@ import { queryStkPushStatus } from '../../src/mpesa/verify';
 import { recordAuditEvent } from '../../src/services/auditService';
 import { publishCheckInFailed, publishCheckInPaid } from '../../src/services/realtimeEvents';
 import { enqueueSmsReceipt } from '../../src/jobs/queue';
+import { notePromptFailed, notePromptResult } from '../../src/services/mpesaHealth';
 import { assignDoctorForCheckIn } from '../../src/services/doctorAssignmentService';
 import { logger } from '../../src/utils/logger';
 import {
@@ -538,5 +540,34 @@ describe('pay later: a confirmed payment (C20)', () => {
     expect(db.encounters).toHaveLength(0);
     expect(fees.settleOutstandingFees).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: 'ci-pl', includesOutstandingKes: 100 }));
     expect(fees.liftRestrictionIfClear).toHaveBeenCalledWith('patient-1');
+  });
+});
+
+describe('owner warning when M-Pesa prompts keep failing (C20)', () => {
+  it('reports the answer that decided the check-in: success or failure code', async () => {
+    addCheckIn({ id: 'ci-1' });
+    addCheckIn({ id: 'ci-2' });
+    await applyPaymentResult(callback('ci-1', 0), {}, 'callback');
+    await applyPaymentResult(callback('ci-2', 1037), {}, 'callback');
+    expect((notePromptResult as jest.Mock).mock.calls).toEqual([[0], [1037]]);
+  });
+
+  it('a duplicate or late answer that changes nothing is not counted again', async () => {
+    addCheckIn({ status: 'PAID' });
+    await applyPaymentResult(callback('ci-1', 0), {}, 'callback');
+    expect(notePromptResult).not.toHaveBeenCalled();
+  });
+
+  it('no answer within the hour (NEEDS_REVIEW) counts as a time-out', async () => {
+    addCheckIn({ id: 'ci-61min', createdAt: minutesAgo(61) });
+    await sweepPendingCheckInPayments(NOW);
+    expect(notePromptFailed).toHaveBeenCalledTimes(1);
+  });
+
+  it('staff confirming a fee by M-Pesa code says nothing about the prompt', async () => {
+    addCheckIn({ status: 'FAILED' });
+    await confirmCheckInPaidManually('ci-1', 'clinic-A', 'staff-1', 'QAB12CD34E').catch(() => undefined);
+    expect(notePromptResult).not.toHaveBeenCalled();
+    expect(notePromptFailed).not.toHaveBeenCalled();
   });
 });
