@@ -3,6 +3,8 @@ import { prisma } from '../db/prisma';
 import { recordAuditEvent } from '../services/auditService';
 import { revokeSessionsFor } from '../services/sessionRevocation';
 import { AuthenticatedOwnerRequest } from './auth';
+import { CLINIC_PLANS } from '../config/constants';
+import { getSmsUsage, kenyaMonth, planLabel } from '../services/clinicSmsUsageService';
 
 export const ownerClinicsRouter = Router();
 
@@ -58,6 +60,7 @@ ownerClinicsRouter.get('/', async (req, res) => {
   for (const r of staffByRole.filter((s) => s.role !== 'DOCTOR')) {
     otherStaff.set(r.clinicId, (otherStaff.get(r.clinicId) ?? 0) + r._count._all);
   }
+  const smsThisMonth = await getSmsUsage(clinics, kenyaMonth());
 
   res.json({
     clinics: clinics.map((c) => ({
@@ -73,6 +76,10 @@ ownerClinicsRouter.get('/', async (req, res) => {
       visitsLast30Days: visitLast30.get(c.id) ?? 0,
       revenueKes: revenueTotal.get(c.id) ?? 0,
       revenueLast30DaysKes: revenueLast30.get(c.id) ?? 0,
+      plan: c.plan,
+      planLabel: planLabel(c.plan),
+      smsMonthlyAllowance: c.smsMonthlyAllowance,
+      smsThisMonth: smsThisMonth.get(c.id) ?? null,
     })),
   });
 });
@@ -117,6 +124,11 @@ ownerClinicsRouter.get('/:id', async (req, res) => {
     }),
   ]);
   const consultations = new Map(visitsByDoctor.map((r) => [r.consultedByStaffId, r._count._all]));
+  const now = new Date();
+  const [smsThisMonth, smsLastMonth] = await Promise.all([
+    getSmsUsage([clinic], kenyaMonth(now)),
+    getSmsUsage([clinic], kenyaMonth(now, -1)),
+  ]);
 
   res.json({
     id: clinic.id,
@@ -131,6 +143,11 @@ ownerClinicsRouter.get('/:id', async (req, res) => {
     upcomingAppointments,
     revenueKes: Number(revenueAll._sum.amountKes ?? 0),
     revenueLast30DaysKes: Number(revenue30._sum.amountKes ?? 0),
+    plan: clinic.plan,
+    planLabel: planLabel(clinic.plan),
+    smsMonthlyAllowance: clinic.smsMonthlyAllowance,
+    // C24: SMS sent to patients on this clinic's behalf. Owner only; clinic admins never see it.
+    smsUsage: { thisMonth: smsThisMonth.get(clinic.id), lastMonth: smsLastMonth.get(clinic.id) },
     departments: clinic.departments.map((d) => ({ id: d.id, name: d.name, code: d.code, isActive: d.isActive })),
     staff: clinic.staff.map((s) => ({
       id: s.id,
@@ -187,4 +204,57 @@ ownerClinicsRouter.post('/:id/reactivate', async (req, res) => {
     return;
   }
   res.json({ id: clinic.id, isActive: clinic.isActive });
+});
+
+const MAX_SMS_ALLOWANCE = 1_000_000;
+
+/**
+ * C24: set a clinic's plan and monthly SMS allowance. The allowance defaults
+ * to the plan's (Starter 500, Clinic 1,500, Clinic Plus 4,000) but can be set
+ * to a custom figure. Logged with the old and new values.
+ */
+ownerClinicsRouter.patch('/:id/plan', async (req, res) => {
+  const ownerReq = req as unknown as AuthenticatedOwnerRequest;
+  const { plan, smsMonthlyAllowance } = (req.body ?? {}) as { plan?: unknown; smsMonthlyAllowance?: unknown };
+  if (typeof plan !== 'string' || !Object.prototype.hasOwnProperty.call(CLINIC_PLANS, plan)) {
+    res.status(400).json({ error: `Plan must be one of: ${Object.keys(CLINIC_PLANS).join(', ')}` });
+    return;
+  }
+  const planKey = plan as keyof typeof CLINIC_PLANS;
+  let allowance: number = CLINIC_PLANS[planKey].smsAllowance;
+  if (smsMonthlyAllowance !== undefined && smsMonthlyAllowance !== null && smsMonthlyAllowance !== '') {
+    const n = Number(smsMonthlyAllowance);
+    if (!Number.isInteger(n) || n < 0 || n > MAX_SMS_ALLOWANCE) {
+      res.status(400).json({ error: 'SMS allowance must be a whole number of 0 or more' });
+      return;
+    }
+    allowance = n;
+  }
+
+  const clinic = await prisma.clinic.findUnique({ where: { id: req.params.id } });
+  if (!clinic) {
+    res.status(404).json({ error: 'Clinic not found' });
+    return;
+  }
+
+  const updated = await prisma.clinic.update({
+    where: { id: clinic.id },
+    data: { plan: planKey, smsMonthlyAllowance: allowance },
+  });
+  await recordAuditEvent({
+    actorType: 'OWNER',
+    actorId: ownerReq.ownerSession.ownerId,
+    action: 'OWNER_CLINIC_PLAN_CHANGED',
+    entityType: 'Clinic',
+    entityId: clinic.id,
+    clinicId: clinic.id,
+    metadata: {
+      fromPlan: clinic.plan,
+      toPlan: planKey,
+      fromSmsAllowance: clinic.smsMonthlyAllowance,
+      toSmsAllowance: allowance,
+    },
+  });
+
+  res.json({ id: updated.id, plan: updated.plan, planLabel: planLabel(updated.plan), smsMonthlyAllowance: updated.smsMonthlyAllowance });
 });
