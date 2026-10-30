@@ -118,10 +118,12 @@ export function PatientDetailPage() {
         </ol>
       )}
       {patient.hasHiddenHistoryElsewhere && (
-        <p className="mt-4 flex items-start gap-2 rounded-xl bg-cream-100 px-3.5 py-3 text-sm text-ink-500">
-          <Lock size={15} aria-hidden className="mt-0.5 flex-none" />
-          This patient has prior visits at other ACISI clinics, but they haven&apos;t consented to sharing that history
-          with this clinic.
+        <RecordsFromOtherClinics patientId={patient.id} canRequest={!isDoctor} onGranted={() => window.location.reload()} />
+      )}
+      {patient.crossClinicBasis && (
+        <p className="mt-4 text-xs text-ink-500">
+          Visits marked (shared) are from other clinics,{' '}
+          {patient.crossClinicBasis === 'STANDING_CONSENT' ? 'shown because the patient allows sharing.' : 'shown today with the code the patient gave.'}
         </p>
       )}
       </Card>
@@ -248,5 +250,87 @@ function IdentityCard({ patient, onSaved }: { patient: PatientDetail; onSaved: (
           </form>
         )}
     </Card>
+  );
+}
+
+/**
+ * The patient has not authorised sharing of records from other clinics:
+ * front desk can ask for a one-time code that the patient sees on their
+ * ACISI profile (and gets by SMS when it works), then enter it here.
+ */
+function RecordsFromOtherClinics({ patientId, canRequest, onGranted }: { patientId: string; canRequest: boolean; onGranted: () => void }) {
+  const [requested, setRequested] = useState<null | { smsSent: boolean }>(null);
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function request(): Promise<void> {
+    setBusy(true);
+    setError(null);
+    try {
+      setRequested(await api.requestRecords(patientId));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not send the request.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function verify(e: FormEvent): Promise<void> {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await api.verifyRecordsCode(patientId, code.trim());
+      onGranted();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not check the code.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-4 rounded-xl bg-cream-100 px-3.5 py-3 text-sm text-ink-700">
+      <p className="flex items-start gap-2">
+        <Lock size={15} aria-hidden className="mt-0.5 flex-none" />
+        This patient has not authorised sharing of records from other clinics.
+      </p>
+      {canRequest && !requested && (
+        <button type="button" className={`${btn.secondary} mt-3`} disabled={busy} onClick={() => void request()}>
+          Request records
+        </button>
+      )}
+      {canRequest && requested && (
+        <form className="mt-3 space-y-2" onSubmit={(e) => void verify(e)}>
+          <p className="text-xs text-ink-500">
+            {requested.smsSent
+              ? 'A code was sent to the patient by SMS. They can also tap "Show my code" on their ACISI profile.'
+              : 'Ask the patient to open their ACISI profile and tap "Show my code" (the SMS could not be sent).'}{' '}
+            Only enter it if the patient reads it to you. Access lasts until the end of today.
+          </p>
+          <label className="block text-xs font-semibold text-navy-900" htmlFor="share-code">
+            Code from the patient
+          </label>
+          <input
+            id="share-code"
+            inputMode="numeric"
+            autoComplete="off"
+            maxLength={6}
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+            className="min-h-11 w-40 rounded-xl border border-slate-300 px-3 font-mono text-lg tracking-widest"
+          />
+          <button type="submit" className={`${btn.gold} ml-2`} disabled={busy || code.length !== 6}>
+            Check code
+          </button>
+        </form>
+      )}
+      {error && (
+        <p role="alert" className="mt-2 text-sm text-red-700">
+          {error}
+        </p>
+      )}
+    </div>
   );
 }

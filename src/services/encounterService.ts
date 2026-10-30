@@ -1,4 +1,5 @@
-import { Encounter, EncounterStatus, Prisma } from '@prisma/client';
+import { Encounter, EncounterStatus } from '@prisma/client';
+import { doctorQueueFilter } from './doctorScope';
 import { prisma } from '../db/prisma';
 import { recordAuditEvent } from './auditService';
 import { clearLockout, isLockedOut, lockoutMessage, recordWrongPin } from './pinLockout';
@@ -35,21 +36,7 @@ export interface DoctorQueueItem {
  * check-in time) still show up for every doctor in the department, same as
  * behavior before assignment existed.
  */
-/**
- * The one definition of "currently in this doctor's queue": at their clinic,
- * waiting or in consultation, in one of their departments, and assigned to
- * them or to nobody. Every doctor-facing read of a patient goes through this
- * (queue, visit page, patient search and patient page), so a doctor can
- * never reach a patient outside it.
- */
-export function doctorQueueFilter(clinicId: string, departmentIds: string[], staffId: string): Prisma.EncounterWhereInput {
-  return {
-    clinicId,
-    status: { in: ['WAITING', 'IN_CONSULTATION'] },
-    checkIn: { departmentId: { in: departmentIds } },
-    OR: [{ assignedDoctorId: staffId }, { assignedDoctorId: null }],
-  };
-}
+export { doctorQueueFilter } from './doctorScope';
 
 export async function getDoctorQueue(clinicId: string, departmentIds: string[], staffId: string): Promise<DoctorQueueItem[]> {
   const encounters = await prisma.encounter.findMany({
@@ -134,7 +121,12 @@ export async function getEncounterForDoctor(
     metadata: { viewedByClinicId: clinicId, channel: 'DOCTOR_DASHBOARD', encounterId: encounter.id },
   });
 
-  const { history, hasHiddenHistoryElsewhere } = await getScopedHistory(encounter.patientId, clinicId, { includeDiagnosis: true }, encounter.id);
+  const { history, hasHiddenHistoryElsewhere } = await getScopedHistory(
+    encounter.patientId,
+    clinicId,
+    { includeDiagnosis: true, viewer: { staffId: viewingStaffId, channel: 'DOCTOR_DASHBOARD' } },
+    encounter.id,
+  );
 
   return {
     encounterId: encounter.id,

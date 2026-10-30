@@ -87,6 +87,8 @@ export interface PatientDetail extends PatientIdentityRecord {
   smsOptOut: boolean;
   history: VisitHistoryEntry[];
   hasHiddenHistoryElsewhere: boolean;
+  /** How this clinic may see other clinics' visits right now, or null (own visits only). */
+  crossClinicBasis?: 'STANDING_CONSENT' | 'SHARING_CODE' | null;
 }
 
 export type CheckInStatus = 'PENDING_PAYMENT' | 'PAID' | 'FAILED' | 'CANCELLED' | 'NO_FEE' | 'NEEDS_REVIEW';
@@ -179,6 +181,8 @@ export interface EncounterDetail {
   status: EncounterStatus;
   history: HistoryEntry[];
   hasHiddenHistoryElsewhere: boolean;
+  /** How this clinic may see other clinics' visits right now, or null (own visits only). */
+  crossClinicBasis?: 'STANDING_CONSENT' | 'SHARING_CODE' | null;
 }
 
 export interface DepartmentOption {
@@ -485,6 +489,17 @@ export const api = {
 
   getPatient(id: string) {
     return request<PatientDetail>(`/patients/${id}`);
+  },
+
+  requestRecords(patientId: string) {
+    return request<{ smsSent: boolean }>(`/patients/${encodeURIComponent(patientId)}/record-requests`, { method: 'POST' });
+  },
+
+  verifyRecordsCode(patientId: string, code: string) {
+    return request<{ accessUntil: string }>(`/patients/${encodeURIComponent(patientId)}/record-requests/verify`, {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    });
   },
 
   /** Opens in a new tab for printing; the session cookie goes with it (same origin). */

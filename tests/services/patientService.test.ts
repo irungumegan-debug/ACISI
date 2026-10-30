@@ -7,9 +7,14 @@ jest.mock('../../src/db/prisma', () => ({
 }));
 
 jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
+jest.mock('../../src/services/recordSharingService', () => ({ crossClinicAccessBasis: jest.fn() }));
 
 import { prisma } from '../../src/db/prisma';
 import { findPatientByPhoneOrCode, getOwnVisitHistory, getScopedHistory } from '../../src/services/patientService';
+import { crossClinicAccessBasis } from '../../src/services/recordSharingService';
+import { recordAuditEvent } from '../../src/services/auditService';
+
+const mockBasis = crossClinicAccessBasis as jest.Mock;
 
 const mockFindManyEncounters = prisma.encounter.findMany as jest.Mock;
 const mockFindFirstConsent = prisma.consent.findFirst as jest.Mock;
@@ -50,20 +55,20 @@ describe('getScopedHistory', () => {
 
     expect(result.history).toHaveLength(1);
     expect(result.history[0]).toMatchObject({ isOwnClinic: true, diagnosis: 'Flu' });
-    expect(result.hasHiddenHistoryElsewhere).toBe(false);
-    expect(mockFindFirstConsent).not.toHaveBeenCalled(); // no other-clinic entries, so never even asks about consent
+    expect(result.history[0]).toMatchObject({ isOwnClinic: true });
   });
 
   it('hides other-clinic encounters and flags them when the patient has not consented', async () => {
     mockFindManyEncounters.mockResolvedValue([
       encounter({ id: 'enc-other', clinicId: 'clinic-B', clinic: { name: 'Baraka Health Centre' } }),
     ]);
-    mockFindFirstConsent.mockResolvedValue({ granted: false });
+    mockBasis.mockResolvedValue(null);
 
     const result = await getScopedHistory('patient-1', 'clinic-A', DOCTOR);
 
     expect(result.history).toHaveLength(0);
     expect(result.hasHiddenHistoryElsewhere).toBe(true);
+    expect(result.crossClinicBasis).toBeNull();
   });
 
   it('shows other-clinic encounters when the patient has consented', async () => {
@@ -71,7 +76,7 @@ describe('getScopedHistory', () => {
       encounter({ id: 'enc-own', clinicId: 'clinic-A' }),
       encounter({ id: 'enc-other', clinicId: 'clinic-B', clinic: { name: 'Baraka Health Centre' } }),
     ]);
-    mockFindFirstConsent.mockResolvedValue({ granted: true });
+    mockBasis.mockResolvedValue('STANDING_CONSENT');
 
     const result = await getScopedHistory('patient-1', 'clinic-A', DOCTOR);
 
@@ -161,5 +166,47 @@ describe('findPatientByPhoneOrCode', () => {
   it('returns null for something that is neither a phone number nor a patient ID', async () => {
     await expect(findPatientByPhoneOrCode('hello')).resolves.toBeNull();
     expect(mockFindPatient).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('cross-clinic records are only shown with authorisation, and every view is logged (C4)', () => {
+  const VIEWER = { includeDiagnosis: true, viewer: { staffId: 'staff-B', channel: 'DASHBOARD' } };
+  const OTHER = { id: 'enc-other', clinicId: 'clinic-B', clinic: { name: 'Baraka Health Centre' } };
+
+  it('no standing consent and no valid code: nothing from other clinics, even for a patient with history there', async () => {
+    mockFindManyEncounters.mockResolvedValue([encounter(), encounter(OTHER)]);
+    mockBasis.mockResolvedValue(null);
+    const result = await getScopedHistory('patient-1', 'clinic-A', VIEWER);
+    expect(result.history.map((h) => h.encounterId)).toEqual(['enc-own']);
+    expect(JSON.stringify(result)).not.toContain('Baraka');
+    expect(recordAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it('says "not authorised" the same way whether or not other-clinic records exist (no leak)', async () => {
+    mockBasis.mockResolvedValue(null);
+    mockFindManyEncounters.mockResolvedValue([encounter()]);
+    const without = await getScopedHistory('patient-1', 'clinic-A', VIEWER);
+    mockFindManyEncounters.mockResolvedValue([encounter(), encounter(OTHER)]);
+    const withOther = await getScopedHistory('patient-1', 'clinic-A', VIEWER);
+    expect(without.hasHiddenHistoryElsewhere).toBe(true);
+    expect(withOther.hasHiddenHistoryElsewhere).toBe(true);
+  });
+
+  it.each(['STANDING_CONSENT', 'SHARING_CODE'])('access by %s is shown and audit-logged with clinic, staff and basis', async (basis) => {
+    mockFindManyEncounters.mockResolvedValue([encounter(), encounter(OTHER)]);
+    mockBasis.mockResolvedValue(basis);
+    const result = await getScopedHistory('patient-1', 'clinic-A', VIEWER);
+    expect(result.history).toHaveLength(2);
+    expect(recordAuditEvent).toHaveBeenCalledWith({
+      actorType: 'STAFF',
+      actorId: 'staff-B',
+      staffId: 'staff-B',
+      clinicId: 'clinic-A',
+      action: 'CROSS_CLINIC_RECORDS_VIEWED',
+      entityType: 'Patient',
+      entityId: 'patient-1',
+      metadata: { basis, encounterCount: 1, channel: 'DASHBOARD' },
+    });
   });
 });

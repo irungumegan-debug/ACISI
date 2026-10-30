@@ -60,3 +60,11 @@ export const OTP_MAX_VERIFY_ATTEMPTS = 5;
 /** Guards against SMS-bombing a phone number with repeated OTP requests. */
 export const OTP_REQUEST_RATE_LIMIT_MAX_ATTEMPTS = 3;
 export const OTP_REQUEST_RATE_LIMIT_WINDOW_SECONDS = PIN_LOCKOUT.windowMinutes * 60;
+
+/** After this many SMS failures in a row, the owner page warns that Africa's Talking may be down. */
+export const SMS_FAILURE_WARNING_THRESHOLD = 3;
+
+/** A "Request records" or phone-verification code is valid this long after it is shown or sent. */
+export const ONE_TIME_CODE_TTL_SECONDS = 10 * 60;
+/** Wrong tries allowed on one such code before it stops working. */
+export const ONE_TIME_CODE_MAX_ATTEMPTS = 5;

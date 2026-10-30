@@ -76,6 +76,13 @@ export interface StaffSessionSummary {
   role: 'RECEPTIONIST' | 'CLINICIAN' | 'DOCTOR' | 'ADMIN';
 }
 
+export interface SharingOverview {
+  allowSharing: boolean;
+  accessToday: { clinicName: string; until: string }[];
+  decisions: { at: string; kind: 'ALLOWED' | 'NOT_ALLOWED' | 'ONE_DAY_CODE'; source: string; clinicName: string | null }[];
+  openRequests: { requestId: string; clinicName: string; requestedAt: string }[];
+}
+
 export const api = {
   // ---- Clinics ----
   listClinics() {
@@ -160,6 +167,22 @@ export const api = {
   },
 
   /** Permanently deletes the logged-in patient's account. Requires their PIN again. */
+  // ---- Sharing records with other clinics ----
+  getSharing() {
+    return request<SharingOverview>('/patients/sharing');
+  },
+
+  setSharing(allowSharing: boolean) {
+    return request<SharingOverview>('/patients/sharing', { method: 'PUT', body: JSON.stringify({ allowSharing }) });
+  },
+
+  showSharingCode(requestId: string) {
+    return request<{ code: string; expiresAt: string; clinicName: string }>(
+      `/patients/sharing/requests/${encodeURIComponent(requestId)}/code`,
+      { method: 'POST' },
+    );
+  },
+
   deletePatientAccount(pin: string) {
     return request<void>('/patients/account/delete', { method: 'POST', body: JSON.stringify({ pin }) });
   },

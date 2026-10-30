@@ -172,7 +172,7 @@ function PatientSignupForm({ onBack }: { onBack: () => void }) {
       </div>
       <label style={{ display: 'flex', gap: 8, fontSize: 13, color: 'var(--ink-dim)', marginBottom: 16, alignItems: 'flex-start' }}>
         <input type="checkbox" checked={crossClinicConsent} onChange={(e) => setCrossClinicConsent(e.target.checked)} style={{ width: 'auto', marginTop: 3 }} />
-        <span>Share my records with other ACISI-connected clinics too (optional — off by default, you can check in elsewhere either way).</span>
+        <span>Allow ACISI clinics I visit to see my records from other ACISI clinics (optional, off by default). You can change this any time in your Account. If you leave it off, a clinic can only see them if you give it a one-time code.</span>
       </label>
       <AcceptLegalCheckbox checked={acceptLegal} onChange={setAcceptLegal} />
 

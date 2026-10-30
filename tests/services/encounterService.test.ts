@@ -109,7 +109,7 @@ describe('getEncounterForDoctor (queue-scoping guarantee)', () => {
     expect(mockRecordAudit).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'PATIENT_HISTORY_VIEWED', entityId: 'patient-1', staffId: 'staff-1' }),
     );
-    expect(mockGetScopedHistory).toHaveBeenCalledWith('patient-1', 'clinic-A', { includeDiagnosis: true }, 'enc-1');
+    expect(mockGetScopedHistory).toHaveBeenCalledWith('patient-1', 'clinic-A', { includeDiagnosis: true, viewer: { staffId: 'staff-1', channel: 'DOCTOR_DASHBOARD' } }, 'enc-1');
     expect(detail.status).toBe('IN_CONSULTATION');
     expect(detail.hasHiddenHistoryElsewhere).toBe(true);
   });

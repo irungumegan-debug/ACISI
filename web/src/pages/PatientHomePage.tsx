@@ -3,6 +3,7 @@ import { api, ApiError, CheckInSummary, ClinicListItem, DepartmentListItem, OwnA
 import { usePatientAuth } from '../context/PatientAuthContext';
 import { legalBoxSatisfied, PRIVACY_PATH, TERMS_PATH } from '../lib/legal';
 import { EMPTY_IDENTITY, IdentityFields } from '../components/IdentityFields';
+import { RecordRequestsNotice, SharingPanel } from '../components/RecordSharing';
 import type { PatientIdentity } from '../lib/api';
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -75,6 +76,8 @@ export function PatientHomePage() {
           </button>
         ))}
       </nav>
+
+      <RecordRequestsNotice />
 
       {tab === 'checkin' && <CheckInPanel patientCode={session?.patientCode ?? ''} />}
       {tab === 'book' && <BookAppointmentPanel patientCode={session?.patientCode ?? ''} />}
@@ -704,6 +707,7 @@ function AccountPanel({ patientCode }: { patientCode: string }) {
       <p className="lede">
         Patient ID <strong>{patientCode}</strong>
       </p>
+      <SharingPanel />
       <div className="panel">
         <h2>Legal</h2>
         <p>How ACISI and your clinics use your data, and the terms you agreed to.</p>

@@ -1,7 +1,8 @@
-import { Router } from 'express';
+import { Response, Router } from 'express';
+import { enterRecordAccessCode, RecordSharingError, requestRecords } from '../services/recordSharingService';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../db/prisma';
-import { doctorQueueFilter } from '../services/encounterService';
+import { doctorQueueFilter } from '../services/doctorScope';
 import { getDoctorDepartmentIds } from '../services/departmentService';
 import { buildVisitRecordDataFromEncounter, renderVisitRecordPdf } from '../services/visitRecordDocument';
 import { requireStaffSession, AuthenticatedRequest } from './auth';
@@ -86,7 +87,10 @@ patientsRouter.get('/:id', async (req, res) => {
   }
 
   const isDoctor = (req as unknown as AuthenticatedRequest).dashboardSession.role === 'DOCTOR';
-  const { history, hasHiddenHistoryElsewhere } = await getScopedHistory(patient.id, clinicId, { includeDiagnosis: isDoctor });
+  const { history, hasHiddenHistoryElsewhere, crossClinicBasis } = await getScopedHistory(patient.id, clinicId, {
+    includeDiagnosis: isDoctor,
+    viewer: { staffId, channel: 'DASHBOARD' },
+  });
 
   await recordAuditEvent({
     actorType: 'STAFF',
@@ -109,6 +113,7 @@ patientsRouter.get('/:id', async (req, res) => {
     ...identityView(patient),
     history,
     hasHiddenHistoryElsewhere,
+    crossClinicBasis,
   });
 });
 
@@ -246,4 +251,53 @@ patientsRouter.get('/:id/visits/:encounterId/record', async (req, res) => {
     'Cache-Control': 'no-store',
   });
   res.send(pdf);
+});
+
+function sendSharingError(err: unknown, res: Response): boolean {
+  if (err instanceof RecordSharingError) {
+    res.status(err.status).json({ error: err.message });
+    return true;
+  }
+  return false;
+}
+
+/**
+ * "Request records": for a patient who has not authorised sharing, ask them
+ * for a one-time code (on their web profile, and by SMS when it works).
+ * Front-desk roles only.
+ */
+patientsRouter.post('/:id/record-requests', async (req, res) => {
+  const { clinicId, staffId, role } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  if (role === 'DOCTOR') {
+    res.status(403).json({ error: 'Records are requested at the front desk' });
+    return;
+  }
+  try {
+    const { sms } = await requestRecords({ patientId: req.params.id as string, clinicId, staffId });
+    res.status(201).json({ smsSent: sms === 'sent' });
+  } catch (err) {
+    if (!sendSharingError(err, res)) throw err;
+  }
+});
+
+const shareCodeSchema = z.object({ code: z.string().trim().regex(/^\d{6}$/, 'The code is 6 digits') });
+
+/** Front desk entering the code the patient read out. */
+patientsRouter.post('/:id/record-requests/verify', async (req, res) => {
+  const { clinicId, staffId, role } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  if (role === 'DOCTOR') {
+    res.status(403).json({ error: 'Records are requested at the front desk' });
+    return;
+  }
+  const parsed = shareCodeSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Enter the 6-digit code' });
+    return;
+  }
+  try {
+    const { accessUntil } = await enterRecordAccessCode({ patientId: req.params.id as string, clinicId, staffId, code: parsed.data.code });
+    res.json({ accessUntil });
+  } catch (err) {
+    if (!sendSharingError(err, res)) throw err;
+  }
 });

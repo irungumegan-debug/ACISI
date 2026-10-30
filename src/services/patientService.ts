@@ -1,5 +1,6 @@
 import bcrypt from 'bcrypt';
 import { clearLockout } from './pinLockout';
+import { crossClinicAccessBasis, CrossClinicBasis } from './recordSharingService';
 import { revokeSessionsFor } from './sessionRevocation';
 import { Patient, Sex } from '@prisma/client';
 import { prisma } from '../db/prisma';
@@ -275,10 +276,18 @@ export interface ScopedHistoryEntry {
 export interface ScopedHistoryOptions {
   /** Doctors only. Front desk never receives a diagnosis from the server. */
   includeDiagnosis: boolean;
+  /** Who is looking, for the audit row written whenever other clinics' records are shown. */
+  viewer?: { staffId: string; channel: string };
 }
 
 export interface ScopedHistory {
   history: ScopedHistoryEntry[];
+  /**
+   * How this clinic may see records from other clinics right now: the
+   * patient's standing consent, a "Request records" code used today, or
+   * null (not authorised: own-clinic visits only).
+   */
+  crossClinicBasis: CrossClinicBasis | null;
   /** True when the patient has encounters at other clinics that exist but aren't shown, because they haven't consented to cross-clinic sharing. */
   hasHiddenHistoryElsewhere: boolean;
 }
@@ -312,10 +321,25 @@ export async function getScopedHistory(
 
   const ownClinicEntries = encounters.filter((e) => e.clinicId === viewingClinicId);
   const otherClinicEntries = encounters.filter((e) => e.clinicId !== viewingClinicId);
-  const hasConsent = otherClinicEntries.length > 0 ? await hasActiveDataSharingConsent(patientId) : true;
+  const crossClinicBasis = await crossClinicAccessBasis(patientId, viewingClinicId);
 
-  const visible = hasConsent ? [...ownClinicEntries, ...otherClinicEntries] : ownClinicEntries;
+  const visible = crossClinicBasis ? [...ownClinicEntries, ...otherClinicEntries] : ownClinicEntries;
   visible.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+  // Every time other clinics' records are actually shown: which clinic,
+  // which staff member, and whether by standing consent or by code.
+  if (crossClinicBasis && otherClinicEntries.length > 0 && options.viewer) {
+    await recordAuditEvent({
+      actorType: 'STAFF',
+      actorId: options.viewer.staffId,
+      staffId: options.viewer.staffId,
+      clinicId: viewingClinicId,
+      action: 'CROSS_CLINIC_RECORDS_VIEWED',
+      entityType: 'Patient',
+      entityId: patientId,
+      metadata: { basis: crossClinicBasis, encounterCount: otherClinicEntries.length, channel: options.viewer.channel },
+    });
+  }
 
   return {
     history: visible.map((e) => ({
@@ -327,6 +351,9 @@ export async function getScopedHistory(
       doctorName: e.consultedByStaff?.name ?? e.assignedDoctor?.name ?? null,
       isOwnClinic: e.clinicId === viewingClinicId,
     })),
-    hasHiddenHistoryElsewhere: !hasConsent && otherClinicEntries.length > 0,
+    crossClinicBasis,
+    // Not authorised -> always true, whether or not other records exist, so
+    // the screen never reveals that a patient has been to another clinic.
+    hasHiddenHistoryElsewhere: crossClinicBasis === null,
   };
 }
