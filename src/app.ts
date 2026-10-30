@@ -17,9 +17,11 @@ import { ownerRouter } from './owner/router';
 import { requestLogger } from './middleware/requestLogger';
 import { errorHandler } from './middleware/errorHandler';
 import { logger } from './utils/logger';
+import { env } from './config/env';
 
 export function createApp(): Express {
   const app = express();
+  app.disable('x-powered-by');
 
   // Railway (and most PaaS hosts) terminate TLS at an edge proxy and forward
   // requests to this process over plain HTTP, setting X-Forwarded-Proto to
@@ -37,7 +39,11 @@ export function createApp(): Express {
     res.status(200).json({ status: 'ok' });
   });
 
-  app.use('/api/ussd', ussdRouter);
+  // Off unless USSD_ENABLED=true (see env.ts): with it off, Africa's
+  // Talking (or anyone else) gets a plain 404 and no USSD menu runs.
+  if (env.USSD_ENABLED) {
+    app.use('/api/ussd', ussdRouter);
+  }
   app.use('/api/mpesa', mpesaRouter);
   app.use('/api/staff', dashboardRouter);
   app.use('/api/patients', portalRouter);

@@ -14,6 +14,13 @@ const envSchema = z.object({
   AT_USERNAME: z.string().min(1, 'AT_USERNAME is required'),
   AT_API_KEY: z.string().min(1, 'AT_API_KEY is required'),
   AT_USSD_SERVICE_CODE: z.string().optional(),
+  // USSD is not in use yet: /api/ussd answers 404 unless this is exactly
+  // "true". The USSD code itself stays in src/ussd/, untouched, ready to be
+  // switched back on.
+  USSD_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
 
   MPESA_ENV: z.enum(['sandbox', 'production']).default('sandbox'),
   MPESA_CONSUMER_KEY: z.string().min(1, 'MPESA_CONSUMER_KEY is required'),

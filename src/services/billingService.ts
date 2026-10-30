@@ -590,7 +590,7 @@ export async function applyClinicStkResult(result: ClinicStkResult): Promise<boo
     if (receipt) {
       const taken = await tx.payment.findUnique({ where: { mpesaReceiptNumber: receipt } });
       if (taken && taken.id !== payment.id) {
-        logger.warn({ paymentId: payment.id, receipt }, 'M-Pesa receipt already recorded on another payment; storing without code');
+        logger.warn({ paymentId: payment.id }, 'M-Pesa receipt already recorded on another payment; storing without code');
         receipt = null;
       }
     }
