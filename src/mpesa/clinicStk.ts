@@ -20,13 +20,32 @@ import { darajaTimestamp, logDarajaError } from './daraja';
 const CLINIC_SANDBOX_BASE_URL = 'https://sandbox.safaricom.co.ke';
 const TOKEN_CACHE_KEY = 'mpesa:clinic:access_token';
 
+/**
+ * Off whenever ACISI itself takes live payments (MPESA_ENV=production):
+ * this is a sandbox-only feature, so a live server never sends or checks a
+ * clinic sandbox prompt, whatever CLINIC_DARAJA_* holds.
+ */
 export function clinicStkConfigured(): boolean {
+  if (env.MPESA_ENV === 'production') return false;
   return Boolean(
     env.CLINIC_DARAJA_CONSUMER_KEY && env.CLINIC_DARAJA_CONSUMER_SECRET && env.CLINIC_DARAJA_PASSKEY && env.CLINIC_MPESA_CALLBACK_URL,
   );
 }
 
+export class ClinicStkDisabledError extends Error {
+  constructor() {
+    super('Clinic M-Pesa requests are switched off on this server');
+    this.name = 'ClinicStkDisabledError';
+  }
+}
+
+/** Second lock, in case a caller ever forgets to check clinicStkConfigured(). */
+function assertClinicStkAllowed(): void {
+  if (!clinicStkConfigured()) throw new ClinicStkDisabledError();
+}
+
 async function getClinicAccessToken(): Promise<string> {
+  assertClinicStkAllowed();
   const cached = await redis.get(TOKEN_CACHE_KEY);
   if (cached) return cached;
   const credentials = Buffer.from(`${env.CLINIC_DARAJA_CONSUMER_KEY}:${env.CLINIC_DARAJA_CONSUMER_SECRET}`).toString('base64');
