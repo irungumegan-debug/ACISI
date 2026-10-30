@@ -95,7 +95,7 @@ describe('POST /clinics/register', () => {
       adminPhoneNumber: '0712345678',
       adminPin: '730194',
       departments: [{ name: 'General' }, { name: 'Braces', code: 'brc', consultationFeeKes: 2000 }, { name: 'Invisalign' }],
-      acceptLegal: true,
+      acceptLegal: true, acceptConfidentiality: true,
     });
 
     expect(res.status).toBe(201);
@@ -123,7 +123,7 @@ describe('POST /clinics/register', () => {
       adminPhoneNumber: '0712345678',
       adminPin: '730194',
       departments: [{ name: 'General' }],
-      acceptLegal: true,
+      acceptLegal: true, acceptConfidentiality: true,
     });
     expect(res.status).toBe(409);
   });
@@ -142,12 +142,12 @@ describe('POST /clinics/register', () => {
     mockRegisterClinic.mockResolvedValue({ clinic: { name: 'Sunrise', inviteCode: 'SUN-1' }, adminStaffId: 's-1', adminStaffCode: 'ACI-STF-1' });
     const res = await request(buildApp())
       .post('/clinics/register')
-      .send({ name: 'Sunrise', adminName: 'Lisa Jane', adminPhoneNumber: '0712345678', adminPin: '730194', departments: [{ name: 'General' }], acceptLegal: true });
+      .send({ name: 'Sunrise', adminName: 'Lisa Jane', adminPhoneNumber: '0712345678', adminPin: '730194', departments: [{ name: 'General' }], acceptLegal: true, acceptConfidentiality: true });
     expect(res.status).toBe(201);
     expect(mockRegisterClinic).toHaveBeenCalledWith(expect.objectContaining({ acceptedTermsAndPrivacyNotice: true }));
   });
 
-  const VALID = { name: 'Bright Smile Dental', adminName: 'Lisa Jane', adminPhoneNumber: '0712345678', adminPin: '730194', acceptLegal: true };
+  const VALID = { name: 'Bright Smile Dental', adminName: 'Lisa Jane', adminPhoneNumber: '0712345678', adminPin: '730194', acceptLegal: true, acceptConfidentiality: true };
 
   it('requires at least one department', async () => {
     for (const body of [VALID, { ...VALID, departments: [] }]) {
@@ -178,5 +178,30 @@ describe('POST /clinics/register', () => {
       .send({ ...VALID, departments: [{ name: 'General', code: 'G' }] });
     expect(bad.status).toBe(400);
     expect(mockRegisterClinic).not.toHaveBeenCalled();
+  });
+});
+
+describe('confidentiality undertaking and admin email at clinic registration (C10, C19)', () => {
+  const BODY = { name: 'Sunrise', adminName: 'Lisa Jane', adminPhoneNumber: '0712345678', adminPin: '730194', departments: [{ name: 'General' }], acceptLegal: true };
+
+  it('refuses registration without the undertaking', async () => {
+    const res = await request(buildApp()).post('/clinics/register').send(BODY);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Please accept the confidentiality undertaking to register your clinic');
+  });
+
+  it('records it and the optional admin email', async () => {
+    (registerClinic as jest.Mock).mockResolvedValue({ clinic: { name: 'Sunrise', inviteCode: 'SUNRISE-7F2K' }, adminStaffCode: 'ACI-STF-1001' });
+    const res = await request(buildApp())
+      .post('/clinics/register')
+      .send({ ...BODY, acceptConfidentiality: true, adminEmail: 'lisa@sunrise.co.ke' });
+    expect(res.status).toBe(201);
+    expect(registerClinic).toHaveBeenCalledWith(expect.objectContaining({ acceptedConfidentialityUndertaking: true, adminEmail: 'lisa@sunrise.co.ke' }));
+  });
+
+  it('serves the undertaking text publicly for the signup forms', async () => {
+    const res = await request(buildApp()).get('/clinics/confidentiality-undertaking');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ text: expect.any(String), version: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) });
   });
 });

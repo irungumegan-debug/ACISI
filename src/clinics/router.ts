@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { CONFIDENTIALITY_UNDERTAKING_TEXT, CONFIDENTIALITY_UNDERTAKING_VERSION } from '../config/legal';
 import { z } from 'zod';
 import { InvalidPhoneNumberError, toE164 } from '../utils/phone';
 import { pinPolicyError } from '../utils/pinPolicy';
@@ -42,6 +43,10 @@ const registerSchema = z.object({
   adminName: z.string().min(1),
   adminPhoneNumber: z.string().min(1),
   adminPin: z.string().min(1),
+  /** Optional work email for the clinic admin. */
+  adminEmail: z.string().trim().email('Please enter a valid email address').max(254).optional().or(z.literal('')),
+  /** The admin's confidentiality undertaking — required. */
+  acceptConfidentiality: z.boolean().optional(),
   /** The clinic's own departments — at least one (see departmentService.prepareDepartmentList). */
   departments: z
     .array(
@@ -55,6 +60,11 @@ const registerSchema = z.object({
     .max(50),
   /** "I accept the Terms of Service and have read the Privacy Notice" — required. */
   acceptLegal: z.boolean().optional(),
+});
+
+/** The staff confidentiality undertaking, shown on the staff and clinic signup forms. Public: no patient data. */
+clinicsRouter.get('/confidentiality-undertaking', (_req, res) => {
+  res.json({ text: CONFIDENTIALITY_UNDERTAKING_TEXT, version: CONFIDENTIALITY_UNDERTAKING_VERSION });
 });
 
 /**
@@ -102,6 +112,10 @@ clinicsRouter.post('/register', async (req, res) => {
     res.status(400).json({ error: 'Please accept the Terms of Service and Privacy Notice to register your clinic' });
     return;
   }
+  if (parsed.data.acceptConfidentiality !== true) {
+    res.status(400).json({ error: 'Please accept the confidentiality undertaking to register your clinic' });
+    return;
+  }
 
   const result = await registerClinic({
     departments,
@@ -110,7 +124,9 @@ clinicsRouter.post('/register', async (req, res) => {
     adminName: parsed.data.adminName,
     adminPhoneNumberE164: adminPhoneE164,
     adminPin: parsed.data.adminPin,
+    adminEmail: parsed.data.adminEmail || undefined,
     acceptedTermsAndPrivacyNotice: true,
+    acceptedConfidentialityUndertaking: true,
   }).catch((err) => {
     if (err?.code === 'P2002') return null;
     throw err;

@@ -118,6 +118,18 @@ full page navigation after authenticating (the session cookie set by that
 request carries over, since it's the same origin) — everything else is
 client-side routing within whichever of the SPAs is active.
 
+### Data-protection rules (October 2026)
+
+See `CHANGELOG.md` (2026-10-30) for the full list. In short: doctors only
+reach patients in their own queue; front desk never receives diagnoses;
+other clinics' records need the patient's sharing switch or a one-time
+"Request records" code; web signup verifies the phone first; wrong PINs lock
+the account for 5 minutes (`PIN_LOCKOUT`); every SMS goes through
+`src/services/smsService.ts`; USSD is off unless `USSD_ENABLED=true`; a
+remote check-in joins the queue before payment and an unpaid ACISI fee is
+handled by `src/services/feeService.ts` (restriction only with
+`FEE_RESTRICTION_ENABLED=true`).
+
 ### Walk-in check-in (front desk)
 
 For patients who arrive without checking in remotely. On the console's

@@ -55,6 +55,118 @@ Database migrations run automatically on start (`prisma migrate deploy`).
 If the service files in `deploy/` changed, copy them again (see "Install
 or update the backup job").
 
+## Release 2026-10-30: data-protection alignment (one-time steps)
+
+See `CHANGELOG.md` for what changed. Do these once, in order, when this
+release is merged. Each command is safe to copy as-is.
+
+1. **Backup first:** `sudo systemctl start acisi-backup && sudo journalctl -u acisi-backup -n 5 --no-pager`
+   (should end with "Backup written").
+2. **Settings** (`sudo nano /etc/acisi/acisi.env`), add these two lines:
+   ```
+   USSD_ENABLED=false
+   FEE_RESTRICTION_ENABLED=false
+   ```
+   Both are also the defaults, so this only makes them visible. Turn
+   `FEE_RESTRICTION_ENABLED=true` only after the Terms of Service say that
+   accounts can be restricted over unpaid fees.
+3. **Update the app** (this also runs the database migration on start):
+   ```
+   sudo -u acisi -H bash -c 'cd /opt/acisi/app && git pull && npm ci && npm run build'
+   sudo systemctl restart acisi
+   sleep 15; curl -s https://acisi.co.ke/healthz; echo
+   sudo journalctl -u acisi -n 30 --no-pager | grep -i -E "migration|error" || true
+   ```
+4. **Nginx** (new security headers and an access log without query strings):
+   ```
+   sudo cp /etc/nginx/sites-available/acisi /root/acisi.nginx.before-2026-10-30
+   sudo install -m 644 /opt/acisi/app/deploy/nginx/acisi.conf /etc/nginx/sites-available/acisi
+   sudo nginx -t && sudo systemctl reload nginx
+   curl -sI https://acisi.co.ke | grep -i -E "content-security|x-frame|strict-transport"
+   ```
+   If `nginx -t` reports an error, nothing changed; put the old file back with
+   `sudo cp /root/acisi.nginx.before-2026-10-30 /etc/nginx/sites-available/acisi`.
+5. **Remove phone numbers already stored on clinic payments** (preview, then apply):
+   ```
+   sudo bash -c 'set -a; . /etc/acisi/acisi.env; set +a; cd /opt/acisi/app && npm run -s redact-payment-phones'
+   sudo bash -c 'set -a; . /etc/acisi/acisi.env; set +a; cd /opt/acisi/app && npm run -s redact-payment-phones -- --apply'
+   ```
+   The first prints counts only and changes nothing. Run the second only if
+   the counts look right.
+6. **Clear old logs** that were written before this release (they can contain
+   login tokens and search text):
+   ```
+   sudo journalctl --rotate && sudo journalctl --vacuum-time=1s
+   sudo bash -c 'for f in /var/log/nginx/access.log*; do : > "$f"; done'
+   ```
+7. **Check:** log in to the console as front desk and as a doctor, and open
+   the patient portal. See the manual checklist in the release notes.
+
+Step 3 runs three migrations: `20261030090000_odpc_alignment`,
+`20261031090000_clinic_sms_usage` (clinic plan, SMS allowance and SMS
+count; every existing clinic starts on Starter, 500 SMS a month) and
+`20261101090000_checkin_prompt_resends` (the "Resend prompt" counter on
+check-ins; existing check-ins start at 0).
+
+**Undo (only if something goes badly wrong):** deploy the previous version
+(`git checkout <previous commit>` in step 3), then undo the migrations,
+newest first:
+```
+sudo -u postgres psql acisi -f /opt/acisi/app/prisma/rollback/20261101090000_checkin_prompt_resends.down.sql
+sudo -u postgres psql acisi -c "DELETE FROM _prisma_migrations WHERE migration_name = '20261101090000_checkin_prompt_resends'"
+sudo -u postgres psql acisi -f /opt/acisi/app/prisma/rollback/20261031090000_clinic_sms_usage.down.sql
+sudo -u postgres psql acisi -c "DELETE FROM _prisma_migrations WHERE migration_name = '20261031090000_clinic_sms_usage'"
+sudo -u postgres psql acisi -f /opt/acisi/app/prisma/rollback/20261030090000_odpc_alignment.down.sql
+sudo -u postgres psql acisi -c "DELETE FROM _prisma_migrations WHERE migration_name = '20261030090000_odpc_alignment'"
+```
+Data written into the new columns since the release is lost (including SMS
+counts and plan changes); nothing older is touched.
+
+## Switching ACISI's M-Pesa to production (Buy Goods till)
+
+Do this only after the release that adds `MPESA_TILL_NUMBER` is deployed.
+Nothing here prints a key.
+
+1. Backup: `sudo systemctl start acisi-backup`
+2. `sudo nano /etc/acisi/acisi.env` and set:
+   ```
+   MPESA_ENV=production
+   MPESA_CONSUMER_KEY=<live key>
+   MPESA_CONSUMER_SECRET=<live secret>
+   MPESA_SHORTCODE=<store / head-office number>
+   MPESA_TILL_NUMBER=<till number>
+   MPESA_PASSKEY=<live passkey>
+   MPESA_CALLBACK_URL=https://acisi.co.ke/api/mpesa/callback
+   ```
+   There is no base-URL setting: `MPESA_ENV=production` selects
+   `https://api.safaricom.co.ke`. Clinic checkout prompts switch off by
+   themselves on a production server.
+3. Check what is set (secrets show only their length):
+   ```
+   sudo grep -E '^(MPESA_ENV|MPESA_SHORTCODE|MPESA_TILL_NUMBER|MPESA_CALLBACK_URL)=' /etc/acisi/acisi.env
+   sudo awk -F= '/^MPESA_(CONSUMER_KEY|CONSUMER_SECRET|PASSKEY)=/{print $1, "length", length($2)}' /etc/acisi/acisi.env
+   ```
+4. Check the live keys work (expect `200`):
+   ```
+   sudo bash -c 'set -a; . /etc/acisi/acisi.env; set +a; printf "user = \"%s:%s\"\n" "$MPESA_CONSUMER_KEY" "$MPESA_CONSUMER_SECRET" | curl -s -o /dev/null -w "%{http_code}\n" -K - "https://api.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials"'
+   ```
+5. Forget the sandbox login token (otherwise it is reused for up to an hour), then restart:
+   ```
+   sudo bash -c 'set -a; . /etc/acisi/acisi.env; set +a; redis-cli -u "$REDIS_URL" DEL mpesa:access_token'
+   sudo systemctl restart acisi
+   sleep 15; curl -s https://acisi.co.ke/healthz; echo
+   sudo journalctl -u acisi -n 50 --no-pager | grep -iE "invalid environment|daraja" || echo "no config or Daraja errors"
+   ```
+6. Callback reachable from outside (expect `400`: it is live and refused an empty body):
+   `curl -s -o /dev/null -w "%{http_code}\n" -X POST https://acisi.co.ke/api/mpesa/callback -H 'Content-Type: application/json' -d '{}'`
+7. Real test: check in from your own phone and pay. Then
+   `sudo journalctl -u acisi --since "10 min ago" --no-pager | grep "Check-in payment"`
+   should show `"resultCode":0` and `"status":"PAID"` (no phone numbers).
+   The M-Pesa SMS should name ACISI's till.
+
+**Back to sandbox:** put the sandbox values back, remove `MPESA_TILL_NUMBER`,
+and repeat steps 5–6.
+
 ## Backups
 
 **What:** every night at about 02:00 EAT, `acisi-backup` writes two encrypted files to

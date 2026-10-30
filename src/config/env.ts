@@ -14,15 +14,42 @@ const envSchema = z.object({
   AT_USERNAME: z.string().min(1, 'AT_USERNAME is required'),
   AT_API_KEY: z.string().min(1, 'AT_API_KEY is required'),
   AT_USSD_SERVICE_CODE: z.string().optional(),
+  // USSD is not in use yet: /api/ussd answers 404 unless this is exactly
+  // "true". The USSD code itself stays in src/ussd/, untouched, ready to be
+  // switched back on.
+  USSD_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
 
   MPESA_ENV: z.enum(['sandbox', 'production']).default('sandbox'),
   MPESA_CONSUMER_KEY: z.string().min(1, 'MPESA_CONSUMER_KEY is required'),
   MPESA_CONSUMER_SECRET: z.string().min(1, 'MPESA_CONSUMER_SECRET is required'),
+  /**
+   * Paybill: the paybill number. Buy Goods: the STORE (head-office) number,
+   * which Daraja wants in BusinessShortCode, the password and the status
+   * query; the till itself goes in MPESA_TILL_NUMBER.
+   */
   MPESA_SHORTCODE: z.string().min(1, 'MPESA_SHORTCODE is required'),
+  /**
+   * Set for a Buy Goods till: prompts are sent as CustomerBuyGoodsOnline with
+   * this till as PartyB. Leave unset for a Paybill. Never shown to patients.
+   */
+  MPESA_TILL_NUMBER: z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+    z.string().trim().regex(/^\d+$/, 'MPESA_TILL_NUMBER must be digits only').optional(),
+  ),
   MPESA_PASSKEY: z.string().min(1, 'MPESA_PASSKEY is required'),
   MPESA_CALLBACK_URL: z.string().url('MPESA_CALLBACK_URL must be a valid URL'),
 
   CHECKIN_FEE_AMOUNT_KES: z.coerce.number().positive().default(100),
+  // Restricting accounts over an unpaid check-in fee (C20). Off unless this
+  // is exactly "true": switch it on only once the Terms of Service say so.
+  // The profile notices and the "old fee + new fee" prompt work either way.
+  FEE_RESTRICTION_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
 
   // --- Email (visit-summary delivery, opt-in at checkout) ---
   // Both optional, unlike the AT/Daraja vars above: email is a genuinely

@@ -206,9 +206,13 @@ describe('STK push into the clinic till/paybill', () => {
   it('creates a waiting payment, sends the prompt and schedules a status check', async () => {
     const { bill } = await billFor([1500]);
     const { payment } = await requestFor(1500, bill.id);
-    expect(payment).toMatchObject({ status: 'PENDING', method: 'MPESA_STK', amountKes: 1500, phoneNumber: '+254712345678' });
+    expect(payment).toMatchObject({ status: 'PENDING', method: 'MPESA_STK', amountKes: 1500 });
+    // C14: the number goes to Safaricom for the prompt but is never stored on the payment.
+    expect(payment.phoneNumber ?? null).toBeNull();
     expect(payment.mpesaCheckoutRequestId).toMatch(/^ws_CO_/);
-    expect(mockPush).toHaveBeenCalledWith(expect.objectContaining({ amountKes: 1500, accountReference: 'ACI-7F2K', mobileMoneyType: 'PAYBILL' }));
+    expect(mockPush).toHaveBeenCalledWith(
+      expect.objectContaining({ amountKes: 1500, accountReference: 'ACI-7F2K', mobileMoneyType: 'PAYBILL', phoneNumberE164: '+254712345678' }),
+    );
     expect(scheduleClinicStkStatusCheck).toHaveBeenCalledWith({ paymentId: payment.id });
     expect(billNow(bill.id).status).toBe('UNPAID'); // nothing paid until M-Pesa confirms
   });

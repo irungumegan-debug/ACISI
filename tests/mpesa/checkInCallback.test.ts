@@ -1,14 +1,20 @@
 import express from 'express';
 import request from 'supertest';
 
-jest.mock('../../src/services/checkInService', () => ({ applyPaymentResult: jest.fn() }));
+jest.mock('../../src/services/feeService', () => ({
+  getFeeStatus: jest.fn(async () => ({ owedKes: 0, restricted: false, restrictionMessage: null })),
+  getOutstandingFees: jest.fn(async () => ({ checkIns: [], totalKes: 0, oldestAt: null })),
+  settleOutstandingFees: jest.fn(async () => []),
+  liftRestrictionIfClear: jest.fn(async () => false),
+}));
+jest.mock('../../src/services/checkInService', () => ({ handleStkCallback: jest.fn() }));
 jest.mock('../../src/services/billingService', () => ({ applyClinicStkResult: jest.fn() }));
 jest.mock('../../src/utils/logger', () => ({
   ...jest.requireActual('../../src/utils/logger'),
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
 
-import { applyPaymentResult } from '../../src/services/checkInService';
+import { handleStkCallback } from '../../src/services/checkInService';
 import { logger } from '../../src/utils/logger';
 import { mpesaRouter } from '../../src/mpesa/router';
 
@@ -42,16 +48,12 @@ function everythingLogged(): string {
 beforeEach(() => jest.clearAllMocks());
 
 describe('POST /api/mpesa/callback', () => {
-  it("hands the callback to applyPaymentResult as source 'callback' (which writes the one log line) and logs nothing itself", async () => {
-    (applyPaymentResult as jest.Mock).mockResolvedValue({ checkInId: 'ci-1', status: 'PAID' });
+  it('hands the callback to handleStkCallback (which confirms a success with Safaricom and writes the one log line) and logs nothing itself', async () => {
+    (handleStkCallback as jest.Mock).mockResolvedValue({ checkInId: 'ci-1', status: 'PAID' });
 
     expect((await request(app).post('/api/mpesa/callback').send(paid)).status).toBe(200);
 
-    expect(applyPaymentResult).toHaveBeenCalledWith(
-      expect.objectContaining({ checkoutRequestId: 'ws_CO_1', resultCode: 0 }),
-      paid,
-      'callback',
-    );
+    expect(handleStkCallback).toHaveBeenCalledWith(expect.objectContaining({ checkoutRequestId: 'ws_CO_1', resultCode: 0 }), paid);
     expect(logger.info).not.toHaveBeenCalled();
   });
 
@@ -59,7 +61,7 @@ describe('POST /api/mpesa/callback', () => {
     const err = Object.assign(new Error('Unique constraint failed: 254712345678 QKL98MN76P'), {
       code: 'P2002',
     });
-    (applyPaymentResult as jest.Mock).mockRejectedValue(err);
+    (handleStkCallback as jest.Mock).mockRejectedValue(err);
 
     expect((await request(app).post('/api/mpesa/callback').send(paid)).status).toBe(200);
 

@@ -18,6 +18,9 @@ jest.mock('../../src/db/prisma', () => {
 });
 jest.mock('../../src/config/africastalking', () => ({ smsClient: { send: jest.fn() } }));
 jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
+jest.mock('../../src/services/feeService', () => ({
+  getFeeStatus: jest.fn(async () => ({ restricted: true, restrictionMessage: 'restricted', owedKes: 100 })),
+}));
 jest.mock('../../src/services/patientService', () => ({ findPatientByPhone: jest.fn(), registerPatient: jest.fn() }));
 jest.mock('../../src/services/departmentService', () => ({ findActiveDepartment: jest.fn() }));
 jest.mock('../../src/services/doctorAssignmentService', () => ({ assignDoctorForCheckIn: jest.fn() }));
@@ -166,6 +169,13 @@ describe('finding or creating the patient', () => {
     expect(result).toMatchObject({ patientId: 'p-new', isNewPatient: true });
   });
 
+  it('saves an optional email for a new walk-in patient (C11)', async () => {
+    mockFindPatient.mockResolvedValue(null);
+    mockRegister.mockResolvedValue({ ...PATIENT, id: 'p-new' });
+    await checkInWalkIn(input({ phone: '+254799000111', newPatient: { fullName: 'Amina Achieng', email: ' amina@example.com ', registrationConsent: true } }));
+    expect(mockRegister).toHaveBeenCalledWith(expect.objectContaining({ email: 'amina@example.com' }));
+  });
+
   it('refuses to register a new patient without their record consent', async () => {
     mockFindPatient.mockResolvedValue(null);
     await expect(checkInWalkIn(input({ newPatient: { fullName: 'Amina Achieng', registrationConsent: false } }))).rejects.toMatchObject({
@@ -173,6 +183,16 @@ describe('finding or creating the patient', () => {
     });
     expect(mockRegister).not.toHaveBeenCalled();
     expect(tx.checkIn!.create).not.toHaveBeenCalled();
+  });
+
+  it('a patient restricted over an unpaid ACISI fee is still checked in as a walk-in, and no fee is involved (C20)', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fees = require('../../src/services/feeService');
+    mockFindPatient.mockResolvedValue(PATIENT);
+    const result = await checkInWalkIn(input());
+    expect(result).toMatchObject({ patientId: 'p-1' });
+    expect(tx.checkIn!.create).toHaveBeenCalledTimes(1);
+    expect(fees.getFeeStatus).not.toHaveBeenCalled();
   });
 
   it('asks for details when the phone is new and none were given', async () => {

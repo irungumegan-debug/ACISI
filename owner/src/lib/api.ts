@@ -14,6 +14,26 @@ export interface Overview {
   revenueKes: { total: number; last30Days: number };
 }
 
+export type ClinicPlan = 'STARTER' | 'CLINIC' | 'CLINIC_PLUS';
+
+/** Plans and their default monthly SMS allowance (mirrors CLINIC_PLANS on the server). */
+export const CLINIC_PLANS: { value: ClinicPlan; label: string; smsAllowance: number }[] = [
+  { value: 'STARTER', label: 'Starter', smsAllowance: 500 },
+  { value: 'CLINIC', label: 'Clinic', smsAllowance: 1500 },
+  { value: 'CLINIC_PLUS', label: 'Clinic Plus', smsAllowance: 4000 },
+];
+
+/** SMS sent to patients on a clinic's behalf in one month (Kenya time). */
+export interface SmsUsage {
+  month: string;
+  messages: number;
+  /** Billed SMS parts: what counts against the allowance. */
+  sms: number;
+  allowance: number;
+  over: number;
+  extraChargeKes: number;
+}
+
 export interface ClinicListItem {
   id: string;
   name: string;
@@ -28,6 +48,10 @@ export interface ClinicListItem {
   visitsLast30Days: number;
   revenueKes: number;
   revenueLast30DaysKes: number;
+  plan: ClinicPlan;
+  planLabel: string;
+  smsMonthlyAllowance: number;
+  smsThisMonth: SmsUsage | null;
 }
 
 export interface StaffListItem {
@@ -57,6 +81,10 @@ export interface ClinicDetail {
   upcomingAppointments: number;
   revenueKes: number;
   revenueLast30DaysKes: number;
+  plan: ClinicPlan;
+  planLabel: string;
+  smsMonthlyAllowance: number;
+  smsUsage: { thisMonth: SmsUsage; lastMonth: SmsUsage };
   departments: { id: string; name: string; code: string; isActive: boolean }[];
   staff: StaffListItem[];
 }
@@ -82,6 +110,17 @@ export class ApiError extends Error {
     this.name = 'ApiError';
   }
 }
+
+export interface SmsHealth {
+  failing: boolean;
+  consecutiveFailures: number;
+  failingSince: string | null;
+  lastSuccessAt: string | null;
+  threshold: number;
+}
+
+/** ACISI's M-Pesa check-in prompts (C20): same shape as the SMS health. */
+export type MpesaHealth = SmsHealth;
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api/owner${path}`, {
@@ -120,6 +159,20 @@ export const api = {
   overview() {
     return request<Overview>('/overview');
   },
+  pendingFees() {
+    return request<{
+      rows: { patientCode: string; owedKes: number; oldestAt: string; restricted: boolean; count: number }[];
+      totalKes: number;
+      restrictedCount: number;
+      restrictionEnabled: boolean;
+    }>('/pending-fees');
+  },
+  smsHealth() {
+    return request<SmsHealth>('/overview/sms-health');
+  },
+  mpesaHealth() {
+    return request<MpesaHealth>('/overview/mpesa-health');
+  },
   clinics(q?: string) {
     return request<{ clinics: ClinicListItem[] }>(`/clinics${qs({ q })}`);
   },
@@ -130,6 +183,12 @@ export const api = {
     return request<{ id: string; isActive: boolean }>(
       `/clinics/${encodeURIComponent(id)}/${active ? 'reactivate' : 'deactivate'}`,
       { method: 'POST' },
+    );
+  },
+  setClinicPlan(id: string, plan: ClinicPlan, smsMonthlyAllowance?: number) {
+    return request<{ id: string; plan: ClinicPlan; planLabel: string; smsMonthlyAllowance: number }>(
+      `/clinics/${encodeURIComponent(id)}/plan`,
+      { method: 'PATCH', body: JSON.stringify({ plan, smsMonthlyAllowance }) },
     );
   },
   setStaffActive(id: string, active: boolean) {

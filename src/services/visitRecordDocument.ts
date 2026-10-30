@@ -83,9 +83,70 @@ export function buildVisitRecordDataFromEncounter(encounter: EncounterForVisitRe
  * directly inspectable (by us in tests, and by anyone checking what a
  * generated file actually contains).
  */
+function drawVisitPage(doc: PDFKit.PDFDocument, data: VisitRecordData): void {
+  // Letterhead — the clinic's own identity at the top of the page,
+  // distinct from ACISI's own "Visit Record" title below it.
+  doc.fontSize(16).text(data.clinicName, { align: 'center' });
+  if (data.clinicCounty) {
+    doc.fontSize(10).fillColor('#555555').text(data.clinicCounty, { align: 'center' });
+    doc.fillColor('#000000');
+  }
+  doc.moveDown(0.5);
+  doc
+    .moveTo(doc.page.margins.left, doc.y)
+    .lineTo(doc.page.width - doc.page.margins.right, doc.y)
+    .strokeColor('#cccccc')
+    .stroke();
+  doc.moveDown(1);
+
+  doc.fontSize(18).text('ACISI Visit Record', { align: 'center' });
+  doc.moveDown(1.5);
+
+  doc.fontSize(11);
+  doc.text(`Patient: ${data.patientName} (${data.patientCode})`);
+  doc.text(`Clinic: ${data.clinicName}`);
+  doc.text(`Department: ${data.departmentName}`);
+  doc.text(`Visit date: ${data.visitedAt.toLocaleDateString()}`);
+  doc.moveDown(1.5);
+
+  doc.fontSize(13).text('Diagnosis / notes', { underline: true });
+  doc.moveDown(0.3);
+  doc.fontSize(11).text(data.diagnosis || 'Not recorded');
+  doc.moveDown(1.5);
+
+  doc.fontSize(13).text('Prescription', { underline: true });
+  doc.moveDown(0.3);
+  doc.fontSize(11).text(data.prescription || 'Not recorded');
+
+  if (data.signature) {
+    doc.moveDown(2);
+    doc
+      .moveTo(doc.page.margins.left, doc.y)
+      .lineTo(doc.page.margins.left + 220, doc.y)
+      .strokeColor('#cccccc')
+      .stroke();
+    doc.moveDown(0.3);
+
+    doc.font('Signature').fontSize(26).text(data.signature.doctorName);
+    doc.font('Helvetica').fontSize(10).fillColor('#555555');
+    doc.text(data.signature.doctorTitle);
+    doc.text(`Signed electronically via ACISI on ${data.signature.signedAt.toLocaleString()}`);
+    doc.fillColor('#000000');
+  }
+}
+
 export function renderVisitRecordPdf(data: VisitRecordData): Promise<Buffer> {
+  return renderVisitRecordsPdf([data]);
+}
+
+/**
+ * Several visits in one PDF, one page each (newest first, as given): the
+ * patient's "Download all my visits" (C16). Same page layout as a single
+ * visit record.
+ */
+export function renderVisitRecordsPdf(visits: VisitRecordData[]): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: 'A4', margin: 50, compress: false });
+    const doc = new PDFDocument({ size: 'A4', margin: 50, compress: false, autoFirstPage: false });
     const chunks: Buffer[] = [];
     doc.on('data', (chunk: Buffer) => chunks.push(chunk));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
@@ -93,54 +154,10 @@ export function renderVisitRecordPdf(data: VisitRecordData): Promise<Buffer> {
 
     doc.registerFont('Signature', SIGNATURE_FONT_PATH);
 
-    // Letterhead — the clinic's own identity at the top of the page,
-    // distinct from ACISI's own "Visit Record" title below it.
-    doc.fontSize(16).text(data.clinicName, { align: 'center' });
-    if (data.clinicCounty) {
-      doc.fontSize(10).fillColor('#555555').text(data.clinicCounty, { align: 'center' });
-      doc.fillColor('#000000');
-    }
-    doc.moveDown(0.5);
-    doc
-      .moveTo(doc.page.margins.left, doc.y)
-      .lineTo(doc.page.width - doc.page.margins.right, doc.y)
-      .strokeColor('#cccccc')
-      .stroke();
-    doc.moveDown(1);
-
-    doc.fontSize(18).text('ACISI Visit Record', { align: 'center' });
-    doc.moveDown(1.5);
-
-    doc.fontSize(11);
-    doc.text(`Patient: ${data.patientName} (${data.patientCode})`);
-    doc.text(`Clinic: ${data.clinicName}`);
-    doc.text(`Department: ${data.departmentName}`);
-    doc.text(`Visit date: ${data.visitedAt.toLocaleDateString()}`);
-    doc.moveDown(1.5);
-
-    doc.fontSize(13).text('Diagnosis / notes', { underline: true });
-    doc.moveDown(0.3);
-    doc.fontSize(11).text(data.diagnosis || 'Not recorded');
-    doc.moveDown(1.5);
-
-    doc.fontSize(13).text('Prescription', { underline: true });
-    doc.moveDown(0.3);
-    doc.fontSize(11).text(data.prescription || 'Not recorded');
-
-    if (data.signature) {
-      doc.moveDown(2);
-      doc
-        .moveTo(doc.page.margins.left, doc.y)
-        .lineTo(doc.page.margins.left + 220, doc.y)
-        .strokeColor('#cccccc')
-        .stroke();
-      doc.moveDown(0.3);
-
-      doc.font('Signature').fontSize(26).text(data.signature.doctorName);
-      doc.font('Helvetica').fontSize(10).fillColor('#555555');
-      doc.text(data.signature.doctorTitle);
-      doc.text(`Signed electronically via ACISI on ${data.signature.signedAt.toLocaleString()}`);
-      doc.fillColor('#000000');
+    for (const data of visits) {
+      doc.addPage();
+      doc.font('Helvetica');
+      drawVisitPage(doc, data);
     }
 
     doc.end();

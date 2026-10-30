@@ -193,7 +193,8 @@ clinicSettingsRouter.put('/payment-settings', async (req, res) => {
     action: 'PAYMENT_SETTINGS_UPDATED',
     entityType: 'Clinic',
     entityId: clinicId,
-    metadata: { ...data, updatedByStaffId: undefined },
+    // Which settings were saved, not the till/paybill number itself.
+    metadata: { changed: Object.keys(data).filter((k) => k !== 'updatedByStaffId') },
   });
   res.json({ ok: true });
 });

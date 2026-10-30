@@ -10,6 +10,7 @@ import {
   voidPayment,
 } from '../services/billingService';
 import { getDailySummary } from '../services/billingReportService';
+import { recordAuditEvent } from '../services/auditService';
 import { isIsoDate, kenyaToday } from '../utils/kenyaTime';
 import { MAX_AMOUNT_KES } from '../services/billingMath';
 
@@ -64,7 +65,20 @@ const idempotencyKey = z.string().trim().min(8).max(100);
 billingRouter.get(
   '/visits/:encounterId',
   handle(async (req, res) => {
-    res.json(await getCheckoutView(req.params.encounterId as string, session(req).clinicId));
+    const { clinicId, staffId } = session(req);
+    const view = await getCheckoutView(req.params.encounterId as string, clinicId);
+    // The checkout page shows the patient and this visit's prescription.
+    await recordAuditEvent({
+      actorType: 'STAFF',
+      actorId: staffId,
+      staffId,
+      clinicId,
+      action: 'CHECKOUT_VIEWED',
+      entityType: 'Encounter',
+      entityId: view.encounterId,
+      metadata: { patientId: view.patient.id },
+    });
+    res.json(view);
   }),
 );
 

@@ -7,6 +7,7 @@ import { ClinicsPage } from './pages/ClinicsPage';
 import { ClinicDetailPage } from './pages/ClinicDetailPage';
 import { DeletePatientPage } from './pages/DeletePatientPage';
 import { ActivityPage } from './pages/ActivityPage';
+import { PendingFeesPage } from './pages/PendingFeesPage';
 
 // Derived from BASE_URL ('/' in dev, '/owner/' in a build), not
 // import.meta.env.PROD — see the long note in dashboard/src/App.tsx for why.
@@ -24,6 +25,7 @@ export function App() {
             <Route path="/clinics" element={<ClinicsPage />} />
             <Route path="/clinics/:id" element={<ClinicDetailPage />} />
             <Route path="/delete-patient" element={<DeletePatientPage />} />
+            <Route path="/pending-fees" element={<PendingFeesPage />} />
             <Route path="/activity" element={<ActivityPage />} />
             <Route path="*" element={<Navigate to="/overview" replace />} />
           </Route>

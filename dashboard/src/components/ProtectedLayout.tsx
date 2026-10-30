@@ -3,7 +3,7 @@ import { Navigate, NavLink, Outlet, useLocation } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
 import { BarChart3, CalendarDays, ClipboardList, LogOut, Menu, ScrollText, Settings, UserRound, UsersRound, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { api, ApiError } from '../lib/api';
+import { api, ApiError, LegalStatus } from '../lib/api';
 import { legalBoxSatisfied, PRIVACY_PATH, TERMS_PATH } from '../lib/legal';
 import { Avatar, btn, LogoMark, Skeleton } from './ui';
 
@@ -139,8 +139,12 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
  * published, and again whenever the Terms are updated. A clinic admin who
  * accepted when registering the clinic is not asked again.
  */
-function AcceptTermsCard({ onAccepted }: { onAccepted: () => void }) {
-  const [ticked, setTicked] = useState(false);
+function AcceptTermsCard({ onAccepted, legal }: { onAccepted: () => void; legal: LegalStatus | null }) {
+  const termsRequired = legal?.termsRequired ?? true;
+  const confidentialityRequired = legal?.confidentialityRequired ?? false;
+  const [termsTicked, setTermsTicked] = useState(false);
+  const [confidentialityTicked, setConfidentialityTicked] = useState(false);
+  const ticked = (!termsRequired || termsTicked) && (!confidentialityRequired || confidentialityTicked);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -150,7 +154,7 @@ function AcceptTermsCard({ onAccepted }: { onAccepted: () => void }) {
     setSubmitting(true);
     setError(null);
     try {
-      await api.acceptTerms();
+      await api.acceptTerms(confidentialityRequired && confidentialityTicked);
       onAccepted();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong. Try again.');
@@ -168,15 +172,31 @@ function AcceptTermsCard({ onAccepted }: { onAccepted: () => void }) {
         <h1 className="font-display text-xl font-semibold text-navy-900">Before you continue</h1>
       </div>
       <p className="mt-4 text-[15px] text-ink-700">
-        Please read and accept ACISI&apos;s Terms of Service to keep using the console. They set out what ACISI does, what your
-        clinic is responsible for, and how patient data is handled.
+        Please read and accept the following to keep using the console.
       </p>
+      {confidentialityRequired && (
+        <div className="mt-5 rounded-xl bg-cream-100 p-3.5 text-[15px] text-ink-700 ring-1 ring-slate-200">
+          <p className="font-semibold text-navy-900">ACISI Confidentiality Undertaking</p>
+          <p className="mt-2 whitespace-pre-wrap">{legal?.confidentialityText}</p>
+          <label className="mt-3 flex items-start gap-3">
+            <input
+              type="checkbox"
+              required
+              checked={confidentialityTicked}
+              onChange={(e) => setConfidentialityTicked(e.target.checked)}
+              className="mt-0.5 h-5 w-5 shrink-0 accent-navy-900"
+            />
+            <span>I have read and agree to the ACISI Confidentiality Undertaking.</span>
+          </label>
+        </div>
+      )}
+      {termsRequired && (
       <label className="mt-5 flex items-start gap-3 rounded-xl bg-cream-100 p-3.5 text-[15px] text-ink-700 ring-1 ring-slate-200">
         <input
           type="checkbox"
           required
-          checked={ticked}
-          onChange={(e) => setTicked(e.target.checked)}
+          checked={termsTicked}
+          onChange={(e) => setTermsTicked(e.target.checked)}
           className="mt-0.5 h-5 w-5 shrink-0 accent-navy-900"
         />
         <span>
@@ -191,6 +211,7 @@ function AcceptTermsCard({ onAccepted }: { onAccepted: () => void }) {
           .)
         </span>
       </label>
+      )}
       {error && (
         <p role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3.5 py-2.5 text-sm text-red-700">
           {error}
@@ -207,6 +228,7 @@ export function ProtectedLayout() {
   const { session, loading } = useAuth();
   // null while checking; 'error' shows a retry rather than letting anyone past unchecked.
   const [termsStatus, setTermsStatus] = useState<'required' | 'accepted' | 'error' | null>(null);
+  const [legal, setLegal] = useState<LegalStatus | null>(null);
   const staffId = session?.staffId;
 
   useEffect(() => {
@@ -215,7 +237,11 @@ export function ProtectedLayout() {
     setTermsStatus(null);
     api
       .getLegalStatus()
-      .then((res) => !cancelled && setTermsStatus(res.termsAcceptanceRequired ? 'required' : 'accepted'))
+      .then((res) => {
+        if (cancelled) return;
+        setLegal(res);
+        setTermsStatus(res.termsAcceptanceRequired ? 'required' : 'accepted');
+      })
       .catch(() => !cancelled && setTermsStatus('error'));
     return () => {
       cancelled = true;
@@ -350,7 +376,7 @@ export function ProtectedLayout() {
           {termsStatus === 'accepted' ? (
             <Outlet />
           ) : termsStatus === 'required' ? (
-            <AcceptTermsCard onAccepted={() => setTermsStatus('accepted')} />
+            <AcceptTermsCard legal={legal} onAccepted={() => setTermsStatus('accepted')} />
           ) : termsStatus === 'error' ? (
             <div className="mx-auto max-w-xl rounded-2xl bg-white p-5 ring-1 ring-slate-200">
               <p role="alert" className="text-sm text-red-700">

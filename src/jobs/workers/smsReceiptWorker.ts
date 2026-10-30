@@ -1,7 +1,8 @@
 import { Worker } from 'bullmq';
 import { redisQueueConnection } from '../../config/redis';
 import { prisma } from '../../db/prisma';
-import { smsClient } from '../../config/africastalking';
+import { sendPatientSms } from '../../services/smsService';
+import { buildCheckInFeeSms } from '../../services/smsTemplates';
 import { logger } from '../../utils/logger';
 import { SmsReceiptJobData } from '../queue';
 
@@ -24,11 +25,15 @@ export function startSmsReceiptWorker(): Worker<SmsReceiptJobData> {
         return;
       }
 
-      const message = job.data.succeeded
-        ? `ACISI: Check-in confirmed at ${checkIn.clinic.name}. Payment of KES ${checkIn.amountKes} received. Thank you.`
-        : `ACISI: Your check-in payment at ${checkIn.clinic.name} was not completed. Please try again at reception.`;
+      const message = buildCheckInFeeSms({ clinicName: checkIn.clinic.name, amountKes: Number(checkIn.amountKes), paid: job.data.succeeded });
 
-      await smsClient.send({ to: [checkIn.patient.phoneNumber], message });
+      // Not essential: respects "does not want SMS" (C13).
+      const outcome = await sendPatientSms(checkIn.patient, message, { purpose: 'CHECK_IN_FEE_RECEIPT' });
+      if (outcome === 'opted_out') {
+        logger.info({ checkInId: job.data.checkInId }, 'Check-in fee SMS skipped: patient opted out of SMS');
+      }
+      // Throwing lets the queue retry (3 tries) when Africa's Talking fails.
+      if (outcome === 'failed') throw new Error('Check-in fee SMS failed');
     },
     { connection: redisQueueConnection },
   );

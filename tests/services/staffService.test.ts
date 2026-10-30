@@ -1,3 +1,5 @@
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+jest.mock('../../src/config/redis', () => require('../helpers/fakeRedis').fakeRedisModule());
 import bcrypt from 'bcrypt';
 
 jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
@@ -337,5 +339,38 @@ describe('resetStaffPinByAdmin', () => {
     ).rejects.toThrow(InvalidPinFormatError);
     expect(mockUpdate).not.toHaveBeenCalled();
     expect(mockRecordAudit).not.toHaveBeenCalled();
+  });
+});
+
+describe('every staff PIN reset unlocks the account and logs the person out (C6, C17)', () => {
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const { recordWrongPin, isLockedOut } = require('../../src/services/pinLockout');
+  const { isSessionRevoked } = require('../../src/services/sessionRevocation');
+  const { PIN_LOCKOUT } = require('../../src/config/constants');
+  /* eslint-enable @typescript-eslint/no-require-imports */
+
+  async function lockOut(staffId: string) {
+    for (let i = 0; i < PIN_LOCKOUT.maxAttempts; i++) await recordWrongPin(`staff:${staffId}`);
+    expect(await isLockedOut(`staff:${staffId}`)).toBe(true);
+  }
+
+  it('an admin reset lifts the lock and revokes sessions opened with the old PIN', async () => {
+    await lockOut('staff-1');
+    const issuedBefore = Date.now() - 1000;
+    mockFindFirst.mockResolvedValue({ id: 'staff-1', staffCode: 'ACI-STF-7F2K', name: 'Jane', clinicId: 'clinic-A' });
+    mockUpdate.mockResolvedValue({});
+    await resetStaffPinByAdmin({ clinicId: 'clinic-A', staffId: 'staff-1', requestedByStaffId: 'admin-1' });
+    expect(await isLockedOut('staff:staff-1')).toBe(false);
+    expect(await isSessionRevoked(['staff:staff-1'], issuedBefore)).toBe(true);
+  });
+
+  it('a server-console reset does the same', async () => {
+    await lockOut('staff-2');
+    const issuedBefore = Date.now() - 1000;
+    (prisma.staff.findUnique as jest.Mock).mockResolvedValue({ id: 'staff-2', staffCode: 'ACI-STF-2222' });
+    mockUpdate.mockResolvedValue({});
+    await resetStaffPinViaConsole('ACI-STF-2222', '730194');
+    expect(await isLockedOut('staff:staff-2')).toBe(false);
+    expect(await isSessionRevoked(['staff:staff-2'], issuedBefore)).toBe(true);
   });
 });

@@ -2,24 +2,20 @@ import { NextFunction, Request, Response, Router } from 'express';
 import { z } from 'zod';
 import { redis } from '../config/redis';
 import {
-  LOGIN_RATE_LIMIT_MAX_ATTEMPTS,
-  LOGIN_RATE_LIMIT_WINDOW_SECONDS,
+  CODE_NOT_SENT_MESSAGE,
   DASHBOARD_SESSION_TTL_SECONDS,
   OTP_REQUEST_RATE_LIMIT_MAX_ATTEMPTS,
   OTP_REQUEST_RATE_LIMIT_WINDOW_SECONDS,
 } from '../config/constants';
+import { clearLockout, isLockedOut, lockoutMessage, LockoutSubject, recordWrongPin } from '../services/pinLockout';
 import { InvalidPhoneNumberError, toE164 } from '../utils/phone';
 import { pinPolicyError } from '../utils/pinPolicy';
-import {
-  findPatientByPhoneOrCode,
-  registerPatient,
-  setPatientPin,
-  verifyPatientPin,
-} from '../services/patientService';
+import { findPatientByPhoneOrCode, hashPatientPin, setPatientPin, verifyPatientPin } from '../services/patientService';
+import { PatientIdentityError, patientIdentityInputSchema, preparePatientIdentity } from '../services/patientIdentity';
+import { PendingSignupError, resendSignupCode, startPendingSignup, verifyPendingSignup } from '../services/pendingSignupService';
 import { requestPinResetOtp, verifyPinResetOtp } from '../services/otpService';
 import { deletePatientAccount, PatientNotFoundError } from '../services/patientDeletionService';
 import { prisma } from '../db/prisma';
-import { revokeSessionsFor } from '../services/sessionRevocation';
 import {
   createPatientSession,
   destroyPatientSession,
@@ -50,8 +46,14 @@ async function recordAttempt(prefix: string, identifier: string, windowSeconds: 
   }
 }
 
-async function clearAttempts(prefix: string, identifier: string): Promise<void> {
-  await redis.del(rateLimitKey(prefix, identifier));
+/** The phone number in E.164 or the patient ID upper-cased, so every way of typing one maps to one counter. */
+function normaliseIdentifier(identifier: string): string {
+  if (/^ACI-/i.test(identifier)) return identifier.toUpperCase();
+  try {
+    return toE164(identifier);
+  } catch {
+    return identifier.toLowerCase();
+  }
 }
 
 export const portalAuthRouter = Router();
@@ -70,6 +72,8 @@ const registerSchema = z.object({
   // product depends on it (no email login, no email OTP). Only ever used
   // later for the staff-initiated visit-summary email at checkout.
   email: z.string().email('Please enter a valid email address').optional().or(z.literal('')),
+  /** Optional ID document and next of kin (C11). */
+  identity: patientIdentityInputSchema.optional(),
 });
 
 portalAuthRouter.post('/register', async (req, res) => {
@@ -101,45 +105,92 @@ portalAuthRouter.post('/register', async (req, res) => {
     return;
   }
 
-  const patient = await registerPatient({
-    phoneNumberE164: phoneE164,
-    firstName: parsed.data.firstName,
-    lastName: parsed.data.lastName,
-    dateOfBirth: parsed.data.dateOfBirth ? new Date(parsed.data.dateOfBirth) : undefined,
-    sex: parsed.data.sex ?? 'UNKNOWN',
-    consentChannel: 'PORTAL',
-    crossClinicConsent: parsed.data.crossClinicConsent ?? false,
-    pin: parsed.data.pin,
-    email: parsed.data.email || undefined,
-    acceptedTermsAndPrivacyNotice: true,
-  }).catch((err) => {
-    if (err?.code === 'P2002') return null;
+  let identity;
+  try {
+    identity = preparePatientIdentity(parsed.data.identity ?? {}, 'fillIn');
+  } catch (err) {
+    if (err instanceof PatientIdentityError) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
     throw err;
-  });
-
-  if (!patient) {
-    res.status(409).json({ error: 'An account with that phone number already exists' });
-    return;
   }
 
-  const token = await createPatientSession({
-    patientId: patient.id,
-    patientCode: patient.patientCode,
-    firstName: patient.firstName,
-  });
+  // C3: no account yet. The signup waits until the phone is verified, by
+  // the SMS code or at the clinic, and is kept so nothing is retyped.
+  try {
+    const { pendingId, smsSent } = await startPendingSignup({
+      phoneNumberE164: phoneE164,
+      firstName: parsed.data.firstName,
+      lastName: parsed.data.lastName,
+      dateOfBirth: parsed.data.dateOfBirth ? new Date(parsed.data.dateOfBirth) : undefined,
+      sex: parsed.data.sex ?? 'UNKNOWN',
+      email: parsed.data.email || undefined,
+      identity,
+      pinHash: await hashPatientPin(parsed.data.pin),
+      crossClinicConsent: parsed.data.crossClinicConsent ?? false,
+    });
+    res.status(202).json({ pendingId, smsSent, ...(smsSent ? {} : { message: CODE_NOT_SENT_MESSAGE }) });
+  } catch (err) {
+    if (err instanceof PendingSignupError) {
+      res.status(err.status).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
+});
 
+function startPatientSession(res: Response, req: Request, token: string): void {
   res.cookie(PATIENT_SESSION_COOKIE_NAME, token, {
     httpOnly: true,
-    // req.secure (not env.NODE_ENV, which Railway never sets to
-    // 'production') reflects whether this request actually arrived over
-    // HTTPS, via the trust proxy setting in app.ts honoring
-    // X-Forwarded-Proto from the platform's TLS-terminating edge proxy.
+    // req.secure (not env.NODE_ENV) reflects whether this request actually
+    // arrived over HTTPS, via the trust proxy setting in app.ts.
     secure: req.secure,
     sameSite: 'lax',
     maxAge: DASHBOARD_SESSION_TTL_SECONDS * 1000,
   });
+}
 
-  res.status(201).json({ patientCode: patient.patientCode, firstName: patient.firstName });
+const verifySignupSchema = z.object({ pendingId: z.string().min(1), code: z.string().trim().regex(/^\d{6}$/, 'The code is 6 digits') });
+
+/** The SMS code from signup: creates the account (phone verified) and logs the patient in. */
+portalAuthRouter.post('/register/verify', async (req, res) => {
+  const parsed = verifySignupSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Enter the 6-digit code' });
+    return;
+  }
+  try {
+    const patient = await verifyPendingSignup(parsed.data.pendingId, parsed.data.code);
+    const token = await createPatientSession({ patientId: patient.id, patientCode: patient.patientCode, firstName: patient.firstName });
+    startPatientSession(res, req, token);
+    res.status(201).json({ patientCode: patient.patientCode, firstName: patient.firstName });
+  } catch (err) {
+    if (err instanceof PendingSignupError) {
+      res.status(err.status).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
+});
+
+/** "Send the code again" for a pending signup. */
+portalAuthRouter.post('/register/resend', async (req, res) => {
+  const pendingId = typeof req.body?.pendingId === 'string' ? req.body.pendingId : '';
+  if (!pendingId) {
+    res.status(400).json({ error: 'Missing signup' });
+    return;
+  }
+  try {
+    const { smsSent } = await resendSignupCode(pendingId);
+    res.json({ smsSent, ...(smsSent ? {} : { message: CODE_NOT_SENT_MESSAGE }) });
+  } catch (err) {
+    if (err instanceof PendingSignupError) {
+      res.status(err.status).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
 });
 
 const loginSchema = z.object({
@@ -155,22 +206,25 @@ portalAuthRouter.post('/login', async (req, res) => {
   }
 
   const identifier = parsed.data.identifier.trim();
+  const patient = await findPatientByPhoneOrCode(identifier);
+  // Counted per account: 0712…, +254 712… and the patient ID all reach the
+  // same counter, so typing the number another way never buys more tries.
+  const subject: LockoutSubject = patient ? `patient:${patient.id}` : `unknown:patient:${normaliseIdentifier(identifier)}`;
 
-  if (await isRateLimited('login_attempts', identifier, LOGIN_RATE_LIMIT_MAX_ATTEMPTS)) {
-    res.status(429).json({ error: 'Too many failed attempts. Try again in a few minutes.' });
+  if (await isLockedOut(subject)) {
+    res.status(429).json({ error: lockoutMessage() });
     return;
   }
 
-  const patient = await findPatientByPhoneOrCode(identifier);
   const isValid = patient ? await verifyPatientPin(patient, parsed.data.pin) : false;
 
   if (!patient || !isValid) {
-    await recordAttempt('login_attempts', identifier, LOGIN_RATE_LIMIT_WINDOW_SECONDS);
-    res.status(401).json({ error: 'Invalid phone number/patient ID or PIN' });
+    const nowLocked = await recordWrongPin(subject);
+    res.status(nowLocked ? 429 : 401).json({ error: nowLocked ? lockoutMessage() : 'Invalid phone number/patient ID or PIN' });
     return;
   }
 
-  await clearAttempts('login_attempts', identifier);
+  await clearLockout(subject);
 
   const token = await createPatientSession({
     patientId: patient.id,
@@ -233,7 +287,12 @@ portalAuthRouter.post('/forgot-pin', async (req, res) => {
     }
   }
 
-  res.json({ message: 'If that account exists, we sent a one-time code by SMS.' });
+  // Same answer whether or not the account exists, or the SMS went out, so
+  // nobody can probe for accounts. The clinic fallback is always offered.
+  res.json({
+    message:
+      'If that account exists, we sent a one-time code by SMS. If no code arrives, visit your clinic – the front desk will verify your phone and finish setting up your account.',
+  });
 });
 
 const resetPinSchema = z.object({
@@ -263,22 +322,16 @@ portalAuthRouter.post('/reset-pin', async (req, res) => {
     return;
   }
 
-  const isValid = await verifyPinResetOtp(patient.id, parsed.data.code.trim());
-  if (!isValid) {
+  const via = await verifyPinResetOtp(patient.id, parsed.data.code.trim());
+  if (!via) {
     res.status(400).json({ error: 'Invalid or expired code' });
     return;
   }
 
-  await setPatientPin(patient.id, parsed.data.newPin);
-
-  // Unlock automatically: clear the failed-login counter for every form of
-  // identifier they might log in with (it's keyed by what was typed), and
-  // log out any existing sessions, since the old PIN may be what someone
-  // else was using.
-  for (const id of new Set([parsed.data.identifier.trim(), patient.patientCode, patient.phoneNumber])) {
-    await clearAttempts('login_attempts', id);
-  }
-  await revokeSessionsFor(`patient:${patient.id}`);
+  // setPatientPin also marks the phone verified, lifts any lockout, logs out
+  // every existing session (the old PIN may be what someone else was using)
+  // and is audit-logged.
+  await setPatientPin(patient.id, parsed.data.newPin, via);
 
   res.json({ message: 'PIN updated. You can now log in with your new PIN.' });
 });
@@ -300,16 +353,17 @@ portalAuthRouter.post('/account/delete', requirePatientSession, async (req, res)
 
   const { patientId } = (req as AuthenticatedPatientRequest).patientSession;
 
-  if (await isRateLimited('delete_attempts', patientId, LOGIN_RATE_LIMIT_MAX_ATTEMPTS)) {
-    res.status(429).json({ error: 'Too many failed attempts. Try again in a few minutes.' });
+  // Same per-account counter as login, so a wrong PIN here counts there too.
+  if (await isLockedOut(`patient:${patientId}`)) {
+    res.status(429).json({ error: lockoutMessage() });
     return;
   }
 
   const patient = await prisma.patient.findFirst({ where: { id: patientId, deletedAt: null } });
   const isValid = patient ? await verifyPatientPin(patient, parsed.data.pin) : false;
   if (!patient || !isValid) {
-    await recordAttempt('delete_attempts', patientId, LOGIN_RATE_LIMIT_WINDOW_SECONDS);
-    res.status(401).json({ error: 'Incorrect PIN' });
+    const nowLocked = await recordWrongPin(`patient:${patientId}`);
+    res.status(nowLocked ? 429 : 401).json({ error: nowLocked ? lockoutMessage() : 'Incorrect PIN' });
     return;
   }
 
@@ -323,7 +377,6 @@ portalAuthRouter.post('/account/delete', requirePatientSession, async (req, res)
     throw err;
   }
 
-  await clearAttempts('delete_attempts', patientId);
   res.clearCookie(PATIENT_SESSION_COOKIE_NAME);
   res.status(204).send();
 });

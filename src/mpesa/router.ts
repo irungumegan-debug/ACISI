@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { parseStkCallback } from './callback';
 import { StkCallbackPayload } from './types';
-import { applyPaymentResult } from '../services/checkInService';
+import { handleStkCallback } from '../services/checkInService';
+import { clinicStkConfigured } from './clinicStk';
 import { applyClinicStkResult } from '../services/billingService';
 import { errorSummary, logger } from '../utils/logger';
 
@@ -21,11 +22,12 @@ mpesaRouter.post('/callback', async (req, res) => {
     return;
   }
 
-  // applyPaymentResult writes the one log line per callback (checkInId,
-  // source, resultCode, new status — never the phone number, receipt
-  // number or payload).
+  // A success is only applied once Safaricom's status query confirms it
+  // (handleStkCallback): the callback alone is never trusted. One log line
+  // per callback (checkInId, source, resultCode, status — never the phone
+  // number, receipt number or payload).
   try {
-    await applyPaymentResult(parseStkCallback(payload), payload, 'callback');
+    await handleStkCallback(parseStkCallback(payload), payload);
   } catch (err) {
     logger.error(
       { err: errorSummary(err), resultCode: payload.Body.stkCallback.ResultCode },
@@ -45,8 +47,15 @@ mpesaRouter.post('/callback', async (req, res) => {
 mpesaRouter.post('/clinic-callback', async (req, res) => {
   const payload = req.body as StkCallbackPayload;
   if (!payload?.Body?.stkCallback) {
-    logger.warn({ body: req.body }, 'Received malformed clinic M-Pesa callback');
+    // No body in the log: a callback can carry the patient's phone number.
+    logger.warn('Received malformed clinic M-Pesa callback');
     res.status(400).json({ ResultCode: 1, ResultDesc: 'Malformed callback body' });
+    return;
+  }
+  // Switched off (always on a live server): no clinic prompt was sent, so nothing can match.
+  if (!clinicStkConfigured()) {
+    logger.warn('Clinic M-Pesa callback ignored: clinic M-Pesa requests are switched off');
+    res.status(200).json({ ResultCode: 0, ResultDesc: 'Accepted' });
     return;
   }
 

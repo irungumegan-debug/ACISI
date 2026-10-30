@@ -32,6 +32,7 @@ export interface ClinicStaffListItem {
   id: string;
   staffCode: string;
   name: string;
+  email: string | null;
   role: string;
   departmentName: string | null;
   /** Every department a doctor works in (empty for other roles). */
@@ -51,8 +52,11 @@ export interface VisitHistoryEntry {
   encounterId: string;
   clinicName: string;
   visitedAt: string;
+  /** Only ever sent to doctors; null for front desk. */
   diagnosis: string | null;
   prescription: string | null;
+  /** Who handled the visit. */
+  doctorName: string | null;
   isOwnClinic: boolean;
 }
 
@@ -84,6 +88,8 @@ export interface PatientDetail extends PatientIdentityRecord {
   smsOptOut: boolean;
   history: VisitHistoryEntry[];
   hasHiddenHistoryElsewhere: boolean;
+  /** How this clinic may see other clinics' visits right now, or null (own visits only). */
+  crossClinicBasis?: 'STANDING_CONSENT' | 'SHARING_CODE' | null;
 }
 
 export type CheckInStatus = 'PENDING_PAYMENT' | 'PAID' | 'FAILED' | 'CANCELLED' | 'NO_FEE' | 'NEEDS_REVIEW';
@@ -103,6 +109,8 @@ export interface QueueItem {
   departmentName: string;
   amountKes: number;
   checkInStatus: CheckInStatus;
+  /** Pay later: in the queue while ACISI's fee is confirmed in the background. */
+  queuedBeforePayment?: boolean;
   source: CheckInSource;
   /** Who checked the patient in at the front desk (walk-ins); null for remote check-ins. */
   checkedInByName: string | null;
@@ -159,8 +167,11 @@ export interface HistoryEntry {
   encounterId: string;
   clinicName: string;
   visitedAt: string;
+  /** Only ever sent to doctors; null for front desk. */
   diagnosis: string | null;
   prescription: string | null;
+  /** Who handled the visit. */
+  doctorName: string | null;
   isOwnClinic: boolean;
 }
 
@@ -173,6 +184,8 @@ export interface EncounterDetail {
   status: EncounterStatus;
   history: HistoryEntry[];
   hasHiddenHistoryElsewhere: boolean;
+  /** How this clinic may see other clinics' visits right now, or null (own visits only). */
+  crossClinicBasis?: 'STANDING_CONSENT' | 'SHARING_CODE' | null;
 }
 
 export interface DepartmentOption {
@@ -212,6 +225,7 @@ export interface WalkInRequest {
     dateOfBirth?: string;
     age?: number;
     sex?: Sex;
+    email?: string;
     registrationConsent: boolean;
   };
 }
@@ -262,6 +276,8 @@ export interface CheckoutView {
   visitStatus: EncounterStatus;
   patient: { id: string; name: string; patientCode: string; phoneNumber: string; smsOptOut: boolean };
   departmentName: string;
+  /** This visit's prescription, read-only, for billing medicines. */
+  prescription: string | null;
   /** The visit's department; its own fee (if set) pre-fills the consultation line. */
   department: { id: string; name: string; consultationFeeKes: number | null };
   settings: {
@@ -341,6 +357,13 @@ class ApiError extends Error {
     super(message);
     this.name = 'ApiError';
   }
+}
+
+export interface LegalStatus {
+  termsAcceptanceRequired: boolean;
+  termsRequired?: boolean;
+  confidentialityRequired?: boolean;
+  confidentialityText?: string;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -465,10 +488,13 @@ export const api = {
 
   /** Whether this staff member must accept the current Terms of Service before using the console. */
   getLegalStatus() {
-    return request<{ termsAcceptanceRequired: boolean }>('/legal');
+    return request<LegalStatus>('/legal');
   },
-  acceptTerms() {
-    return request<{ termsAcceptanceRequired: boolean }>('/legal/accept', { method: 'POST', body: JSON.stringify({ accept: true }) });
+  acceptTerms(acceptConfidentiality: boolean) {
+    return request<{ termsAcceptanceRequired: boolean }>('/legal/accept', {
+      method: 'POST',
+      body: JSON.stringify({ accept: true, acceptConfidentiality }),
+    });
   },
 
   searchPatients(query: string) {
@@ -477,6 +503,42 @@ export const api = {
 
   getPatient(id: string) {
     return request<PatientDetail>(`/patients/${id}`);
+  },
+
+  findPendingSignups(phone: string) {
+    return request<{ phoneNumber: string; signups: { pendingId: string; name: string; signedUpAt: string }[] }>(
+      `/phone-verification/pending-signups?phone=${encodeURIComponent(phone)}`,
+    );
+  },
+
+  completePendingSignup(pendingId: string) {
+    return request<{ patientCode: string }>(`/phone-verification/pending-signups/${encodeURIComponent(pendingId)}/complete`, {
+      method: 'POST',
+      body: JSON.stringify({ phoneConfirmedInPerson: true }),
+    });
+  },
+
+  issueSetupCode(patientId: string) {
+    return request<{ code: string; expiresAt: string; patientCode: string }>(
+      `/phone-verification/patients/${encodeURIComponent(patientId)}/setup-code`,
+      { method: 'POST', body: JSON.stringify({ phoneConfirmedInPerson: true }) },
+    );
+  },
+
+  requestRecords(patientId: string) {
+    return request<{ smsSent: boolean }>(`/patients/${encodeURIComponent(patientId)}/record-requests`, { method: 'POST' });
+  },
+
+  verifyRecordsCode(patientId: string, code: string) {
+    return request<{ accessUntil: string }>(`/patients/${encodeURIComponent(patientId)}/record-requests/verify`, {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    });
+  },
+
+  /** Opens in a new tab for printing; the session cookie goes with it (same origin). */
+  visitRecordUrl(patientId: string, encounterId: string) {
+    return `/api/staff/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(encounterId)}/record`;
   },
 
   getTodayCheckIns() {

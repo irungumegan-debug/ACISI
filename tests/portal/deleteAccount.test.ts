@@ -42,6 +42,7 @@ import { deletePatientAccount } from '../../src/services/patientDeletionService'
 import { prisma } from '../../src/db/prisma';
 import { portalAuthRouter } from '../../src/portal/auth';
 import { LOGIN_RATE_LIMIT_MAX_ATTEMPTS } from '../../src/config/constants';
+import { recordWrongPin } from '../../src/services/pinLockout';
 
 const mockVerifyPin = verifyPatientPin as jest.Mock;
 const PATIENT = { id: 'p-1', patientCode: 'ACI-7F2K', pinHash: 'hash', deletedAt: null };
@@ -96,6 +97,15 @@ describe('POST /patients/account/delete', () => {
     }
     mockVerifyPin.mockResolvedValue(true);
     const res = await asPatient(request(app).post('/patients/account/delete').send({ pin: '1234' }));
+    expect(res.status).toBe(429);
+    expect(res.body.error).toBe('Too many wrong PINs. Try again in 5 minutes.');
+    expect(deletePatientAccount).not.toHaveBeenCalled();
+  });
+
+  it('shares the per-account counter with login: a lock from wrong login PINs blocks deletion too', async () => {
+    for (let i = 0; i < LOGIN_RATE_LIMIT_MAX_ATTEMPTS; i++) await recordWrongPin('patient:p-1');
+    mockVerifyPin.mockResolvedValue(true);
+    const res = await asPatient(request(buildApp()).post('/patients/account/delete').send({ pin: '1234' }));
     expect(res.status).toBe(429);
     expect(deletePatientAccount).not.toHaveBeenCalled();
   });

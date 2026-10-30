@@ -15,7 +15,6 @@ import {
 } from '../services/encounterService';
 import { emailConfigured } from '../config/email';
 import { changeDoctor, listDoctorOptions, ReassignError } from '../services/doctorReassignmentService';
-import { getDoctorDepartmentIds } from '../services/departmentService';
 
 export const checkinsRouter = Router();
 
@@ -33,18 +32,21 @@ checkinsRouter.use(requireStaffSession);
  * may have paid), in a collapsed section, not the main queue.
  */
 checkinsRouter.get('/today', async (req, res) => {
-  const { clinicId, role, staffId } = (req as AuthenticatedRequest).dashboardSession;
+  const { clinicId, role } = (req as AuthenticatedRequest).dashboardSession;
+  // The front-desk queue lists every patient in the department with phone
+  // numbers. Doctors work from their own queue (GET /doctor/queue), so the
+  // server refuses them here.
+  if (role === 'DOCTOR') {
+    res.status(403).json({ error: 'Doctors use My queue' });
+    return;
+  }
   const startOfToday = dayjs().startOf('day').toDate();
-  // Doctors only ever see patients in their own departments (read fresh each request).
-  const departmentScope =
-    role === 'DOCTOR' ? { departmentId: { in: await getDoctorDepartmentIds(staffId) } } : {};
 
   const checkIns = await prisma.checkIn.findMany({
     where: {
       clinicId,
       createdAt: { gte: startOfToday },
       status: { in: ['PENDING_PAYMENT', 'PAID', 'FAILED', 'NEEDS_REVIEW', 'NO_FEE'] },
-      ...departmentScope,
     },
     orderBy: { createdAt: 'desc' },
     include: {
@@ -109,6 +111,9 @@ checkinsRouter.get('/today', async (req, res) => {
       departmentCode: c.department.code,
       amountKes: Number(c.amountKes),
       checkInStatus: c.status,
+      // Pay later (C20): in the queue already while ACISI's fee is confirmed
+      // in the background. The clinic never collects it.
+      queuedBeforePayment: c.queuedBeforePaymentAt !== null,
       source: c.source,
       checkedInByName: c.staff?.name ?? null,
       encounterStatus: c.encounter?.status ?? null,
@@ -133,6 +138,10 @@ checkinsRouter.get('/today', async (req, res) => {
 const confirmPaymentSchema = z.object({ mpesaCode: z.string().trim().min(1).max(32) });
 
 checkinsRouter.post('/:id/confirm-payment', async (req, res) => {
+  if ((req as unknown as AuthenticatedRequest).dashboardSession.role === 'DOCTOR') {
+    res.status(403).json({ error: 'Only front-desk staff can confirm check-in fees' });
+    return;
+  }
   const parsed = confirmPaymentSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Enter the M-Pesa code from the patient's SMS" });
@@ -168,12 +177,11 @@ checkinsRouter.post('/:id/confirm-payment', async (req, res) => {
 const checkoutSchema = z.object({ deliveryMethod: z.enum(['sms', 'sms_and_email']).optional() });
 
 /**
- * Completes the visit and triggers the visit summary — only once the
- * doctor's consultation has moved the encounter to READY_FOR_CHECKOUT.
- * Keyed by checkInId (front desk's natural unit) even though the state
- * lives on Encounter, since CheckIn:Encounter is 1:1. The SMS summary
- * always fires; deliveryMethod only controls whether email is *also* sent
- * — see encounterService.checkoutEncounter.
+ * Completes the visit — only once the doctor's consultation has moved the
+ * encounter to READY_FOR_CHECKOUT. Keyed by checkInId (front desk's natural
+ * unit) even though the state lives on Encounter, since CheckIn:Encounter
+ * is 1:1. No SMS summary is sent; deliveryMethod only controls whether the
+ * visit PDF is emailed — see encounterService.checkoutEncounter.
  */
 checkinsRouter.post('/:id/checkout', async (req, res) => {
   const parsed = checkoutSchema.safeParse(req.body);

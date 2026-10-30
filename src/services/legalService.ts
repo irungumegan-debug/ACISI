@@ -1,6 +1,6 @@
 import { LegalAcceptanceContext, LegalDocument, Prisma } from '@prisma/client';
 import { prisma } from '../db/prisma';
-import { PRIVACY_NOTICE_VERSION, TERMS_OF_SERVICE_VERSION } from '../config/legal';
+import { CONFIDENTIALITY_UNDERTAKING_VERSION, PRIVACY_NOTICE_VERSION, TERMS_OF_SERVICE_VERSION } from '../config/legal';
 
 /**
  * Acceptance of the Terms of Service and acknowledgment of the Privacy
@@ -12,6 +12,7 @@ import { PRIVACY_NOTICE_VERSION, TERMS_OF_SERVICE_VERSION } from '../config/lega
 export const CURRENT_LEGAL_VERSIONS: Readonly<Record<LegalDocument, string>> = {
   PRIVACY_NOTICE: PRIVACY_NOTICE_VERSION,
   TERMS_OF_SERVICE: TERMS_OF_SERVICE_VERSION,
+  CONFIDENTIALITY_UNDERTAKING: CONFIDENTIALITY_UNDERTAKING_VERSION,
 };
 
 type Db = Prisma.TransactionClient | typeof prisma;
@@ -80,4 +81,9 @@ export async function staffNeedsTermsAcceptance(staffId: string): Promise<boolea
     staffId,
     context: { in: ['CLINIC_REGISTRATION', 'STAFF_LOGIN'] },
   }));
+}
+
+/** Every staff member must have accepted the current confidentiality undertaking (signup, clinic registration, or the console screen). */
+export async function staffNeedsConfidentialityAcceptance(staffId: string): Promise<boolean> {
+  return !(await hasCurrent('CONFIDENTIALITY_UNDERTAKING', { staffId }));
 }

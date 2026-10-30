@@ -51,6 +51,7 @@ const newPatientSchema = z.object({
   dateOfBirth: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, 'Enter a valid date of birth').optional(),
   age: z.coerce.number().int('Age must be a whole number').min(0).max(120).optional(),
   sex: z.enum(['MALE', 'FEMALE', 'OTHER', 'UNKNOWN']).optional(),
+  email: z.string().trim().email('Enter a valid email address').max(254).optional().or(z.literal('')),
   registrationConsent: z.boolean(),
 });
 

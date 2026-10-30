@@ -154,3 +154,20 @@ describe('POST /appointments/:id/arrive', () => {
     expect(res.status).toBe(409);
   });
 });
+
+describe('doctors are refused on the clinic-wide appointment routes (C1)', () => {
+  it.each([
+    ['get', '/appointments'],
+    ['post', '/appointments/a1/confirm'],
+    ['post', '/appointments/a1/cancel'],
+    ['post', '/appointments/a1/arrive'],
+  ])('%s %s -> 403', async (method, path) => {
+    mockLoadSession.mockResolvedValue({ ...SESSION, role: 'DOCTOR', departmentId: 'dept-1' });
+    const res = await withCookie((request(buildApp()) as unknown as Record<string, (p: string) => request.Test>)[method]!(path));
+    expect(res.status).toBe(403);
+    expect(mockListClinic).not.toHaveBeenCalled();
+    expect(mockConfirm).not.toHaveBeenCalled();
+    expect(mockCancel).not.toHaveBeenCalled();
+    expect(mockCheckInForAppointment).not.toHaveBeenCalled();
+  });
+});

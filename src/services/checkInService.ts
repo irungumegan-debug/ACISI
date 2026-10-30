@@ -2,15 +2,18 @@ import crypto from 'node:crypto';
 import { CheckIn, CheckInStatus, Prisma } from '@prisma/client';
 import { prisma } from '../db/prisma';
 import { env } from '../config/env';
+import { MAX_PROMPT_RESENDS_PER_CHECK_IN, PROMPT_RESEND_WAIT_SECONDS } from '../config/constants';
 import { errorSummary, logger } from '../utils/logger';
 import { redis } from '../config/redis';
 import { queryStkPushStatus } from '../mpesa/verify';
 import { normaliseMpesaCode } from './billingMath';
 import { recordAuditEvent } from './auditService';
 import { initiateStkPush } from '../mpesa/stkPush';
+import { notePromptFailed, notePromptResult } from './mpesaHealth';
 import { ParsedStkCallback } from '../mpesa/types';
 import { enqueueSmsReceipt } from '../jobs/queue';
-import { publishCheckInFailed, publishCheckInPaid } from './realtimeEvents';
+import { publishCheckInFailed, publishCheckInPaid, publishQueueChanged } from './realtimeEvents';
+import { getOutstandingFees, liftRestrictionIfClear, settleOutstandingFees } from './feeService';
 import { assignDoctorForCheckIn } from './doctorAssignmentService';
 import { findArrivalMatch, getAppointmentForArrival, markAppointmentCompleted } from './appointmentService';
 
@@ -54,17 +57,35 @@ export async function initiateCheckIn(input: InitiateCheckInInput): Promise<Init
       ? input.appointmentId
       : ((await findArrivalMatch(input.patientId, input.clinicId, input.departmentId))?.id ?? null);
 
-  const checkIn = await prisma.checkIn.create({
-    data: {
-      patientId: input.patientId,
-      clinicId: input.clinicId,
-      departmentId: input.departmentId,
-      ussdSessionId: input.ussdSessionId,
-      amountKes: env.CHECKIN_FEE_AMOUNT_KES,
-      status: 'PENDING_PAYMENT',
-      appointmentId,
-    },
+  // Pay later (C20): the patient joins the queue now and the fee is
+  // confirmed in the background, so a slow or failed M-Pesa never keeps
+  // anyone from being seen. Any fee still owed from earlier is collected in
+  // the same prompt ("old fee + new fee").
+  const outstanding = await getOutstandingFees(input.patientId);
+  const amountKes = env.CHECKIN_FEE_AMOUNT_KES + outstanding.totalKes;
+  const assignedDoctorId = await assignDoctorForCheckIn(input.clinicId, input.departmentId);
+  const now = new Date();
+  const checkIn = await prisma.$transaction(async (tx) => {
+    const created = await tx.checkIn.create({
+      data: {
+        patientId: input.patientId,
+        clinicId: input.clinicId,
+        departmentId: input.departmentId,
+        ussdSessionId: input.ussdSessionId,
+        amountKes,
+        includesOutstandingKes: outstanding.totalKes,
+        status: 'PENDING_PAYMENT',
+        appointmentId,
+        queuedBeforePaymentAt: now,
+        paymentRequestedAt: now,
+      },
+    });
+    await tx.encounter.create({
+      data: { patientId: input.patientId, clinicId: input.clinicId, checkInId: created.id, assignedDoctorId },
+    });
+    return created;
   });
+  publishQueueChanged({ checkInId: checkIn.id, clinicId: checkIn.clinicId });
 
   // The appointment is "done" the moment it produces a real arrival — this
   // CheckIn's own status (PENDING_PAYMENT/PAID/FAILED) tracks payment
@@ -79,12 +100,12 @@ export async function initiateCheckIn(input: InitiateCheckInInput): Promise<Init
     action: 'CHECK_IN_CREATED',
     entityType: 'CheckIn',
     entityId: checkIn.id,
-    metadata: { clinicId: input.clinicId, departmentId: input.departmentId, appointmentId },
+    metadata: { clinicId: input.clinicId, departmentId: input.departmentId, appointmentId, includesOutstandingKes: outstanding.totalKes },
   });
 
   try {
     const stkResponse = await initiateStkPush({
-      amountKes: env.CHECKIN_FEE_AMOUNT_KES,
+      amountKes,
       phoneNumberE164: input.phoneNumberE164,
       // Daraja caps AccountReference at 12 chars.
       accountReference: checkIn.id.slice(-10),
@@ -104,7 +125,9 @@ export async function initiateCheckIn(input: InitiateCheckInInput): Promise<Init
 
     return { checkIn: updated, wasAlreadyInitiated: false };
   } catch (err) {
+    // The patient stays in the queue; the fee is now owed (see feeService).
     logger.error({ err, checkInId: checkIn.id }, 'STK push failed to initiate; marking check-in FAILED');
+    await notePromptFailed();
     const failed = await prisma.checkIn.update({ where: { id: checkIn.id }, data: { status: 'FAILED' } });
     // Without this, a staff member already watching the live queue would
     // never see this arrival until they manually reload the page — the row
@@ -158,7 +181,9 @@ async function claimPaid(
   extra: Prisma.CheckInUncheckedUpdateManyInput = {},
   withinTx?: (tx: Prisma.TransactionClient) => Promise<unknown>,
 ): Promise<CheckIn | null> {
-  const assignedDoctorId = await assignDoctorForCheckIn(checkIn.clinicId, checkIn.departmentId);
+  // Pay-later check-ins (C20) already have their visit; older ones get it now.
+  const alreadyQueued = Boolean(checkIn.queuedBeforePaymentAt);
+  const assignedDoctorId = alreadyQueued ? null : await assignDoctorForCheckIn(checkIn.clinicId, checkIn.departmentId);
 
   const updated = await prisma.$transaction(async (tx) => {
     const { count } = await tx.checkIn.updateMany({
@@ -167,17 +192,28 @@ async function claimPaid(
     });
     if (count === 0) return null;
     if (withinTx) await withinTx(tx);
-    await tx.encounter.create({
-      data: {
-        patientId: checkIn.patientId,
-        clinicId: checkIn.clinicId,
-        checkInId: checkIn.id,
-        assignedDoctorId,
-      },
-    });
+    if (!alreadyQueued) {
+      await tx.encounter.create({
+        data: {
+          patientId: checkIn.patientId,
+          clinicId: checkIn.clinicId,
+          checkInId: checkIn.id,
+          assignedDoctorId,
+        },
+      });
+    }
+    // Earlier owed fees this payment was also collecting are now paid off.
+    await settleOutstandingFees(tx, checkIn);
     return tx.checkIn.findUniqueOrThrow({ where: { id: checkIn.id }, include: { patient: true } });
   });
   if (!updated) return null;
+
+  if (checkIn.feeSettledAt) {
+    // A later payment had already covered this fee, and now M-Pesa (or front
+    // desk) says it was paid as well: flag it for a manual refund.
+    await recordAuditEvent({ actorType: 'SYSTEM', action: 'CHECK_IN_FEE_PAID_TWICE', entityType: 'CheckIn', entityId: checkIn.id });
+  }
+  await liftRestrictionIfClear(checkIn.patientId);
 
   publishCheckInPaid({
     checkInId: updated.id,
@@ -262,6 +298,8 @@ export async function applyPaymentResult(
     return { checkInId: checkIn.id, status };
   }
 
+  // Owner warning when prompts keep failing (C20): only the answer that decided the check-in counts.
+  await notePromptResult(parsed.resultCode);
   const status: CheckInStatus = succeeded ? 'PAID' : 'FAILED';
   await recordAuditEvent({
     actorType: 'SYSTEM',
@@ -282,6 +320,104 @@ export async function applyPaymentResult(
  * processed") leaves the check-in pending for the next try.
  */
 const DEFINITE_FAILURE_CODES = new Set([1, 1019, 1032, 1037, 2001]);
+
+/**
+ * A success callback Safaricom couldn't confirm yet: its receipt details
+ * (never the phone number) wait here until the status query confirms the
+ * payment, so the receipt is still recorded.
+ */
+const unconfirmedCallbackKey = (checkoutRequestId: string) => `mpesa:unconfirmed-callback:${checkoutRequestId}`;
+const UNCONFIRMED_CALLBACK_TTL_SECONDS = 2 * 60 * 60;
+
+type CallbackReceipt = Pick<ParsedStkCallback, 'merchantRequestId' | 'mpesaReceiptNumber' | 'amountKes'> & { transactionDate?: Date };
+
+async function keepUnconfirmedCallback(parsed: ParsedStkCallback): Promise<void> {
+  const receipt = {
+    merchantRequestId: parsed.merchantRequestId,
+    mpesaReceiptNumber: parsed.mpesaReceiptNumber,
+    amountKes: parsed.amountKes,
+    transactionDate: parsed.transactionDate?.toISOString(),
+  };
+  try {
+    await redis.set(unconfirmedCallbackKey(parsed.checkoutRequestId), JSON.stringify(receipt), 'EX', UNCONFIRMED_CALLBACK_TTL_SECONDS);
+  } catch (err) {
+    logger.warn({ err: errorSummary(err) }, 'Could not keep unconfirmed M-Pesa callback');
+  }
+}
+
+async function takeUnconfirmedCallback(checkoutRequestId: string): Promise<CallbackReceipt | null> {
+  try {
+    const raw = await redis.get(unconfirmedCallbackKey(checkoutRequestId));
+    if (!raw) return null;
+    await redis.del(unconfirmedCallbackKey(checkoutRequestId));
+    const kept = JSON.parse(raw) as Omit<CallbackReceipt, 'transactionDate'> & { transactionDate?: string };
+    return { ...kept, transactionDate: kept.transactionDate ? new Date(kept.transactionDate) : undefined };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Daraja's callback for ACISI's check-in fee. The callback alone is never
+ * trusted to mark a fee PAID: anyone can POST to a public URL. A success is
+ * applied only once Safaricom's STK push status query (the same check the
+ * portal and the sweep use) says ResultCode 0 for that prompt.
+ *
+ * - Query confirms: applied as PAID, with the callback's receipt details.
+ * - Query gives a definite failure: the query's answer is applied instead,
+ *   and the mismatch is logged (CHECK_IN_CALLBACK_NOT_CONFIRMED).
+ * - Query can't answer yet: nothing changes; the receipt details are kept
+ *   and the portal's polling or the once-a-minute sweep confirms it.
+ *
+ * A failure callback marks nothing PAID and is applied as before.
+ */
+export async function handleStkCallback(
+  parsed: ParsedStkCallback,
+  rawPayload: unknown,
+): Promise<{ checkInId: string; status: CheckInStatus } | null> {
+  if (parsed.resultCode !== 0) return applyPaymentResult(parsed, rawPayload, 'callback');
+
+  const checkIn = await prisma.checkIn.findUnique({
+    where: { mpesaCheckoutRequestId: parsed.checkoutRequestId },
+    select: { id: true, status: true },
+  });
+  // Unknown prompt, or already decided: applyPaymentResult changes nothing and writes the log line.
+  if (!checkIn || !AWAITING_MPESA.includes(checkIn.status)) return applyPaymentResult(parsed, rawPayload, 'callback');
+
+  let answer: Awaited<ReturnType<typeof queryStkPushStatus>> | null = null;
+  try {
+    answer = await queryStkPushStatus(parsed.checkoutRequestId);
+  } catch {
+    // "Still processing" or a network blip: confirmed later (below).
+  }
+  const confirmedCode = answer ? Number(answer.resultCode) : NaN;
+
+  if (confirmedCode === 0) return applyPaymentResult(parsed, rawPayload, 'callback');
+
+  if (DEFINITE_FAILURE_CODES.has(confirmedCode)) {
+    await recordAuditEvent({
+      actorType: 'SYSTEM',
+      action: 'CHECK_IN_CALLBACK_NOT_CONFIRMED',
+      entityType: 'CheckIn',
+      entityId: checkIn.id,
+      metadata: { callbackResultCode: parsed.resultCode, queryResultCode: confirmedCode },
+    });
+    return applyPaymentResult(
+      {
+        merchantRequestId: answer?.merchantRequestId ?? parsed.merchantRequestId,
+        checkoutRequestId: parsed.checkoutRequestId,
+        resultCode: confirmedCode,
+        resultDesc: answer?.resultDesc ?? '',
+      },
+      { source: 'stk-status-query', resultCode: answer?.resultCode, resultDesc: answer?.resultDesc, contradictedCallback: true },
+      'query',
+    );
+  }
+
+  await keepUnconfirmedCallback(parsed);
+  logPaymentOutcome(checkIn.id, 'callback', parsed.resultCode, checkIn.status);
+  return { checkInId: checkIn.id, status: checkIn.status };
+}
 
 /** Ask Safaricom about a given check-in at most this often, however many tabs poll and workers run. */
 const QUERY_THROTTLE_SECONDS = 10;
@@ -327,6 +463,8 @@ export async function queryCheckInPayment(checkInId: string): Promise<CheckInSta
     return checkIn.status;
   }
 
+  // A success callback that arrived before Safaricom could confirm it left its receipt details here.
+  const earlierCallback = resultCode === 0 ? await takeUnconfirmedCallback(checkIn.mpesaCheckoutRequestId) : null;
   const applied = await applyPaymentResult(
     {
       merchantRequestId: result.merchantRequestId ?? checkIn.mpesaMerchantRequestId ?? '',
@@ -334,8 +472,9 @@ export async function queryCheckInPayment(checkInId: string): Promise<CheckInSta
       resultCode,
       resultDesc: result.resultDesc,
       amountKes: resultCode === 0 ? Number(checkIn.amountKes) : undefined,
+      ...(earlierCallback ?? {}),
     },
-    { source: 'stk-status-query', resultCode: result.resultCode, resultDesc: result.resultDesc },
+    { source: 'stk-status-query', resultCode: result.resultCode, resultDesc: result.resultDesc, confirmedCallback: Boolean(earlierCallback) },
     'query',
   );
   return applied?.status ?? checkIn.status;
@@ -357,11 +496,14 @@ export async function sweepPendingCheckInPayments(
 ): Promise<{ queried: number; needsReview: number }> {
   const reviewCutoff = new Date(now.getTime() - NEEDS_REVIEW_AFTER_MS);
 
+  // Timed from the latest prompt (paymentRequestedAt), so a "Pay now" days
+  // after the check-in gets its full hour; older rows fall back to createdAt.
+  const sweepWindow = { gte: reviewCutoff, lte: new Date(now.getTime() - SWEEP_MIN_AGE_MS) };
   const pending = await prisma.checkIn.findMany({
     where: {
       status: 'PENDING_PAYMENT',
       mpesaCheckoutRequestId: { not: null },
-      createdAt: { gte: reviewCutoff, lte: new Date(now.getTime() - SWEEP_MIN_AGE_MS) },
+      OR: [{ paymentRequestedAt: sweepWindow }, { paymentRequestedAt: null, createdAt: sweepWindow }],
     },
     select: { id: true },
     orderBy: { createdAt: 'asc' },
@@ -375,7 +517,10 @@ export async function sweepPendingCheckInPayments(
   }
 
   const stale = await prisma.checkIn.findMany({
-    where: { status: 'PENDING_PAYMENT', createdAt: { lt: reviewCutoff } },
+    where: {
+      status: 'PENDING_PAYMENT',
+      OR: [{ paymentRequestedAt: { lt: reviewCutoff } }, { paymentRequestedAt: null, createdAt: { lt: reviewCutoff } }],
+    },
     select: { id: true, clinicId: true },
   });
   let needsReview = 0;
@@ -386,6 +531,7 @@ export async function sweepPendingCheckInPayments(
     });
     if (count === 0) continue; // An answer arrived in the meantime.
     needsReview += 1;
+    await notePromptFailed(); // No answer from Safaricom within the hour: a time-out.
     publishCheckInFailed({ checkInId: checkIn.id, clinicId: checkIn.clinicId });
     await recordAuditEvent({
       actorType: 'SYSTEM',
@@ -577,4 +723,179 @@ export async function checkInPatientForAppointment(
   });
 
   return result;
+}
+
+export class NothingOwedError extends Error {
+  constructor(message = 'You have no unpaid check-in fee') {
+    super(message);
+    this.name = 'NothingOwedError';
+  }
+}
+
+/**
+ * The profile's "Pay" button (C20): one M-Pesa prompt for everything owed.
+ * Re-uses the oldest owed check-in (it becomes PENDING_PAYMENT again, timed
+ * from now); when it's paid, the other owed fees it covers are settled.
+ * If this prompt fails too, the fees simply stay owed.
+ */
+export async function payOutstandingFees(patientId: string): Promise<{ checkInId: string; amountKes: number }> {
+  const owed = await getOutstandingFees(patientId);
+  const oldest = owed.checkIns[0];
+  if (!oldest) throw new NothingOwedError();
+  const waiting = await prisma.checkIn.findFirst({
+    where: { patientId, status: 'PENDING_PAYMENT', queuedBeforePaymentAt: { not: null }, paymentRequestedAt: { gt: new Date(Date.now() - 2 * 60 * 1000) } },
+  });
+  if (waiting) throw new NothingOwedError('A payment prompt was just sent to your phone. Check your phone, then try again in a minute.');
+
+  const patient = await prisma.patient.findUniqueOrThrow({ where: { id: patientId }, select: { phoneNumber: true } });
+  const clinic = await prisma.clinic.findUniqueOrThrow({ where: { id: oldest.clinicId }, select: { name: true } });
+  const ownFee = Number(oldest.amountKes) - oldest.includesOutstandingKes;
+  const includesOutstandingKes = owed.totalKes - ownFee;
+
+  const { count } = await prisma.checkIn.updateMany({
+    where: { id: oldest.id, status: { in: ['FAILED', 'NEEDS_REVIEW'] } },
+    data: {
+      status: 'PENDING_PAYMENT',
+      amountKes: owed.totalKes,
+      includesOutstandingKes,
+      paymentRequestedAt: new Date(),
+      mpesaCheckoutRequestId: null,
+      mpesaMerchantRequestId: null,
+    },
+  });
+  if (count === 0) throw new NothingOwedError();
+
+  try {
+    const stk = await initiateStkPush({
+      amountKes: owed.totalKes,
+      phoneNumberE164: patient.phoneNumber,
+      accountReference: oldest.id.slice(-10),
+      transactionDesc: `Check-in fee: ${clinic.name}`,
+    });
+    await prisma.checkIn.update({
+      where: { id: oldest.id },
+      data: { mpesaCheckoutRequestId: stk.checkoutRequestId, mpesaMerchantRequestId: stk.merchantRequestId },
+    });
+  } catch (err) {
+    logger.error({ err, checkInId: oldest.id }, 'Outstanding-fee STK push failed to initiate');
+    await notePromptFailed();
+    await prisma.checkIn.update({ where: { id: oldest.id }, data: { status: 'FAILED' } });
+  }
+
+  await recordAuditEvent({
+    actorType: 'PATIENT',
+    actorId: patientId,
+    action: 'OUTSTANDING_FEE_PAYMENT_REQUESTED',
+    entityType: 'CheckIn',
+    entityId: oldest.id,
+    metadata: { amountKes: owed.totalKes, checkInsCovered: owed.checkIns.length },
+  });
+  return { checkInId: oldest.id, amountKes: owed.totalKes };
+}
+
+/** Why a "Resend prompt" was refused, in words for the patient. */
+export class PromptResendError extends Error {
+  constructor(
+    message: string,
+    public status: 404 | 409 | 429 = 409,
+  ) {
+    super(message);
+    this.name = 'PromptResendError';
+  }
+}
+
+/**
+ * "Resend prompt" on the patient's check-in screen (C20): sends the M-Pesa
+ * prompt for this check-in's fee again, when the first one didn't arrive or
+ * was missed. At most MAX_PROMPT_RESENDS_PER_CHECK_IN times per check-in,
+ * and not until the previous prompt has had PROMPT_RESEND_WAIT_SECONDS
+ * (Safaricom is asked about it first, in case it was paid after all). The
+ * patient stays in the queue whatever happens; if this prompt fails too the
+ * fee is simply owed. Nothing about ACISI's till is returned.
+ */
+export async function resendCheckInPrompt(
+  checkInId: string,
+  patientId: string,
+  now: Date = new Date(),
+): Promise<{ checkInId: string; status: CheckInStatus; resendsLeft: number }> {
+  let checkIn = await prisma.checkIn.findFirst({ where: { id: checkInId, patientId } });
+  if (!checkIn || !checkIn.queuedBeforePaymentAt) throw new PromptResendError('Check-in not found', 404);
+
+  if (checkIn.status === 'PENDING_PAYMENT') {
+    const sentAt = checkIn.paymentRequestedAt ?? checkIn.createdAt;
+    const waitMs = sentAt.getTime() + PROMPT_RESEND_WAIT_SECONDS * 1000 - now.getTime();
+    if (waitMs > 0) {
+      throw new PromptResendError(
+        `The last prompt was sent less than a minute ago. Check your phone, or try again in ${Math.ceil(waitMs / 1000)} seconds.`,
+        429,
+      );
+    }
+    // It may have been paid after all: ask before sending another.
+    await queryCheckInPayment(checkIn.id);
+    checkIn = (await prisma.checkIn.findUnique({ where: { id: checkIn.id } })) ?? checkIn;
+  }
+  if (checkIn.status === 'PAID') throw new PromptResendError('This check-in fee has already been paid.');
+  if (!['PENDING_PAYMENT', 'FAILED', 'NEEDS_REVIEW'].includes(checkIn.status) || checkIn.feeSettledAt) {
+    throw new PromptResendError('There is nothing to pay for this check-in.');
+  }
+  if (checkIn.paymentPromptResends >= MAX_PROMPT_RESENDS_PER_CHECK_IN) {
+    throw new PromptResendError(
+      `The prompt has already been resent ${MAX_PROMPT_RESENDS_PER_CHECK_IN} times. You are still in the queue; you can pay the fee later from your profile.`,
+      429,
+    );
+  }
+
+  // Claims one resend; a double press, or a payment landing meanwhile, finds nothing to update.
+  const { count } = await prisma.checkIn.updateMany({
+    where: {
+      id: checkIn.id,
+      status: checkIn.status,
+      feeSettledAt: null,
+      paymentPromptResends: { lt: MAX_PROMPT_RESENDS_PER_CHECK_IN },
+      paymentRequestedAt: checkIn.paymentRequestedAt,
+    },
+    data: {
+      status: 'PENDING_PAYMENT',
+      paymentRequestedAt: now,
+      paymentPromptResends: { increment: 1 },
+      mpesaCheckoutRequestId: null,
+      mpesaMerchantRequestId: null,
+    },
+  });
+  if (count === 0) throw new PromptResendError('This check-in was just updated. Refresh and try again.');
+  const resendsLeft = MAX_PROMPT_RESENDS_PER_CHECK_IN - (checkIn.paymentPromptResends + 1);
+
+  let status: CheckInStatus = 'PENDING_PAYMENT';
+  try {
+    const [patient, clinic] = await Promise.all([
+      prisma.patient.findUniqueOrThrow({ where: { id: patientId }, select: { phoneNumber: true } }),
+      prisma.clinic.findUniqueOrThrow({ where: { id: checkIn.clinicId }, select: { name: true } }),
+    ]);
+    const stk = await initiateStkPush({
+      amountKes: Number(checkIn.amountKes),
+      phoneNumberE164: patient.phoneNumber,
+      accountReference: checkIn.id.slice(-10),
+      transactionDesc: `Check-in fee: ${clinic.name}`,
+    });
+    await prisma.checkIn.update({
+      where: { id: checkIn.id },
+      data: { mpesaCheckoutRequestId: stk.checkoutRequestId, mpesaMerchantRequestId: stk.merchantRequestId },
+    });
+  } catch (err) {
+    logger.error({ err: errorSummary(err), checkInId: checkIn.id }, 'Resent STK push failed to initiate');
+    await notePromptFailed();
+    await prisma.checkIn.update({ where: { id: checkIn.id }, data: { status: 'FAILED' } });
+    status = 'FAILED';
+  }
+
+  await recordAuditEvent({
+    actorType: 'PATIENT',
+    actorId: patientId,
+    action: 'CHECK_IN_PROMPT_RESENT',
+    entityType: 'CheckIn',
+    entityId: checkIn.id,
+    clinicId: checkIn.clinicId,
+    metadata: { resendNumber: checkIn.paymentPromptResends + 1, status },
+  });
+  return { checkInId: checkIn.id, status, resendsLeft };
 }

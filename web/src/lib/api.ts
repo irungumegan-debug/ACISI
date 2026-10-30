@@ -68,6 +68,19 @@ export interface CheckInSummary {
   departmentName: string;
   /** 1 = next in line. Null when not known (not paid yet, or already with the doctor). */
   queuePosition: number | null;
+  /** Pay later: already in the clinic's queue while the ACISI fee is confirmed. */
+  inQueue?: boolean;
+  /** "Resend prompt": null when there is nothing to pay; availableAt is when the button works (null = now). */
+  promptResend?: { resendsLeft: number; availableAt: string | null } | null;
+}
+
+export interface FeeStatus {
+  owedKes: number;
+  oldestOwedAt: string | null;
+  daysOwed: number;
+  reminder: boolean;
+  restricted: boolean;
+  restrictionMessage: string | null;
 }
 
 export interface StaffSessionSummary {
@@ -76,8 +89,19 @@ export interface StaffSessionSummary {
   role: 'RECEPTIONIST' | 'CLINICIAN' | 'DOCTOR' | 'ADMIN';
 }
 
+export interface SharingOverview {
+  allowSharing: boolean;
+  accessToday: { clinicName: string; until: string }[];
+  decisions: { at: string; kind: 'ALLOWED' | 'NOT_ALLOWED' | 'ONE_DAY_CODE'; source: string; clinicName: string | null }[];
+  openRequests: { requestId: string; clinicName: string; requestedAt: string }[];
+}
+
 export const api = {
   // ---- Clinics ----
+  confidentialityUndertaking() {
+    return request<{ text: string; version: string }>('/clinics/confidentiality-undertaking');
+  },
+
   listClinics() {
     return request<{ clinics: ClinicListItem[] }>('/clinics');
   },
@@ -91,6 +115,9 @@ export const api = {
     departments: { name: string; code: string; consultationFeeKes: number | null }[];
     /** "I accept the Terms of Service and have read the Privacy Notice" — required by the server. */
     acceptLegal: boolean;
+    adminEmail?: string;
+    /** The admin's confidentiality undertaking — required by the server. */
+    acceptConfidentiality: boolean;
   }) {
     return request<{ clinicName: string; inviteCode: string; staffCode: string }>('/clinics/register', {
       method: 'POST',
@@ -116,6 +143,9 @@ export const api = {
     pin: string;
     role: 'RECEPTIONIST' | 'DOCTOR';
     departmentId?: string;
+    email?: string;
+    /** Required by the server. */
+    acceptConfidentiality: boolean;
   }) {
     return request<{ staffCode: string }>('/staff/register', {
       method: 'POST',
@@ -141,11 +171,22 @@ export const api = {
     email?: string;
     /** "I accept the Terms of Service and have read the Privacy Notice" — required by the server. */
     acceptLegal: boolean;
+    /** Optional ID document and next of kin. */
+    identity?: PatientIdentity;
   }) {
-    return request<PatientSession>('/patients/register', {
+    // No account yet: the phone is verified first (SMS code, or at the clinic).
+    return request<{ pendingId: string; smsSent: boolean; message?: string }>('/patients/register', {
       method: 'POST',
       body: JSON.stringify(input),
     });
+  },
+
+  verifySignup(pendingId: string, code: string) {
+    return request<PatientSession>('/patients/register/verify', { method: 'POST', body: JSON.stringify({ pendingId, code }) });
+  },
+
+  resendSignupCode(pendingId: string) {
+    return request<{ smsSent: boolean; message?: string }>('/patients/register/resend', { method: 'POST', body: JSON.stringify({ pendingId }) });
   },
 
   patientLogin(identifier: string, pin: string) {
@@ -160,6 +201,31 @@ export const api = {
   },
 
   /** Permanently deletes the logged-in patient's account. Requires their PIN again. */
+  // ---- Unpaid ACISI check-in fee ----
+  getFees() {
+    return request<FeeStatus>('/patients/fees');
+  },
+
+  payFees() {
+    return request<{ checkInId: string; amountKes: number }>('/patients/fees/pay', { method: 'POST' });
+  },
+
+  // ---- Sharing records with other clinics ----
+  getSharing() {
+    return request<SharingOverview>('/patients/sharing');
+  },
+
+  setSharing(allowSharing: boolean) {
+    return request<SharingOverview>('/patients/sharing', { method: 'PUT', body: JSON.stringify({ allowSharing }) });
+  },
+
+  showSharingCode(requestId: string) {
+    return request<{ code: string; expiresAt: string; clinicName: string }>(
+      `/patients/sharing/requests/${encodeURIComponent(requestId)}/code`,
+      { method: 'POST' },
+    );
+  },
+
   deletePatientAccount(pin: string) {
     return request<void>('/patients/account/delete', { method: 'POST', body: JSON.stringify({ pin }) });
   },
@@ -207,6 +273,11 @@ export const api = {
   /** Polled after the M-Pesa prompt is sent, until the check-in is PAID or FAILED. */
   getCheckIn(checkInId: string) {
     return request<CheckInSummary>(`/patients/checkin/${encodeURIComponent(checkInId)}`);
+  },
+
+  /** Sends the M-Pesa prompt for this check-in again (at most 3 times per check-in). */
+  resendCheckInPrompt(checkInId: string) {
+    return request<CheckInSummary>(`/patients/checkin/${encodeURIComponent(checkInId)}/resend-prompt`, { method: 'POST' });
   },
 
   /** The patient's own ID document and next of kin (null when not on file). */
@@ -257,6 +328,10 @@ export const api = {
   /** Not a fetch — same-origin browser navigation already carries the session cookie, so this just builds the href for a plain download link. */
   recordDownloadUrl(encounterId: string) {
     return `/api/patients/records/${encodeURIComponent(encounterId)}/download`;
+  },
+
+  allRecordsDownloadUrl() {
+    return '/api/patients/records/download-all';
   },
 };
 

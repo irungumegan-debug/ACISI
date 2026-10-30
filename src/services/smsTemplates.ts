@@ -142,27 +142,46 @@ export function buildPaymentReceiptSms(input: {
   return appendIfNoExtraPart(build(name, methodText), ' ', PRIVACY_NOTICE_SMS_LINE);
 }
 
+const KENYA_OFFSET_MS = 3 * 60 * 60 * 1000;
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
 /**
- * The visit summary SMS sent at front-desk checkout: clinic name, visit
- * date, and the prescription (medicines and how to take them) — nothing
- * else. The diagnosis and the department are deliberately left out: our
- * privacy notice promises the diagnosis never goes out by SMS, and a
- * department name (e.g. "Gynecology") can reveal much the same thing.
- *
- * The prescription is sent as the doctor wrote it — not passed through
- * toSmsSafe, which would strip characters like "µ" from a dose — and is
- * never shortened, since a cut-off dosage is worse than a two-part SMS.
- * A final "Privacy: acisi.co.ke/privacy" line is added only when it doesn't
- * push the message into an extra SMS part.
+ * Appointment reminder, sent the day before for confirmed appointments:
+ * "ACISI: Reminder of your appointment at Sunrise Family Clinic on Fri 31
+ * Oct at 10:00." Clinic, day and time only: no department, no reason, no
+ * health details. Always one SMS (the clinic name is shortened if needed).
  */
-export function buildVisitSummarySms(input: {
-  clinicName: string;
-  /** Already formatted DD/MM/YYYY. */
-  date: string;
-  prescription: string | null;
-}): string {
-  const clinic = toSmsSafe(input.clinicName) || 'Clinic';
-  const medicines = input.prescription?.trim() || 'None';
-  const summary = `${clinic}\nVisit: ${input.date}\nMedicines: ${medicines}\nThank you for visiting.`;
-  return appendIfNoExtraPart(summary, '\n', PRIVACY_NOTICE_SMS_LINE);
+export function buildAppointmentReminderSms(input: { clinicName: string; scheduledFor: Date }): string {
+  const k = new Date(input.scheduledFor.getTime() + KENYA_OFFSET_MS);
+  const when = `${WEEKDAYS[k.getUTCDay()]} ${k.getUTCDate()} ${MONTHS[k.getUTCMonth()]} at ${String(k.getUTCHours()).padStart(2, '0')}:${String(k.getUTCMinutes()).padStart(2, '0')}`;
+  const before = 'ACISI: Reminder of your appointment at ';
+  const after = ` on ${when}.`;
+  const room = SINGLE_SMS_MAX_CHARS - before.length - after.length;
+  let name = toSmsSafe(input.clinicName) || 'the clinic';
+  if (name.length > room) name = name.slice(0, room - 3).trimEnd() + '...';
+  return `${before}${name}${after}`;
+}
+
+/** Clinic name made SMS-safe and shortened so `before + name + after` fits one SMS. */
+function fitClinicName(clinicName: string, fixedLength: number): string {
+  const room = SINGLE_SMS_MAX_CHARS - fixedLength;
+  const name = toSmsSafe(clinicName) || 'the clinic';
+  return name.length > room ? name.slice(0, room - 3).trimEnd() + '...' : name;
+}
+
+/**
+ * The ACISI check-in fee SMS: two short lines, always one SMS.
+ * Paid:   "ACISI: Check-in confirmed at Sunrise Family Clinic.\nPayment confirmed: KES 100."
+ * Failed: "ACISI: Check-in at Sunrise Family Clinic: payment not received.\nPay from your ACISI profile."
+ */
+export function buildCheckInFeeSms(input: { clinicName: string; amountKes: number; paid: boolean }): string {
+  if (input.paid) {
+    const before = 'ACISI: Check-in confirmed at ';
+    const after = `.\nPayment confirmed: KES ${formatKes(input.amountKes)}.`;
+    return `${before}${fitClinicName(input.clinicName, before.length + after.length)}${after}`;
+  }
+  const before = 'ACISI: Check-in at ';
+  const after = ': payment not received.\nPay from your ACISI profile.';
+  return `${before}${fitClinicName(input.clinicName, before.length + after.length)}${after}`;
 }

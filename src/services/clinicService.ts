@@ -61,6 +61,9 @@ interface RegisterClinicInput {
    * and the admin, so a clinic never exists without it.
    */
   acceptedTermsAndPrivacyNotice?: boolean;
+  adminEmail?: string;
+  /** The admin ticked the confidentiality undertaking; recorded in the same transaction. */
+  acceptedConfidentialityUndertaking?: boolean;
 }
 
 interface RegisterClinicResult {
@@ -99,6 +102,7 @@ export async function registerClinic(input: RegisterClinicInput): Promise<Regist
         clinicId: clinic.id,
         staffCode,
         phoneNumber: input.adminPhoneNumberE164,
+        email: input.adminEmail,
         name: input.adminName,
         pinHash,
         role: 'ADMIN',
@@ -113,6 +117,9 @@ export async function registerClinic(input: RegisterClinicInput): Promise<Regist
         tx,
       );
     }
+    if (input.acceptedConfidentialityUndertaking) {
+      await recordLegalAcceptances(['CONFIDENTIALITY_UNDERTAKING'], 'CLINIC_REGISTRATION', { clinicId: clinic.id, staffId: adminStaff.id }, tx);
+    }
 
     return { clinic, adminStaff };
   });
@@ -124,7 +131,7 @@ export async function registerClinic(input: RegisterClinicInput): Promise<Regist
     action: 'CLINIC_REGISTERED',
     entityType: 'Clinic',
     entityId: clinic.id,
-    metadata: { departments: (input.departments ?? []).map((d) => d.name) },
+    metadata: { departmentCodes: (input.departments ?? []).map((d) => d.code) },
   });
 
   return { clinic, adminStaffId: adminStaff.id, adminStaffCode: adminStaff.staffCode };

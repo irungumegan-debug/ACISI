@@ -621,6 +621,12 @@
   font-size: 14.5px;
 }
 
+.patient-portal .muted {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 14px;
+}
+
 /* ---------- tablet / desktop ---------- */
 @media (min-width: 720px) {
   .patient-main {

@@ -766,6 +766,19 @@ export function CheckoutPage() {
         </div>
       </div>
 
+      {view.prescription && (
+        <section className={`${sectionCard} print:hidden`} aria-label="Prescription for this visit">
+          <h2 className={sectionTitle}>
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gold-tint text-gold-700">
+              <Pill size={18} aria-hidden />
+            </span>
+            Prescription for this visit
+          </h2>
+          <p className="mt-3 whitespace-pre-wrap text-sm text-ink-700">{view.prescription}</p>
+          <p className="mt-2 text-xs text-ink-500">As written by the doctor. Shown so medicines can be added to the bill.</p>
+        </section>
+      )}
+
       {!canBill ? (
         <p className="rounded-2xl border border-slate-200 bg-white p-5 text-sm text-ink-700 shadow-card print:hidden">The bill can be made once the doctor has finished with this patient.</p>
       ) : (
@@ -888,7 +901,7 @@ export function CheckoutPage() {
 
           {view.visitStatus === 'READY_FOR_CHECKOUT' && (
             <section className="flex flex-col gap-3 rounded-2xl bg-navy-900 p-5 text-white shadow-raised print:hidden sm:flex-row sm:items-center sm:justify-between sm:p-6">
-              <p className="text-[15px] text-slate-200">Finish the visit and send the visit summary.</p>
+              <p className="text-[15px] text-slate-200">Finish the visit. The patient can read it in their ACISI records.</p>
               <button type="button" onClick={() => void finishCheckout()} disabled={finishing} className={btn.gold}>
                 {finishing ? 'Checking out…' : 'Complete checkout'}
               </button>

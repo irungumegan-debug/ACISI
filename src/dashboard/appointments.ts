@@ -16,6 +16,19 @@ export const appointmentsRouter = Router();
 // to day.
 appointmentsRouter.use(requireStaffSession);
 
+/**
+ * The clinic-wide appointment list and its actions are front-desk work.
+ * Doctors have their own list, limited to their departments
+ * (GET /doctor/appointments/today), and are refused here by the server.
+ */
+appointmentsRouter.use((req, res, next) => {
+  if ((req as AuthenticatedRequest).dashboardSession.role === 'DOCTOR') {
+    res.status(403).json({ error: 'Doctors see their own departments\' appointments under My appointments' });
+    return;
+  }
+  next();
+});
+
 appointmentsRouter.get('/', async (req, res) => {
   const { clinicId } = (req as AuthenticatedRequest).dashboardSession;
   const appointments = await listClinicAppointments(clinicId);

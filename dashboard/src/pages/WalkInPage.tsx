@@ -62,6 +62,7 @@ export function WalkInPage() {
   const [departmentId, setDepartmentId] = useState('');
   const [reason, setReason] = useState('');
   const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
   const [ageMode, setAgeMode] = useState<'age' | 'dob'>('age');
   const [age, setAge] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState('');
@@ -150,6 +151,7 @@ export function WalkInPage() {
               fullName,
               registrationConsent,
               sex: sex || undefined,
+              ...(email.trim() ? { email: email.trim() } : {}),
               ...(ageMode === 'age' && age.trim() ? { age: Number(age) } : {}),
               ...(ageMode === 'dob' && dateOfBirth ? { dateOfBirth } : {}),
             }
@@ -250,6 +252,20 @@ export function WalkInPage() {
                   Phone number
                 </label>
                 <input id="newPhone" value={lookup.phoneNumber} readOnly className={`${input} bg-cream-100 text-ink-500`} />
+              </div>
+              <div>
+                <label htmlFor="newEmail" className={label}>
+                  Email <span className="font-normal text-ink-500">(optional)</span>
+                </label>
+                <input
+                  id="newEmail"
+                  type="email"
+                  autoComplete="off"
+                  maxLength={254}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className={input}
+                />
               </div>
               <div>
                 <span className={label}>

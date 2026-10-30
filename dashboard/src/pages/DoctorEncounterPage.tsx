@@ -140,6 +140,7 @@ export function DoctorEncounterPage() {
                   </span>
                 </p>
               )}
+              {h.doctorName && <p className="mt-1.5 text-xs text-ink-500">Seen by {h.doctorName}</p>}
               </div>
             </li>
           ))}
@@ -147,8 +148,8 @@ export function DoctorEncounterPage() {
         {encounter.hasHiddenHistoryElsewhere && (
           <p className="mt-3 flex items-start gap-2 rounded-xl bg-cream-200/60 px-3.5 py-3 text-sm text-ink-500">
             <Lock size={15} aria-hidden className="mt-0.5 flex-none" />
-            This patient has prior visits at other ACISI clinics, but they haven&apos;t consented to sharing that history
-            with this clinic.
+            This patient has not authorised sharing of records from other clinics. The front desk can request them with a code
+            from the patient.
           </p>
         )}
       </div>
@@ -271,7 +272,7 @@ export function DoctorEncounterPage() {
                 </button>
               </div>
               <p className="text-xs text-ink-500">
-                This doesn&apos;t check the patient out — front desk confirms payment and sends the visit summary.
+                This doesn&apos;t check the patient out — front desk takes payment and checks the patient out.
               </p>
             </form>
           </>

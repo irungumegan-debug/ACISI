@@ -69,6 +69,7 @@ export function ClinicsPage() {
                   <th className={`${th} text-right`}>Visits (30d)</th>
                   <th className={`${th} text-right`}>Doctors</th>
                   <th className={`${th} text-right`}>Staff</th>
+                  <th className={`${th} text-right`}>SMS this month</th>
                   <th className={th}>Joined</th>
                   <th className={th}>Status</th>
                 </tr>
@@ -87,6 +88,12 @@ export function ClinicsPage() {
                     <td className={`${td} text-right tabular-nums`}>{c.visitsLast30Days}</td>
                     <td className={`${td} text-right tabular-nums`}>{c.doctorCount}</td>
                     <td className={`${td} text-right tabular-nums`}>{c.staffCount}</td>
+                    <td className={`${td} whitespace-nowrap text-right tabular-nums`}>
+                      {(c.smsThisMonth?.sms ?? 0).toLocaleString()} / {c.smsMonthlyAllowance.toLocaleString()}
+                      <div className={`text-xs ${c.smsThisMonth?.over ? 'font-medium text-red-700' : 'text-stone-500'}`}>
+                        {c.smsThisMonth?.over ? `${c.smsThisMonth.over.toLocaleString()} over` : c.planLabel}
+                      </div>
+                    </td>
                     <td className={`${td} whitespace-nowrap`}>{formatDate(c.createdAt)}</td>
                     <td className={td}>
                       <ActiveBadge isActive={c.isActive} />

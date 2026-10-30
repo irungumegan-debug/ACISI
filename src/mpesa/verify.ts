@@ -19,6 +19,7 @@ export async function queryStkPushStatus(checkoutRequestId: string): Promise<Stk
       MerchantRequestID: string;
       CheckoutRequestID: string;
     }>('/mpesa/stkpushquery/v1/query', {
+      // Paybill, or the store number for Buy Goods (never the till).
       BusinessShortCode: env.MPESA_SHORTCODE,
       Password: password,
       Timestamp: timestamp,

@@ -19,6 +19,16 @@ function matchesStatus(row: Row, status: unknown): boolean {
   return (status as { in: string[] }).in.includes(row.status);
 }
 
+function matchesTimeBranch(row: Row, branch: Record<string, unknown>): boolean {
+  const range = (value: unknown, t: number) => {
+    const r = value as { gte?: Date; lte?: Date; lt?: Date };
+    return (!r.gte || t >= r.gte.getTime()) && (!r.lte || t <= r.lte.getTime()) && (!r.lt || t < r.lt.getTime());
+  };
+  const requested = row.paymentRequestedAt as Date | null | undefined;
+  if (branch.paymentRequestedAt === null) return !requested && range(branch.createdAt, row.createdAt.getTime());
+  return !!requested && range(branch.paymentRequestedAt, requested.getTime());
+}
+
 function matchesCreatedAt(row: Row, createdAt?: { gte?: Date; lte?: Date; lt?: Date }): boolean {
   if (!createdAt) return true;
   const t = row.createdAt.getTime();
@@ -31,6 +41,12 @@ function matchesCreatedAt(row: Row, createdAt?: { gte?: Date; lte?: Date; lt?: D
 
 const copy = (row: Row | undefined) => (row ? { ...row } : null);
 
+jest.mock('../../src/services/feeService', () => ({
+  getFeeStatus: jest.fn(async () => ({ owedKes: 0, restricted: false, restrictionMessage: null })),
+  getOutstandingFees: jest.fn(async () => ({ checkIns: [], totalKes: 0, oldestAt: null })),
+  settleOutstandingFees: jest.fn(async () => []),
+  liftRestrictionIfClear: jest.fn(async () => false),
+}));
 jest.mock('../../src/db/prisma', () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const prisma: any = {
@@ -53,6 +69,8 @@ jest.mock('../../src/db/prisma', () => {
       findMany: jest.fn(async ({ where }) =>
         [...db.checkIns.values()]
           .filter((r) => matchesStatus(r, where.status) && matchesCreatedAt(r, where.createdAt))
+          // The sweep times out from paymentRequestedAt, falling back to createdAt.
+          .filter((r) => !where.OR || (where.OR as Record<string, unknown>[]).some((branch) => matchesTimeBranch(r, branch)))
           .filter((r) => !where.mpesaCheckoutRequestId || r.mpesaCheckoutRequestId)
           .map((r) => ({ ...r })),
       ),
@@ -95,7 +113,7 @@ jest.mock('../../src/db/prisma', () => {
   return { prisma };
 });
 
-jest.mock('../../src/config/redis', () => ({ redis: { set: jest.fn() } }));
+jest.mock('../../src/config/redis', () => ({ redis: { set: jest.fn(), get: jest.fn(), del: jest.fn() } }));
 jest.mock('../../src/mpesa/verify', () => ({ queryStkPushStatus: jest.fn() }));
 jest.mock('../../src/mpesa/stkPush', () => ({ initiateStkPush: jest.fn() }));
 jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
@@ -104,6 +122,7 @@ jest.mock('../../src/services/realtimeEvents', () => ({
   publishCheckInFailed: jest.fn(),
 }));
 jest.mock('../../src/jobs/queue', () => ({ enqueueSmsReceipt: jest.fn() }));
+jest.mock('../../src/services/mpesaHealth', () => ({ notePromptFailed: jest.fn(), notePromptResult: jest.fn() }));
 jest.mock('../../src/services/doctorAssignmentService', () => ({ assignDoctorForCheckIn: jest.fn() }));
 jest.mock('../../src/services/appointmentService', () => ({
   findArrivalMatch: jest.fn(),
@@ -120,12 +139,14 @@ import { queryStkPushStatus } from '../../src/mpesa/verify';
 import { recordAuditEvent } from '../../src/services/auditService';
 import { publishCheckInFailed, publishCheckInPaid } from '../../src/services/realtimeEvents';
 import { enqueueSmsReceipt } from '../../src/jobs/queue';
+import { notePromptFailed, notePromptResult } from '../../src/services/mpesaHealth';
 import { assignDoctorForCheckIn } from '../../src/services/doctorAssignmentService';
 import { logger } from '../../src/utils/logger';
 import {
   applyPaymentResult,
   CheckInNotPendingError,
   confirmCheckInPaidManually,
+  handleStkCallback,
   InvalidMpesaCodeError,
   queryCheckInPayment,
   sweepPendingCheckInPayments,
@@ -506,5 +527,102 @@ describe('staff confirming the fee with the M-Pesa code', () => {
     await expect(confirmCheckInPaidManually('ci-1', 'clinic-A', 'staff-1', 'QAB12CD34E')).rejects.toThrow(
       'Check-in not found',
     );
+  });
+});
+
+describe('pay later: a confirmed payment (C20)', () => {
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const fees = require('../../src/services/feeService');
+  /* eslint-enable @typescript-eslint/no-require-imports */
+
+  it('does not start a second visit for a patient already in the queue, settles older fees and can lift a restriction', async () => {
+    addCheckIn({ id: 'ci-pl', createdAt: minutesAgo(2), queuedBeforePaymentAt: minutesAgo(2), includesOutstandingKes: 100 });
+    await applyPaymentResult(callback('ci-pl', 0), {}, 'callback');
+    expect(db.encounters).toHaveLength(0);
+    expect(fees.settleOutstandingFees).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: 'ci-pl', includesOutstandingKes: 100 }));
+    expect(fees.liftRestrictionIfClear).toHaveBeenCalledWith('patient-1');
+  });
+});
+
+describe('owner warning when M-Pesa prompts keep failing (C20)', () => {
+  it('reports the answer that decided the check-in: success or failure code', async () => {
+    addCheckIn({ id: 'ci-1' });
+    addCheckIn({ id: 'ci-2' });
+    await applyPaymentResult(callback('ci-1', 0), {}, 'callback');
+    await applyPaymentResult(callback('ci-2', 1037), {}, 'callback');
+    expect((notePromptResult as jest.Mock).mock.calls).toEqual([[0], [1037]]);
+  });
+
+  it('a duplicate or late answer that changes nothing is not counted again', async () => {
+    addCheckIn({ status: 'PAID' });
+    await applyPaymentResult(callback('ci-1', 0), {}, 'callback');
+    expect(notePromptResult).not.toHaveBeenCalled();
+  });
+
+  it('no answer within the hour (NEEDS_REVIEW) counts as a time-out', async () => {
+    addCheckIn({ id: 'ci-61min', createdAt: minutesAgo(61) });
+    await sweepPendingCheckInPayments(NOW);
+    expect(notePromptFailed).toHaveBeenCalledTimes(1);
+  });
+
+  it('staff confirming a fee by M-Pesa code says nothing about the prompt', async () => {
+    addCheckIn({ status: 'FAILED' });
+    await confirmCheckInPaidManually('ci-1', 'clinic-A', 'staff-1', 'QAB12CD34E').catch(() => undefined);
+    expect(notePromptResult).not.toHaveBeenCalled();
+    expect(notePromptFailed).not.toHaveBeenCalled();
+  });
+});
+
+describe('a success callback is never trusted alone: Safaricom confirms it first', () => {
+  const mockRedisGet = redis.get as jest.Mock;
+  const paidCallback = () => ({ ...callback('ci-1', 0), transactionDate: new Date('2026-10-10T08:59:00Z') });
+
+  it('marked PAID only after the status query also says paid, keeping the receipt', async () => {
+    addCheckIn();
+    queryAnswers('0');
+    await expect(handleStkCallback(paidCallback(), {})).resolves.toEqual({ checkInId: 'ci-1', status: 'PAID' });
+    expect(mockQuery).toHaveBeenCalledWith('ws_CO_ci-1');
+    expect(db.transactions[0]).toMatchObject({ mpesaReceiptNumber: RECEIPT, resultCode: 0 });
+  });
+
+  it('a forged or mistaken "paid" callback that Safaricom contradicts is not marked PAID, and is logged', async () => {
+    addCheckIn();
+    queryAnswers('1032');
+    await expect(handleStkCallback(paidCallback(), {})).resolves.toEqual({ checkInId: 'ci-1', status: 'FAILED' });
+    expect(db.encounters).toHaveLength(0);
+    expect(recordAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'CHECK_IN_CALLBACK_NOT_CONFIRMED', entityId: 'ci-1', metadata: { callbackResultCode: 0, queryResultCode: 1032 } }),
+    );
+  });
+
+  it('if Safaricom cannot confirm yet, nothing changes; a later status check confirms it with the receipt', async () => {
+    addCheckIn();
+    mockQuery.mockRejectedValueOnce(new Error('The transaction is being processed'));
+    await expect(handleStkCallback(paidCallback(), {})).resolves.toEqual({ checkInId: 'ci-1', status: 'PENDING_PAYMENT' });
+    expect(status()).toBe('PENDING_PAYMENT');
+    expect(publishCheckInPaid).not.toHaveBeenCalled();
+
+    // Receipt details kept for later, never the phone number.
+    const keep = mockRedisSet.mock.calls.find((c) => c[0] === 'mpesa:unconfirmed-callback:ws_CO_ci-1');
+    expect(keep).toBeDefined();
+    expect(keep![1]).toContain(RECEIPT);
+    expect(keep![1]).not.toContain(PHONE);
+
+    mockRedisGet.mockResolvedValueOnce(keep![1]);
+    queryAnswers('0');
+    await expect(queryCheckInPayment('ci-1')).resolves.toBe('PAID');
+    expect(db.transactions[0]).toMatchObject({ mpesaReceiptNumber: RECEIPT });
+  });
+
+  it('a callback for an unknown prompt changes nothing and asks Safaricom nothing', async () => {
+    await expect(handleStkCallback(paidCallback(), {})).resolves.toBeNull();
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
+  it('a failure callback marks nothing PAID and needs no confirmation', async () => {
+    addCheckIn();
+    await handleStkCallback(callback('ci-1', 1032), {});
+    expect(status()).toBe('FAILED');
+    expect(mockQuery).not.toHaveBeenCalled();
   });
 });

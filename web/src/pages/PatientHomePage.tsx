@@ -3,6 +3,8 @@ import { api, ApiError, CheckInSummary, ClinicListItem, DepartmentListItem, OwnA
 import { usePatientAuth } from '../context/PatientAuthContext';
 import { legalBoxSatisfied, PRIVACY_PATH, TERMS_PATH } from '../lib/legal';
 import { EMPTY_IDENTITY, IdentityFields } from '../components/IdentityFields';
+import { RecordRequestsNotice, SharingPanel } from '../components/RecordSharing';
+import { FeeNotice } from '../components/FeeNotice';
 import type { PatientIdentity } from '../lib/api';
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -45,11 +47,65 @@ const PAYMENT_POLL_TIMEOUT_MS = 90_000;
  * neither arrives in time.
  */
 type PaymentStage =
-  | { kind: 'waiting'; checkIn: CheckInSummary }
+  /** round: bumped by "Resend prompt", so polling starts afresh for the new prompt. */
+  | { kind: 'waiting'; checkIn: CheckInSummary; round?: number }
   | { kind: 'paid'; checkIn: CheckInSummary; existing: boolean }
   | { kind: 'failed' }
-  | { kind: 'timedOut' }
+  | { kind: 'timedOut'; checkIn?: CheckInSummary }
   | { kind: 'review' };
+
+/**
+ * "Resend prompt" (C20) for when the M-Pesa prompt didn't arrive or was
+ * missed: up to 3 per check-in, and not while the last prompt is still live
+ * on the phone. Shows nothing about where the money goes.
+ */
+function ResendPromptButton({ checkIn, onResent }: { checkIn: CheckInSummary; onResent: (checkIn: CheckInSummary) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const resend = checkIn.promptResend;
+  const availableAt = resend?.availableAt ? new Date(resend.availableAt).getTime() : 0;
+  const waitSeconds = Math.max(0, Math.ceil((availableAt - now) / 1000));
+
+  useEffect(() => {
+    if (waitSeconds <= 0) return;
+    const timer = window.setTimeout(() => setNow(Date.now()), 1000);
+    return () => window.clearTimeout(timer);
+  }, [waitSeconds, now]);
+
+  if (!resend) return null;
+  if (resend.resendsLeft <= 0) {
+    return <p className="muted">The prompt has been resent 3 times. You can pay the fee later from your profile.</p>;
+  }
+
+  async function handleResend(): Promise<void> {
+    setBusy(true);
+    setError(null);
+    try {
+      onResent(await api.resendCheckInPrompt(checkIn.checkInId));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      <button className="btn btn-secondary" disabled={busy || waitSeconds > 0} onClick={() => void handleResend()}>
+        {busy ? 'Sending…' : waitSeconds > 0 ? `Resend prompt (${waitSeconds}s)` : 'Resend prompt'}
+      </button>
+      <p className="muted" style={{ marginTop: 6 }}>
+        Didn&apos;t get the prompt, or missed it? {resend.resendsLeft === 1 ? '1 resend left.' : `${resend.resendsLeft} resends left.`}
+      </p>
+      {error && (
+        <p className="error-text" role="alert">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
 
 export function PatientHomePage() {
   const { session } = usePatientAuth();
@@ -75,6 +131,9 @@ export function PatientHomePage() {
           </button>
         ))}
       </nav>
+
+      <FeeNotice />
+      <RecordRequestsNotice />
 
       {tab === 'checkin' && <CheckInPanel patientCode={session?.patientCode ?? ''} />}
       {tab === 'book' && <BookAppointmentPanel patientCode={session?.patientCode ?? ''} />}
@@ -161,6 +220,7 @@ function CheckInPanel({ patientCode }: { patientCode: string }) {
   // Polls the check-in while we wait for M-Pesa. Stops on PAID/FAILED, after
   // PAYMENT_POLL_TIMEOUT_MS, or when the patient leaves this screen.
   const waitingCheckInId = stage?.kind === 'waiting' ? stage.checkIn.checkInId : null;
+  const waitingRound = stage?.kind === 'waiting' ? (stage.round ?? 0) : 0;
   useEffect(() => {
     if (!waitingCheckInId) return;
     let stopped = false;
@@ -172,6 +232,11 @@ function CheckInPanel({ patientCode }: { patientCode: string }) {
         const checkIn = await api.getCheckIn(waitingCheckInId!);
         if (stopped) return;
         if (checkIn.status === 'PAID') {
+          setStage({ kind: 'paid', checkIn, existing: false });
+          return;
+        }
+        // Pay later: already in the queue, whatever happens to the fee.
+        if (checkIn.inQueue && (checkIn.status === 'FAILED' || checkIn.status === 'NEEDS_REVIEW')) {
           setStage({ kind: 'paid', checkIn, existing: false });
           return;
         }
@@ -189,7 +254,9 @@ function CheckInPanel({ patientCode }: { patientCode: string }) {
         if (stopped) return;
       }
       if (Date.now() >= giveUpAt) {
-        setStage({ kind: 'timedOut' });
+        const latest = await api.getCheckIn(waitingCheckInId!).catch(() => undefined);
+        if (stopped) return;
+        setStage({ kind: 'timedOut', checkIn: latest });
         return;
       }
       timer = window.setTimeout(() => void poll(), PAYMENT_POLL_INTERVAL_MS);
@@ -200,7 +267,11 @@ function CheckInPanel({ patientCode }: { patientCode: string }) {
       stopped = true;
       window.clearTimeout(timer);
     };
-  }, [waitingCheckInId]);
+  }, [waitingCheckInId, waitingRound]);
+
+  function promptResent(checkIn: CheckInSummary): void {
+    setStage((prev) => ({ kind: 'waiting', checkIn, round: (prev?.kind === 'waiting' ? (prev.round ?? 0) : 0) + 1 }));
+  }
 
   async function handleSubmit(): Promise<void> {
     if (!clinicId || !departmentId || !legalBoxSatisfied(privacyAckRequired, privacyAcknowledged)) return;
@@ -237,6 +308,7 @@ function CheckInPanel({ patientCode }: { patientCode: string }) {
           {stage.checkIn.clinicName} · {stage.checkIn.departmentName}
         </p>
         <p>We&apos;ve sent an M-Pesa prompt to your phone. Enter your M-Pesa PIN to complete check-in. Keep this page open.</p>
+        <ResendPromptButton key={`${stage.checkIn.checkInId}:${stage.round ?? 0}`} checkIn={stage.checkIn} onResent={promptResent} />
       </div>
     );
   }
@@ -256,7 +328,12 @@ function CheckInPanel({ patientCode }: { patientCode: string }) {
         {checkIn.queuePosition !== null && (
           <p>{checkIn.queuePosition === 1 ? 'You’re next in line.' : `You’re number ${checkIn.queuePosition} in the queue.`}</p>
         )}
-        <p>Payment received. Show your patient ID at the front desk when you arrive.</p>
+        <p>
+          {checkIn.status === 'PAID'
+            ? 'Payment received. Show your patient ID at the front desk when you arrive.'
+            : 'You’re in the queue. Your ACISI check-in fee didn’t go through: you can pay it from the notice at the top of this page. Show your patient ID at the front desk when you arrive.'}
+        </p>
+        {checkIn.status !== 'PAID' && <ResendPromptButton checkIn={checkIn} onResent={promptResent} />}
       </div>
     );
   }
@@ -290,9 +367,13 @@ function CheckInPanel({ patientCode }: { patientCode: string }) {
             ? 'The M-Pesa payment was cancelled or didn’t go through, so you are not checked in yet. No money was taken.'
             : 'We couldn’t confirm your payment yet. If you entered your PIN, wait for the M-Pesa SMS, then tap Try again to check: you won’t get a second prompt while this one is still being processed.'}
         </p>
-        <button className="btn btn-primary" style={{ marginTop: 16 }} disabled={submitting} onClick={() => void handleSubmit()}>
-          {submitting ? 'Starting…' : 'Try again'}
-        </button>
+        {stage.kind === 'timedOut' && stage.checkIn?.promptResend ? (
+          <ResendPromptButton checkIn={stage.checkIn} onResent={promptResent} />
+        ) : (
+          <button className="btn btn-primary" style={{ marginTop: 16 }} disabled={submitting} onClick={() => void handleSubmit()}>
+            {submitting ? 'Starting…' : 'Try again'}
+          </button>
+        )}
         <button className="btn btn-secondary" style={{ marginTop: 8 }} disabled={submitting} onClick={() => setStage(null)}>
           Change clinic or department
         </button>
@@ -617,6 +698,10 @@ function RecordsPanel({ patientCode }: { patientCode: string }) {
             <p>No visits on record yet.</p>
           </div>
         ) : (
+          <>
+          <a className="btn btn-primary" style={{ marginBottom: 16 }} href={api.allRecordsDownloadUrl()} download>
+            <Download size={16} aria-hidden /> Download all my visits ({history.length})
+          </a>
           <div className="timeline">
             {history.map((h) => (
               <div className="t-entry" key={h.encounterId}>
@@ -650,6 +735,7 @@ function RecordsPanel({ patientCode }: { patientCode: string }) {
               </div>
             ))}
           </div>
+          </>
         )}
       </div>
     </>
@@ -704,6 +790,7 @@ function AccountPanel({ patientCode }: { patientCode: string }) {
       <p className="lede">
         Patient ID <strong>{patientCode}</strong>
       </p>
+      <SharingPanel />
       <div className="panel">
         <h2>Legal</h2>
         <p>How ACISI and your clinics use your data, and the terms you agreed to.</p>

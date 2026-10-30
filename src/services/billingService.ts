@@ -1,11 +1,12 @@
 import { Bill, BillItemKind, ClinicPaymentSettings, Payment, PaymentMethod, Prisma } from '@prisma/client';
 import { prisma } from '../db/prisma';
-import { smsClient } from '../config/africastalking';
 import { logger } from '../utils/logger';
 import { InvalidPhoneNumberError, toE164 } from '../utils/phone';
 import { formatKenyaDate } from '../utils/kenyaTime';
 import { generateBillNumber } from '../utils/idCodes';
 import { recordAuditEvent } from './auditService';
+import { sendPatientSms } from './smsService';
+import { redactPhoneNumbers } from '../utils/redactPhoneNumbers';
 import {
   assertWithinBalance,
   BillingError,
@@ -92,6 +93,11 @@ export interface CheckoutView {
   visitStatus: string;
   patient: { id: string; name: string; patientCode: string; phoneNumber: string; smsOptOut: boolean };
   departmentName: string;
+  /**
+   * This visit's prescription, read-only, so front desk can bill the
+   * medicines. Never the diagnosis: front desk doesn't see diagnoses.
+   */
+  prescription: string | null;
   /** The visit's department, with its own consultation fee if it has one (null: use the clinic default). */
   department: { id: string; name: string; consultationFeeKes: number | null };
   settings: {
@@ -173,6 +179,7 @@ export async function getCheckoutView(encounterId: string, clinicId: string): Pr
       smsOptOut: encounter.patient.smsOptOut,
     },
     departmentName: encounter.checkIn.department.name,
+    prescription: encounter.prescription,
     department: encounter.checkIn.department,
     settings: {
       acceptsCash: settings.acceptsCash,
@@ -503,23 +510,24 @@ export async function requestStkPayment(
         method: 'MPESA_STK',
         status: 'PENDING',
         amountKes: input.amountKes,
-        phoneNumber,
+        // The phone number goes to Safaricom for the prompt only; it is
+        // never stored on the payment (C14).
         idempotencyKey: input.idempotencyKey,
         takenByStaffId: input.staffId,
       },
     });
-    return { payment, settings, patientCode: encounter.patient.patientCode, billNumber: bill.billNumber, clinicName: encounter.clinic.name };
+    return { payment, phoneNumber, settings, patientCode: encounter.patient.patientCode, billNumber: bill.billNumber, clinicName: encounter.clinic.name };
   }));
   if ('duplicateOf' in created) {
     return { payment: created.duplicateOf, bill: await prisma.bill.findUniqueOrThrow({ where: { id: created.duplicateOf.billId } }) };
   }
-  const { payment, settings, patientCode, billNumber, clinicName } = created;
+  const { payment, phoneNumber, settings, patientCode, billNumber, clinicName } = created;
 
   let sent: Payment;
   try {
     const response = await sendClinicStkPush({
       amountKes: payment.amountKes,
-      phoneNumberE164: payment.phoneNumber as string,
+      phoneNumberE164: phoneNumber,
       accountReference: buildAccountReference(settings.mobileMoneyType === 'PAYBILL' ? settings.paybillAccountFormat : null, {
         patientCode,
         billNumber,
@@ -590,7 +598,7 @@ export async function applyClinicStkResult(result: ClinicStkResult): Promise<boo
     if (receipt) {
       const taken = await tx.payment.findUnique({ where: { mpesaReceiptNumber: receipt } });
       if (taken && taken.id !== payment.id) {
-        logger.warn({ paymentId: payment.id, receipt }, 'M-Pesa receipt already recorded on another payment; storing without code');
+        logger.warn({ paymentId: payment.id }, 'M-Pesa receipt already recorded on another payment; storing without code');
         receipt = null;
       }
     }
@@ -602,7 +610,8 @@ export async function applyClinicStkResult(result: ClinicStkResult): Promise<boo
         resultCode: result.resultCode,
         resultDesc: result.resultDesc,
         mpesaReceiptNumber: newStatus === 'SUCCEEDED' ? receipt : null,
-        rawCallbackPayload: (result.rawPayload ?? undefined) as Prisma.InputJsonValue | undefined,
+        // Kept for reconciliation, with every phone number blanked out (C14).
+        rawCallbackPayload: (result.rawPayload == null ? undefined : redactPhoneNumbers(result.rawPayload)) as Prisma.InputJsonValue | undefined,
         completedAt: newStatus === 'SUCCEEDED' ? new Date() : null,
       },
     });
@@ -665,7 +674,8 @@ export async function voidPayment(input: { paymentId: string; clinicId: string; 
     action: 'PAYMENT_VOIDED',
     entityType: 'Payment',
     entityId: input.paymentId,
-    metadata: { reason },
+    // The reason is free text and stays on the payment row, not in the audit trail.
+    metadata: { billId: bill.id },
   });
   return bill;
 }
@@ -704,7 +714,7 @@ export async function sendPaidReceiptSms(billId: string): Promise<ReceiptSmsOutc
       date: formatKenyaDate(bill.paidAt ?? new Date()),
       payments: bill.payments.map((p) => ({ method: p.method, reference: p.mpesaReceiptNumber ?? p.reference })),
     });
-    await smsClient.send({ to: [patient.phoneNumber], message });
+    if ((await sendPatientSms(patient, message, { purpose: 'PAYMENT_RECEIPT', clinicId: bill.clinicId })) !== 'sent') return 'failed';
     await recordAuditEvent({ actorType: 'SYSTEM', action: 'RECEIPT_SMS_SENT', entityType: 'Bill', entityId: bill.id });
     return 'sent';
   } catch (err) {

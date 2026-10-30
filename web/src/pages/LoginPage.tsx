@@ -238,7 +238,7 @@ function ForgotPinForm({ role, onBack, onDone }: { role: Role; onBack: () => voi
       <h1 className="auth-h1">Enter your code</h1>
       <p className="auth-sub">{message ?? 'Enter the code we texted you, and set a new PIN.'}</p>
       <div className="field">
-        <label>One-time code</label>
+        <label>{isStaff ? 'One-time code' : 'One-time code (from the SMS, or from your clinic\u2019s front desk)'}</label>
         <input type="text" inputMode="numeric" required maxLength={6} placeholder="123456" value={code} onChange={(e) => setCode(e.target.value)} />
       </div>
       <div className="field">

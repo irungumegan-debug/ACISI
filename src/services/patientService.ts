@@ -1,4 +1,8 @@
 import bcrypt from 'bcrypt';
+import { clearLockout } from './pinLockout';
+import type { PatientIdentityUpdate } from './patientIdentity';
+import { crossClinicAccessBasis, CrossClinicBasis } from './recordSharingService';
+import { revokeSessionsFor } from './sessionRevocation';
 import { Patient, Sex } from '@prisma/client';
 import { prisma } from '../db/prisma';
 import { recordAuditEvent } from './auditService';
@@ -65,6 +69,12 @@ interface RegisterPatientInput {
    * the web portal sets one immediately.
    */
   pin?: string;
+  /** Already-hashed PIN (a verified pending signup); used instead of `pin`. */
+  pinHash?: string;
+  /** Optional ID document and next of kin, already validated by patientIdentity.preparePatientIdentity. */
+  identity?: PatientIdentityUpdate;
+  /** Set when the phone was verified as part of registering (SMS code, or rung in person at the clinic). */
+  phoneVerifiedVia?: 'SMS' | 'IN_PERSON';
   /**
    * Optional, web-portal-only (USSD has no practical way to collect one).
    * Used solely for the staff-initiated visit-summary email at checkout —
@@ -87,7 +97,7 @@ interface RegisterPatientInput {
  */
 export async function registerPatient(input: RegisterPatientInput): Promise<Patient> {
   const patientCode = await generateUniquePatientCode();
-  const pinHash = input.pin ? await bcrypt.hash(input.pin, env.STAFF_PIN_SALT_ROUNDS) : null;
+  const pinHash = input.pinHash ?? (input.pin ? await bcrypt.hash(input.pin, env.STAFF_PIN_SALT_ROUNDS) : null);
 
   const patient = await prisma.$transaction(async (tx) => {
     const created = await tx.patient.create({
@@ -100,6 +110,8 @@ export async function registerPatient(input: RegisterPatientInput): Promise<Pati
         sex: input.sex,
         email: input.email,
         pinHash,
+        ...(input.identity ?? {}),
+        ...(input.phoneVerifiedVia ? { phoneVerifiedAt: new Date(), phoneVerifiedVia: input.phoneVerifiedVia } : {}),
       },
     });
 
@@ -159,9 +171,39 @@ export async function verifyPatientPin(patient: Patient, pin: string): Promise<b
   return isValid;
 }
 
-export async function setPatientPin(patientId: string, pin: string): Promise<void> {
+/**
+ * Sets a patient's PIN after they proved who they are with a one-time code:
+ * an SMS code (`SMS_CODE`) or a code front desk showed them after ringing
+ * their phone in front of them (`IN_PERSON_CODE`). Either way the phone is
+ * now verified. Also lifts any wrong-PIN lockout, logs out every existing
+ * session (the old PIN may be what someone else was using) and writes the
+ * audit row for the PIN change itself.
+ */
+/** bcrypt hash of a patient PIN (same cost as everywhere else). */
+export async function hashPatientPin(pin: string): Promise<string> {
+  return bcrypt.hash(pin, env.STAFF_PIN_SALT_ROUNDS);
+}
+
+export async function setPatientPin(patientId: string, pin: string, via: 'SMS_CODE' | 'IN_PERSON_CODE'): Promise<void> {
   const pinHash = await bcrypt.hash(pin, env.STAFF_PIN_SALT_ROUNDS);
-  await prisma.patient.update({ where: { id: patientId }, data: { pinHash } });
+  const patient = await prisma.patient.findUniqueOrThrow({ where: { id: patientId }, select: { phoneVerifiedAt: true } });
+  await prisma.patient.update({
+    where: { id: patientId },
+    data: {
+      pinHash,
+      ...(patient.phoneVerifiedAt ? {} : { phoneVerifiedAt: new Date(), phoneVerifiedVia: via === 'SMS_CODE' ? 'SMS' : 'IN_PERSON' }),
+    },
+  });
+  await clearLockout(`patient:${patientId}`);
+  await revokeSessionsFor(`patient:${patientId}`);
+  await recordAuditEvent({
+    actorType: 'PATIENT',
+    actorId: patientId,
+    action: 'PATIENT_PIN_CHANGED',
+    entityType: 'Patient',
+    entityId: patientId,
+    metadata: { via },
+  });
 }
 
 export async function hasActiveDataSharingConsent(patientId: string): Promise<boolean> {
@@ -216,10 +258,10 @@ export interface OwnVisitHistoryEntry {
  * own visits, in full.
  */
 export async function getOwnVisitHistory(patientId: string): Promise<OwnVisitHistoryEntry[]> {
+  // Every visit, not just the most recent few: the patient's own full record (C16).
   const encounters = await prisma.encounter.findMany({
     where: { patientId },
     orderBy: { createdAt: 'desc' },
-    take: HISTORY_ENCOUNTER_LIMIT,
     include: { clinic: { select: { name: true } }, checkIn: { include: { department: { select: { name: true } } } } },
   });
 
@@ -237,13 +279,29 @@ export interface ScopedHistoryEntry {
   encounterId: string;
   clinicName: string;
   visitedAt: Date;
+  /** Always null for front desk (receptionists, clinicians, admins): only doctors see diagnoses. */
   diagnosis: string | null;
   prescription: string | null;
+  /** Who handled the visit (the signing doctor, else the assigned one), so it can be traced later. */
+  doctorName: string | null;
   isOwnClinic: boolean;
+}
+
+export interface ScopedHistoryOptions {
+  /** Doctors only. Front desk never receives a diagnosis from the server. */
+  includeDiagnosis: boolean;
+  /** Who is looking, for the audit row written whenever other clinics' records are shown. */
+  viewer?: { staffId: string; channel: string };
 }
 
 export interface ScopedHistory {
   history: ScopedHistoryEntry[];
+  /**
+   * How this clinic may see records from other clinics right now: the
+   * patient's standing consent, a "Request records" code used today, or
+   * null (not authorised: own-clinic visits only).
+   */
+  crossClinicBasis: CrossClinicBasis | null;
   /** True when the patient has encounters at other clinics that exist but aren't shown, because they haven't consented to cross-clinic sharing. */
   hasHiddenHistoryElsewhere: boolean;
 }
@@ -261,31 +319,55 @@ export interface ScopedHistory {
 export async function getScopedHistory(
   patientId: string,
   viewingClinicId: string,
+  options: ScopedHistoryOptions,
   excludeEncounterId?: string,
 ): Promise<ScopedHistory> {
   const encounters = await prisma.encounter.findMany({
     where: { patientId, id: excludeEncounterId ? { not: excludeEncounterId } : undefined },
     orderBy: { createdAt: 'desc' },
     take: HISTORY_ENCOUNTER_LIMIT,
-    include: { clinic: { select: { name: true } } },
+    include: {
+      clinic: { select: { name: true } },
+      consultedByStaff: { select: { name: true } },
+      assignedDoctor: { select: { name: true } },
+    },
   });
 
   const ownClinicEntries = encounters.filter((e) => e.clinicId === viewingClinicId);
   const otherClinicEntries = encounters.filter((e) => e.clinicId !== viewingClinicId);
-  const hasConsent = otherClinicEntries.length > 0 ? await hasActiveDataSharingConsent(patientId) : true;
+  const crossClinicBasis = await crossClinicAccessBasis(patientId, viewingClinicId);
 
-  const visible = hasConsent ? [...ownClinicEntries, ...otherClinicEntries] : ownClinicEntries;
+  const visible = crossClinicBasis ? [...ownClinicEntries, ...otherClinicEntries] : ownClinicEntries;
   visible.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+  // Every time other clinics' records are actually shown: which clinic,
+  // which staff member, and whether by standing consent or by code.
+  if (crossClinicBasis && otherClinicEntries.length > 0 && options.viewer) {
+    await recordAuditEvent({
+      actorType: 'STAFF',
+      actorId: options.viewer.staffId,
+      staffId: options.viewer.staffId,
+      clinicId: viewingClinicId,
+      action: 'CROSS_CLINIC_RECORDS_VIEWED',
+      entityType: 'Patient',
+      entityId: patientId,
+      metadata: { basis: crossClinicBasis, encounterCount: otherClinicEntries.length, channel: options.viewer.channel },
+    });
+  }
 
   return {
     history: visible.map((e) => ({
       encounterId: e.id,
       clinicName: e.clinic.name,
       visitedAt: e.createdAt,
-      diagnosis: e.diagnosis,
+      diagnosis: options.includeDiagnosis ? e.diagnosis : null,
       prescription: e.prescription,
+      doctorName: e.consultedByStaff?.name ?? e.assignedDoctor?.name ?? null,
       isOwnClinic: e.clinicId === viewingClinicId,
     })),
-    hasHiddenHistoryElsewhere: !hasConsent && otherClinicEntries.length > 0,
+    crossClinicBasis,
+    // Not authorised -> always true, whether or not other records exist, so
+    // the screen never reveals that a patient has been to another clinic.
+    hasHiddenHistoryElsewhere: crossClinicBasis === null,
   };
 }

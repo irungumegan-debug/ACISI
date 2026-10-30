@@ -23,7 +23,8 @@
     "prisma:seed": "ts-node prisma/seed.ts",
     "dev:mark-paid": "ts-node scripts/devMarkCheckInPaid.ts",
     "reset-staff-pin": "ts-node scripts/resetStaffPin.ts",
-    "create-owner": "ts-node scripts/createOwner.ts"
+    "create-owner": "ts-node scripts/createOwner.ts",
+    "redact-payment-phones": "ts-node scripts/redactPaymentPhones.ts"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"

@@ -1,6 +1,7 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { api, ApiError } from '../lib/api';
+import { api, ApiError, PatientIdentity, PatientSession } from '../lib/api';
+import { EMPTY_IDENTITY, IdentityFields } from '../components/IdentityFields';
 import { usePatientAuth } from '../context/PatientAuthContext';
 import { AuthShell, RoleCard } from '../components/AuthShell';
 import { Check, Plus, X } from 'lucide-react';
@@ -24,6 +25,27 @@ function AcceptLegalCheckbox({ checked, onChange }: { checked: boolean; onChange
         .
       </span>
     </label>
+  );
+}
+
+/** Required confidentiality undertaking for everyone who will have access to patient data (staff, doctors, the clinic admin). */
+function ConfidentialityCheckbox({ checked, onChange }: { checked: boolean; onChange: (checked: boolean) => void }) {
+  const [text, setText] = useState<string | null>(null);
+  useEffect(() => {
+    api
+      .confidentialityUndertaking()
+      .then((res) => setText(res.text))
+      .catch(() => setText(null));
+  }, []);
+  return (
+    <div className="legal-check" style={{ display: 'block' }}>
+      <p style={{ fontWeight: 600, marginBottom: 6 }}>ACISI Confidentiality Undertaking</p>
+      <p style={{ fontSize: 13, whiteSpace: 'pre-wrap', marginBottom: 8 }}>{text ?? 'Loading…'}</p>
+      <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+        <input type="checkbox" required checked={checked} onChange={(e) => onChange(e.target.checked)} disabled={!text} />
+        <span>I have read and agree to the ACISI Confidentiality Undertaking.</span>
+      </label>
+    </div>
   );
 }
 
@@ -93,8 +115,10 @@ function PatientSignupForm({ onBack }: { onBack: () => void }) {
   const [pin, setPin] = useState('');
   const [crossClinicConsent, setCrossClinicConsent] = useState(false);
   const [acceptLegal, setAcceptLegal] = useState(false);
+  const [identity, setIdentity] = useState<PatientIdentity>(EMPTY_IDENTITY);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [pending, setPending] = useState<{ pendingId: string; smsSent: boolean; message?: string } | null>(null);
 
   async function handleSubmit(e: FormEvent): Promise<void> {
     e.preventDefault();
@@ -112,28 +136,40 @@ function PatientSignupForm({ onBack }: { onBack: () => void }) {
 
     setSubmitting(true);
     try {
-      const session = await api.registerPatient({
-        firstName: parts[0] as string,
-        lastName: parts.slice(1).join(' '),
-        phoneNumber,
-        dateOfBirth: dateOfBirth || undefined,
-        email: email || undefined,
-        pin,
-        crossClinicConsent,
-        acceptLegal,
-      });
-      // Same fix as patient login: update PatientAuthContext's session
-      // directly (registration already returns it) before navigating
-      // client-side — PatientLayout's guard reads context state, not a
-      // fresh fetch, and this stays within the same SPA so there's no
-      // reload to trigger that fetch for us.
-      setSession(session);
-      navigate('/patient', { replace: true });
+      setPending(
+        await api.registerPatient({
+          firstName: parts[0] as string,
+          lastName: parts.slice(1).join(' '),
+          phoneNumber,
+          dateOfBirth: dateOfBirth || undefined,
+          email: email || undefined,
+          pin,
+          crossClinicConsent,
+          acceptLegal,
+          identity,
+        }),
+      );
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.');
     } finally {
       setSubmitting(false);
     }
+  }
+
+  if (pending) {
+    return (
+      <VerifySignupPhone
+        pending={pending}
+        phoneNumber={phoneNumber}
+        onBack={() => setPending(null)}
+        onVerified={(session) => {
+          // Update PatientAuthContext's session directly before navigating
+          // client-side: PatientLayout's guard reads context state.
+          setSession(session);
+          navigate('/patient', { replace: true });
+        }}
+      />
+    );
   }
 
   return (
@@ -170,15 +206,97 @@ function PatientSignupForm({ onBack }: { onBack: () => void }) {
         <input type="password" inputMode="numeric" required minLength={6} maxLength={6} pattern="\d{6}" placeholder="6-digit PIN" value={pin} onChange={(e) => setPin(e.target.value)} />
         <p className="field-hint">6 digits. Avoid birthdays, your phone number, and easy patterns like 123456 or 111111.</p>
       </div>
+      <details style={{ marginBottom: 16 }}>
+        <summary style={{ cursor: 'pointer', fontSize: 14 }}>ID document and next of kin (optional)</summary>
+        <IdentityFields value={identity} onChange={setIdentity} />
+      </details>
       <label style={{ display: 'flex', gap: 8, fontSize: 13, color: 'var(--ink-dim)', marginBottom: 16, alignItems: 'flex-start' }}>
         <input type="checkbox" checked={crossClinicConsent} onChange={(e) => setCrossClinicConsent(e.target.checked)} style={{ width: 'auto', marginTop: 3 }} />
-        <span>Share my records with other ACISI-connected clinics too (optional — off by default, you can check in elsewhere either way).</span>
+        <span>Allow ACISI clinics I visit to see my records from other ACISI clinics (optional, off by default). You can change this any time in your Account. If you leave it off, a clinic can only see them if you give it a one-time code.</span>
       </label>
       <AcceptLegalCheckbox checked={acceptLegal} onChange={setAcceptLegal} />
 
       {error && <p className="auth-error">{error}</p>}
       <button className="auth-submit" type="submit" disabled={submitting || !acceptLegal}>
         {submitting ? 'Creating account…' : 'Create account'}
+      </button>
+    </form>
+  );
+}
+
+/**
+ * Step 2 of patient signup: the code sent by SMS. If it couldn't be sent,
+ * the signup is kept and the clinic's front desk can finish it.
+ */
+function VerifySignupPhone({
+  pending,
+  phoneNumber,
+  onBack,
+  onVerified,
+}: {
+  pending: { pendingId: string; smsSent: boolean; message?: string };
+  phoneNumber: string;
+  onBack: () => void;
+  onVerified: (session: PatientSession) => void;
+}) {
+  const [code, setCode] = useState('');
+  const [notice, setNotice] = useState<string | null>(pending.smsSent ? null : (pending.message ?? null));
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function verify(e: FormEvent): Promise<void> {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      onVerified(await api.verifySignup(pending.pendingId, code.trim()));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function resend(): Promise<void> {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await api.resendSignupCode(pending.pendingId);
+      setNotice(res.smsSent ? 'A new code is on its way.' : (res.message ?? null));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="auth-form" onSubmit={(e) => void verify(e)}>
+      <button type="button" className="auth-back" onClick={onBack}>
+        &larr; Back
+      </button>
+      <h1 className="auth-h1">Confirm your phone number</h1>
+      <p className="auth-sub">
+        {pending.smsSent ? `We sent a 6-digit code to ${phoneNumber}. Enter it to finish creating your account.` : 'Your details are saved.'}
+      </p>
+      {notice && <p className="auth-notice" role="status">{notice}</p>}
+      <div className="field">
+        <label>Code from the SMS</label>
+        <input
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          maxLength={6}
+          pattern="\d{6}"
+          value={code}
+          onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+        />
+      </div>
+      {error && <p className="auth-error">{error}</p>}
+      <button className="auth-submit" type="submit" disabled={busy || code.length !== 6}>
+        {busy ? 'Checking…' : 'Confirm and create account'}
+      </button>
+      <button type="button" className="auth-back" style={{ marginTop: 12 }} disabled={busy} onClick={() => void resend()}>
+        Send the code again
       </button>
     </form>
   );
@@ -195,6 +313,8 @@ function StaffSignupForm({
 }) {
   const [name, setName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
+  const [email, setEmail] = useState('');
+  const [acceptConfidentiality, setAcceptConfidentiality] = useState(false);
   const [inviteCode, setInviteCode] = useState('');
   const [pin, setPin] = useState('');
   const [departments, setDepartments] = useState<{ id: string; name: string }[]>([]);
@@ -239,6 +359,8 @@ function StaffSignupForm({
         pin,
         role,
         departmentId: role === 'DOCTOR' ? departmentId : undefined,
+        email: email.trim() || undefined,
+        acceptConfidentiality,
       });
       onDone(res.staffCode);
     } catch (err) {
@@ -267,6 +389,10 @@ function StaffSignupForm({
       <div className="field">
         <label>Phone number</label>
         <input type="tel" required placeholder="07XX XXX XXX" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} />
+      </div>
+      <div className="field">
+        <label>Work email (optional)</label>
+        <input type="email" autoComplete="email" placeholder="name@clinic.co.ke" value={email} onChange={(e) => setEmail(e.target.value)} />
       </div>
       <div className="field">
         <label>Clinic invite code</label>
@@ -304,8 +430,10 @@ function StaffSignupForm({
         <p className="field-hint">6 digits. Avoid birthdays, your phone number, and easy patterns like 123456 or 111111.</p>
       </div>
 
+      <ConfidentialityCheckbox checked={acceptConfidentiality} onChange={setAcceptConfidentiality} />
+
       {error && <p className="auth-error">{error}</p>}
-      <button className="auth-submit" type="submit" disabled={submitting}>
+      <button className="auth-submit" type="submit" disabled={submitting || !acceptConfidentiality}>
         {submitting ? 'Creating account…' : 'Create account'}
       </button>
     </form>
@@ -324,6 +452,8 @@ function ClinicSignupForm({ onBack, onDone }: { onBack: () => void; onDone: (inv
   const [county, setCounty] = useState('');
   const [adminName, setAdminName] = useState('');
   const [adminPhoneNumber, setAdminPhoneNumber] = useState('');
+  const [adminEmail, setAdminEmail] = useState('');
+  const [acceptConfidentiality, setAcceptConfidentiality] = useState(false);
   const [adminPin, setAdminPin] = useState('');
   const [departments, setDepartments] = useState<DraftDepartment[]>([{ name: 'General', code: 'GEN', fee: '' }]);
   const [acceptLegal, setAcceptLegal] = useState(false);
@@ -354,6 +484,8 @@ function ClinicSignupForm({ onBack, onDone }: { onBack: () => void; onDone: (inv
         county: county || undefined,
         adminName,
         adminPhoneNumber,
+        adminEmail: adminEmail.trim() || undefined,
+        acceptConfidentiality,
         adminPin,
         departments: departments.map((d) => ({ name: cleanName(d.name), code: d.code.trim().toUpperCase(), consultationFeeKes: d.fee.trim() ? Number(d.fee.trim()) : null })),
         acceptLegal,
@@ -405,6 +537,10 @@ function ClinicSignupForm({ onBack, onDone }: { onBack: () => void; onDone: (inv
             <input type="tel" required placeholder="07XX XXX XXX" value={adminPhoneNumber} onChange={(e) => setAdminPhoneNumber(e.target.value)} />
           </div>
           <div className="field">
+            <label>Work email (optional)</label>
+            <input type="email" autoComplete="email" placeholder="name@clinic.co.ke" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} />
+          </div>
+          <div className="field">
             <label>Create a PIN</label>
             <input type="password" inputMode="numeric" required minLength={6} maxLength={6} pattern="\d{6}" placeholder="6-digit PIN" value={adminPin} onChange={(e) => setAdminPin(e.target.value)} />
             <p className="field-hint">6 digits. Avoid birthdays, your phone number, and easy patterns like 123456 or 111111.</p>
@@ -424,8 +560,9 @@ function ClinicSignupForm({ onBack, onDone }: { onBack: () => void; onDone: (inv
           </p>
           <DepartmentPicker departments={departments} onChange={setDepartments} />
           <AcceptLegalCheckbox checked={acceptLegal} onChange={setAcceptLegal} />
+          <ConfidentialityCheckbox checked={acceptConfidentiality} onChange={setAcceptConfidentiality} />
           {error && <p className="auth-error">{error}</p>}
-          <button className="auth-submit" type="submit" disabled={submitting || !acceptLegal}>
+          <button className="auth-submit" type="submit" disabled={submitting || !acceptLegal || !acceptConfidentiality}>
             {submitting ? 'Registering…' : 'Register clinic'}
           </button>
         </>

@@ -15,10 +15,6 @@ export interface StkStatusCheckJobData {
   checkInId?: string;
 }
 
-export interface VisitSummarySmsJobData {
-  encounterId: string;
-}
-
 export interface VisitSummaryEmailJobData {
   encounterId: string;
 }
@@ -40,10 +36,6 @@ export const clinicStkStatusCheckQueue = new Queue<ClinicStkStatusCheckJobData>(
   connection: redisQueueConnection,
 });
 
-export const visitSummarySmsQueue = new Queue<VisitSummarySmsJobData>('visit-summary-sms', {
-  connection: redisQueueConnection,
-});
-
 export const visitSummaryEmailQueue = new Queue<VisitSummaryEmailJobData>('visit-summary-email', {
   connection: redisQueueConnection,
 });
@@ -56,24 +48,9 @@ export async function enqueueSmsReceipt(data: SmsReceiptJobData): Promise<void> 
 }
 
 /**
- * Sent only at front-desk checkout (encounterService.checkoutEncounter) —
- * distinct from enqueueSmsReceipt, which fires right after payment. This one
- * carries the doctor's diagnosis/prescription, so it can only go out once
- * the consultation is actually done.
- */
-export async function enqueueVisitSummarySms(data: VisitSummarySmsJobData): Promise<void> {
-  await visitSummarySmsQueue.add('send-visit-summary', data, {
-    attempts: 3,
-    backoff: { type: 'exponential', delay: 5000 },
-  });
-}
-
-/**
  * Only enqueued when staff explicitly chose email delivery at checkout AND
  * the patient has an email on file — a completely separate queue/worker
- * from enqueueVisitSummarySms above, so nothing about this path (including
- * it failing) can ever affect the SMS summary, which fires unconditionally
- * regardless of this.
+ * from every SMS.
  */
 export async function enqueueVisitSummaryEmail(data: VisitSummaryEmailJobData): Promise<void> {
   await visitSummaryEmailQueue.add('send-visit-summary-email', data, {
@@ -99,4 +76,21 @@ export async function scheduleCheckInPaymentSweep(): Promise<void> {
  */
 export async function scheduleClinicStkStatusCheck(data: ClinicStkStatusCheckJobData): Promise<void> {
   await clinicStkStatusCheckQueue.add('check-clinic-stk', data, { delay: 90_000, attempts: 2, backoff: { type: 'fixed', delay: 15_000 } });
+}
+
+/** The hourly housekeeping job carries no data. */
+export type MaintenanceJobData = Record<string, never>;
+
+/** Hourly housekeeping: appointment reminders, expired pending signups, unpaid-fee notices (see maintenanceWorker). */
+export const maintenanceQueue = new Queue<MaintenanceJobData>('maintenance', {
+  connection: redisQueueConnection,
+});
+
+/**
+ * Starts (or keeps — an idempotent upsert, safe on every boot) the hourly
+ * housekeeping run, on the hour in Kenya time, so the 09:00 appointment
+ * reminders go out at 09:00.
+ */
+export async function scheduleHourlyMaintenance(): Promise<void> {
+  await maintenanceQueue.upsertJobScheduler('hourly-maintenance', { pattern: '0 * * * *', tz: 'Africa/Nairobi' }, { name: 'hourly', data: {} });
 }

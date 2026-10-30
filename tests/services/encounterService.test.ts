@@ -1,3 +1,5 @@
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+jest.mock('../../src/config/redis', () => require('../helpers/fakeRedis').fakeRedisModule());
 jest.mock('../../src/db/prisma', () => ({
   prisma: {
     encounter: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
@@ -8,7 +10,7 @@ jest.mock('../../src/db/prisma', () => ({
 jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
 jest.mock('../../src/services/patientService', () => ({ getScopedHistory: jest.fn() }));
 jest.mock('../../src/services/staffService', () => ({ findActiveStaffById: jest.fn(), comparePin: jest.fn() }));
-jest.mock('../../src/jobs/queue', () => ({ enqueueVisitSummarySms: jest.fn(), enqueueVisitSummaryEmail: jest.fn() }));
+jest.mock('../../src/jobs/queue', () => ({ enqueueVisitSummaryEmail: jest.fn() }));
 
 let mockEmailConfigured = true;
 jest.mock('../../src/config/email', () => ({
@@ -21,7 +23,7 @@ import { prisma } from '../../src/db/prisma';
 import { recordAuditEvent } from '../../src/services/auditService';
 import { getScopedHistory } from '../../src/services/patientService';
 import { findActiveStaffById, comparePin } from '../../src/services/staffService';
-import { enqueueVisitSummaryEmail, enqueueVisitSummarySms } from '../../src/jobs/queue';
+import { enqueueVisitSummaryEmail } from '../../src/jobs/queue';
 import {
   EncounterNotAccessibleError,
   EncounterNotConsultableError,
@@ -41,7 +43,6 @@ const mockRecordAudit = recordAuditEvent as jest.Mock;
 const mockGetScopedHistory = getScopedHistory as jest.Mock;
 const mockFindActiveStaffById = findActiveStaffById as jest.Mock;
 const mockComparePin = comparePin as jest.Mock;
-const mockEnqueueVisitSms = enqueueVisitSummarySms as jest.Mock;
 const mockEnqueueVisitEmail = enqueueVisitSummaryEmail as jest.Mock;
 
 const DOCTOR_STAFF = { id: 'staff-1', name: 'Dr. Amani Wambui', pinHash: 'hashed' };
@@ -107,7 +108,7 @@ describe('getEncounterForDoctor (queue-scoping guarantee)', () => {
     expect(mockRecordAudit).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'PATIENT_HISTORY_VIEWED', entityId: 'patient-1', staffId: 'staff-1' }),
     );
-    expect(mockGetScopedHistory).toHaveBeenCalledWith('patient-1', 'clinic-A', 'enc-1');
+    expect(mockGetScopedHistory).toHaveBeenCalledWith('patient-1', 'clinic-A', { includeDiagnosis: true, viewer: { staffId: 'staff-1', channel: 'DOCTOR_DASHBOARD' } }, 'enc-1');
     expect(detail.status).toBe('IN_CONSULTATION');
     expect(detail.hasHiddenHistoryElsewhere).toBe(true);
   });
@@ -223,7 +224,6 @@ describe('submitConsultation', () => {
     expect(mockRecordAudit).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'CONSULTATION_SIGNED', entityId: 'enc-1', staffId: 'staff-1' }),
     );
-    expect(mockEnqueueVisitSms).not.toHaveBeenCalled();
   });
 });
 
@@ -232,7 +232,6 @@ describe('checkoutEncounter', () => {
     mockFindFirst.mockResolvedValue({ id: 'enc-1', status: 'IN_CONSULTATION', patient: { email: null } });
 
     await expect(checkoutEncounter('enc-1', 'clinic-A', 'staff-1')).rejects.toThrow(EncounterNotReadyForCheckoutError);
-    expect(mockEnqueueVisitSms).not.toHaveBeenCalled();
     expect(mockEnqueueVisitEmail).not.toHaveBeenCalled();
   });
 
@@ -241,8 +240,6 @@ describe('checkoutEncounter', () => {
     mockUpdate.mockResolvedValue({ id: 'enc-1', status: 'DONE' });
 
     await checkoutEncounter('enc-1', 'clinic-A', 'staff-1');
-
-    expect(mockEnqueueVisitSms).toHaveBeenCalledWith({ encounterId: 'enc-1' });
     expect(mockEnqueueVisitEmail).not.toHaveBeenCalled();
   });
 
@@ -251,8 +248,6 @@ describe('checkoutEncounter', () => {
     mockUpdate.mockResolvedValue({ id: 'enc-1', status: 'DONE' });
 
     await checkoutEncounter('enc-1', 'clinic-A', 'staff-1', 'sms');
-
-    expect(mockEnqueueVisitSms).toHaveBeenCalledWith({ encounterId: 'enc-1' });
     expect(mockEnqueueVisitEmail).not.toHaveBeenCalled();
   });
 
@@ -261,8 +256,6 @@ describe('checkoutEncounter', () => {
     mockUpdate.mockResolvedValue({ id: 'enc-1', status: 'DONE' });
 
     await checkoutEncounter('enc-1', 'clinic-A', 'staff-1', 'sms_and_email');
-
-    expect(mockEnqueueVisitSms).toHaveBeenCalledWith({ encounterId: 'enc-1' });
     expect(mockEnqueueVisitEmail).toHaveBeenCalledWith({ encounterId: 'enc-1' });
   });
 
@@ -271,8 +264,6 @@ describe('checkoutEncounter', () => {
     mockUpdate.mockResolvedValue({ id: 'enc-1', status: 'DONE' });
 
     await checkoutEncounter('enc-1', 'clinic-A', 'staff-1', 'sms_and_email');
-
-    expect(mockEnqueueVisitSms).toHaveBeenCalledWith({ encounterId: 'enc-1' });
     expect(mockEnqueueVisitEmail).not.toHaveBeenCalled();
   });
 
@@ -282,8 +273,6 @@ describe('checkoutEncounter', () => {
     mockUpdate.mockResolvedValue({ id: 'enc-1', status: 'DONE' });
 
     await checkoutEncounter('enc-1', 'clinic-A', 'staff-1', 'sms_and_email');
-
-    expect(mockEnqueueVisitSms).toHaveBeenCalledWith({ encounterId: 'enc-1' });
     expect(mockEnqueueVisitEmail).not.toHaveBeenCalled();
   });
 
@@ -296,5 +285,74 @@ describe('checkoutEncounter', () => {
     expect(mockRecordAudit).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'ENCOUNTER_CHECKED_OUT', metadata: { deliveryMethod: 'sms_and_email' } }),
     );
+  });
+});
+
+describe('signing PIN shares the per-account wrong-PIN lockout (C6)', () => {
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const { recordWrongPin, isLockedOut } = require('../../src/services/pinLockout');
+  const { PIN_LOCKOUT } = require('../../src/config/constants');
+  const { PinLockedOutError } = require('../../src/services/encounterService');
+  /* eslint-enable @typescript-eslint/no-require-imports */
+  const input = {
+    encounterId: 'enc-1',
+    clinicId: 'clinic-A',
+    departmentIds: ['dept-1'],
+    staffId: 'lock-doc',
+    diagnosis: 'Flu',
+    prescription: 'Paracetamol',
+    pin: '1234',
+  };
+
+  it('a doctor locked out at login cannot sign, and the PIN is not even checked', async () => {
+    for (let i = 0; i < PIN_LOCKOUT.maxAttempts; i++) await recordWrongPin('staff:lock-doc');
+    mockFindFirst.mockResolvedValue({ id: 'enc-1', status: 'IN_CONSULTATION' });
+    mockComparePin.mockClear();
+    await expect(submitConsultation(input)).rejects.toThrow(PinLockedOutError);
+    expect(mockComparePin).not.toHaveBeenCalled();
+  });
+
+  it('wrong signing PINs count towards the same lock', async () => {
+    mockFindFirst.mockResolvedValue({ id: 'enc-1', status: 'IN_CONSULTATION' });
+    mockFindActiveStaffById.mockResolvedValue(DOCTOR_STAFF);
+    mockComparePin.mockResolvedValue(false);
+    const staffId = 'count-doc';
+    for (let i = 0; i < PIN_LOCKOUT.maxAttempts - 1; i++) {
+      await expect(submitConsultation({ ...input, staffId })).rejects.toThrow(InvalidPinError);
+    }
+    await expect(submitConsultation({ ...input, staffId })).rejects.toThrow(PinLockedOutError);
+    expect(await isLockedOut(`staff:${staffId}`)).toBe(true);
+  });
+});
+
+describe('doctor access is limited to the current queue (C1)', () => {
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const { getEncounterForDoctor, doctorQueueFilter } = require('../../src/services/encounterService');
+  /* eslint-enable @typescript-eslint/no-require-imports */
+
+  it('only WAITING / IN_CONSULTATION visits in their departments, assigned to them or nobody', () => {
+    expect(doctorQueueFilter('clinic-A', ['dept-1'], 'doc-1')).toEqual({
+      clinicId: 'clinic-A',
+      status: { in: ['WAITING', 'IN_CONSULTATION'] },
+      checkIn: { departmentId: { in: ['dept-1'] } },
+      OR: [{ assignedDoctorId: 'doc-1' }, { assignedDoctorId: null }],
+    });
+  });
+
+  it('opening a visit uses that filter, so a signed (READY_FOR_CHECKOUT/DONE) visit is "not found"', async () => {
+    mockFindFirst.mockResolvedValue(null);
+    await expect(getEncounterForDoctor('enc-old', 'clinic-A', ['dept-1'], 'doc-1')).rejects.toThrow(EncounterNotAccessibleError);
+    expect(mockFindFirst).toHaveBeenCalledWith({
+      where: { id: 'enc-old', ...doctorQueueFilter('clinic-A', ['dept-1'], 'doc-1') },
+    });
+  });
+});
+
+describe('no visit summary by SMS (discontinued 2026-10-30)', () => {
+  it('the job queue no longer has a visit-summary SMS at all', () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const queue = jest.requireActual('../../src/jobs/queue');
+    expect(queue.enqueueVisitSummarySms).toBeUndefined();
+    expect(queue.visitSummarySmsQueue).toBeUndefined();
   });
 });

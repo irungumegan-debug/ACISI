@@ -24,7 +24,7 @@ const STEPS = [
   { icon: Smartphone, title: 'Patient checks in', text: 'From the ACISI website on their phone, or at the front desk as a walk-in.' },
   { icon: LayoutDashboard, title: 'Front desk sees them', text: 'They join the clinic’s live queue, matched to the right department and doctor.' },
   { icon: NotebookPen, title: 'Doctor writes it up', text: 'Notes and the prescription go straight into the patient’s record.' },
-  { icon: Wallet, title: 'Checkout and summary', text: 'Cash, card or M-Pesa at checkout, then a short visit summary by SMS.' },
+  { icon: Wallet, title: 'Checkout and summary', text: 'Cash, card or M-Pesa at checkout, and the visit is in the patient’s records straight away.' },
 ];
 
 const AUDIENCES = [

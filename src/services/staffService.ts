@@ -8,6 +8,9 @@ import { env } from '../config/env';
 import { findClinicByInviteCode } from './clinicService';
 import { findActiveDepartment } from './departmentService';
 import { pinPolicyError } from '../utils/pinPolicy';
+import { clearLockout } from './pinLockout';
+import { revokeSessionsFor } from './sessionRevocation';
+import { recordLegalAcceptances } from './legalService';
 
 
 const MAX_CODE_GENERATION_ATTEMPTS = 10;
@@ -35,6 +38,10 @@ interface RegisterStaffInput {
   role: StaffRole;
   /** Required when role is DOCTOR — which department they're joining. Ignored for other roles. */
   departmentId?: string;
+  /** Optional work email. */
+  email?: string;
+  /** Ticked "I accept the confidentiality undertaking": recorded with the account, never without it. */
+  acceptedConfidentialityUndertaking?: boolean;
 }
 
 export class InvalidInviteCodeError extends Error {
@@ -75,18 +82,25 @@ export async function registerStaffViaInviteCode(input: RegisterStaffInput): Pro
   const staffCode = await generateUniqueStaffCode();
   const pinHash = await hashPin(input.pin);
 
-  const staff = await prisma.staff.create({
-    data: {
-      clinicId: clinic.id,
-      staffCode,
-      phoneNumber: input.phoneNumberE164,
-      name: input.name,
-      pinHash,
-      role: input.role,
-      departmentId: input.role === 'DOCTOR' ? input.departmentId : undefined,
-      // A doctor starts in the department they signed up to; the admin can add more in Settings.
-      departments: input.role === 'DOCTOR' && input.departmentId ? { create: [{ departmentId: input.departmentId }] } : undefined,
-    },
+  const staff = await prisma.$transaction(async (tx) => {
+    const created = await tx.staff.create({
+      data: {
+        clinicId: clinic.id,
+        staffCode,
+        phoneNumber: input.phoneNumberE164,
+        email: input.email,
+        name: input.name,
+        pinHash,
+        role: input.role,
+        departmentId: input.role === 'DOCTOR' ? input.departmentId : undefined,
+        // A doctor starts in the department they signed up to; the admin can add more in Settings.
+        departments: input.role === 'DOCTOR' && input.departmentId ? { create: [{ departmentId: input.departmentId }] } : undefined,
+      },
+    });
+    if (input.acceptedConfidentialityUndertaking) {
+      await recordLegalAcceptances(['CONFIDENTIALITY_UNDERTAKING'], 'STAFF_SIGNUP', { staffId: created.id, clinicId: clinic.id }, tx);
+    }
+    return created;
   });
 
   await recordAuditEvent({
@@ -181,7 +195,12 @@ async function setPin(staffId: string, newPin: string): Promise<Staff> {
     throw new InvalidPinFormatError(pinError);
   }
   const pinHash = await hashPin(newPin);
-  return prisma.staff.update({ where: { id: staffId }, data: { pinHash } });
+  const updated = await prisma.staff.update({ where: { id: staffId }, data: { pinHash } });
+  // Every PIN reset (self, admin, server script) lifts a lockout and logs
+  // the person out everywhere: whoever had the old PIN loses their session.
+  await clearLockout(`staff:${staffId}`);
+  await revokeSessionsFor(`staff:${staffId}`);
+  return updated;
 }
 
 export class StaffNotFoundError extends Error {
@@ -272,6 +291,8 @@ export interface ClinicStaffListItem {
   id: string;
   staffCode: string;
   name: string;
+  /** Optional work email. */
+  email: string | null;
   role: StaffRole;
   departmentName: string | null;
   /** Every department a doctor works in (empty for other roles). */
@@ -296,6 +317,7 @@ export async function listClinicStaff(clinicId: string): Promise<ClinicStaffList
     id: s.id,
     staffCode: s.staffCode,
     name: s.name,
+    email: s.email,
     role: s.role,
     departmentName: s.departments.length ? s.departments.map((d) => d.department.name).join(', ') : (s.department?.name ?? null),
     departments: s.departments.map((d) => d.department),

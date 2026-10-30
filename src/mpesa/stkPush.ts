@@ -1,6 +1,6 @@
 import { env } from '../config/env';
 import { toDarajaFormat } from '../utils/phone';
-import { darajaClient, darajaPassword, darajaTimestamp, logDarajaError } from './daraja';
+import { darajaClient, darajaPassword, darajaTimestamp, logDarajaError, stkPayee } from './daraja';
 import { StkPushRequest, StkPushResponse } from './types';
 
 /**
@@ -14,6 +14,7 @@ export async function initiateStkPush(request: StkPushRequest): Promise<StkPushR
   const phone = toDarajaFormat(request.phoneNumberE164);
 
   const client = await darajaClient();
+  const payee = stkPayee();
 
   try {
     const { data } = await client.post<{
@@ -23,13 +24,13 @@ export async function initiateStkPush(request: StkPushRequest): Promise<StkPushR
       ResponseDescription: string;
       CustomerMessage: string;
     }>('/mpesa/stkpush/v1/processrequest', {
-      BusinessShortCode: env.MPESA_SHORTCODE,
+      BusinessShortCode: payee.BusinessShortCode,
       Password: password,
       Timestamp: timestamp,
-      TransactionType: 'CustomerPayBillOnline',
+      TransactionType: payee.TransactionType,
       Amount: Math.round(request.amountKes),
       PartyA: phone,
-      PartyB: env.MPESA_SHORTCODE,
+      PartyB: payee.PartyB,
       PhoneNumber: phone,
       CallBackURL: env.MPESA_CALLBACK_URL,
       AccountReference: request.accountReference,

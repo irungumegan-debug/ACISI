@@ -33,6 +33,23 @@ export function darajaTimestamp(date: Date = new Date()): string {
   return dayjs(date).format('YYYYMMDDHHmmss');
 }
 
+/**
+ * Who an STK push pays. Paybill (no MPESA_TILL_NUMBER): the paybill in both
+ * BusinessShortCode and PartyB. Buy Goods: the store number in
+ * BusinessShortCode (and the password, see darajaPassword), the till in
+ * PartyB. Stays between ACISI and Safaricom: never sent to patients.
+ */
+export function stkPayee(): {
+  BusinessShortCode: string;
+  TransactionType: 'CustomerPayBillOnline' | 'CustomerBuyGoodsOnline';
+  PartyB: string;
+} {
+  return env.MPESA_TILL_NUMBER
+    ? { BusinessShortCode: env.MPESA_SHORTCODE, TransactionType: 'CustomerBuyGoodsOnline', PartyB: env.MPESA_TILL_NUMBER }
+    : { BusinessShortCode: env.MPESA_SHORTCODE, TransactionType: 'CustomerPayBillOnline', PartyB: env.MPESA_SHORTCODE };
+}
+
+/** Always from MPESA_SHORTCODE: the paybill, or for Buy Goods the store number (never the till). */
 export function darajaPassword(timestamp: string): string {
   return Buffer.from(`${env.MPESA_SHORTCODE}${env.MPESA_PASSKEY}${timestamp}`).toString('base64');
 }
@@ -47,7 +64,9 @@ export async function darajaClient() {
 
 export function logDarajaError(context: string, err: unknown): void {
   if (axios.isAxiosError(err)) {
-    logger.error({ context, status: err.response?.status, data: err.response?.data }, 'Daraja API error');
+    // Only Safaricom's error code, never the reply body: it can echo the phone number.
+    const data = err.response?.data as { errorCode?: unknown; ResultCode?: unknown } | undefined;
+    logger.error({ context, status: err.response?.status, errorCode: data?.errorCode ?? data?.ResultCode }, 'Daraja API error');
   } else {
     logger.error({ context, err }, 'Unexpected Daraja error');
   }

@@ -1,10 +1,12 @@
 import { Encounter, EncounterStatus } from '@prisma/client';
+import { doctorQueueFilter } from './doctorScope';
 import { prisma } from '../db/prisma';
 import { recordAuditEvent } from './auditService';
+import { clearLockout, isLockedOut, lockoutMessage, recordWrongPin } from './pinLockout';
 import { getScopedHistory, ScopedHistoryEntry } from './patientService';
 import { comparePin, findActiveStaffById } from './staffService';
 import { emailConfigured } from '../config/email';
-import { enqueueVisitSummaryEmail, enqueueVisitSummarySms } from '../jobs/queue';
+import { enqueueVisitSummaryEmail } from '../jobs/queue';
 import { logger } from '../utils/logger';
 
 export type CheckoutDeliveryMethod = 'sms' | 'sms_and_email';
@@ -34,14 +36,11 @@ export interface DoctorQueueItem {
  * check-in time) still show up for every doctor in the department, same as
  * behavior before assignment existed.
  */
+export { doctorQueueFilter } from './doctorScope';
+
 export async function getDoctorQueue(clinicId: string, departmentIds: string[], staffId: string): Promise<DoctorQueueItem[]> {
   const encounters = await prisma.encounter.findMany({
-    where: {
-      clinicId,
-      status: { in: ['WAITING', 'IN_CONSULTATION'] },
-      checkIn: { departmentId: { in: departmentIds } },
-      OR: [{ assignedDoctorId: staffId }, { assignedDoctorId: null }],
-    },
+    where: doctorQueueFilter(clinicId, departmentIds, staffId),
     include: { patient: true },
     orderBy: { createdAt: 'asc' },
   });
@@ -78,13 +77,10 @@ export interface EncounterDetail {
 }
 
 async function assertEncounterInDoctorQueue(encounterId: string, clinicId: string, departmentIds: string[], staffId: string): Promise<Encounter> {
+  // Only a visit still in the queue: once signed it is front desk's, and a
+  // doctor sees it again only as history of a patient back in their queue.
   const encounter = await prisma.encounter.findFirst({
-    where: {
-      id: encounterId,
-      clinicId,
-      checkIn: { departmentId: { in: departmentIds } },
-      OR: [{ assignedDoctorId: staffId }, { assignedDoctorId: null }],
-    },
+    where: { id: encounterId, ...doctorQueueFilter(clinicId, departmentIds, staffId) },
   });
   if (!encounter) {
     throw new EncounterNotAccessibleError();
@@ -125,7 +121,12 @@ export async function getEncounterForDoctor(
     metadata: { viewedByClinicId: clinicId, channel: 'DOCTOR_DASHBOARD', encounterId: encounter.id },
   });
 
-  const { history, hasHiddenHistoryElsewhere } = await getScopedHistory(encounter.patientId, clinicId, encounter.id);
+  const { history, hasHiddenHistoryElsewhere } = await getScopedHistory(
+    encounter.patientId,
+    clinicId,
+    { includeDiagnosis: true, viewer: { staffId: viewingStaffId, channel: 'DOCTOR_DASHBOARD' } },
+    encounter.id,
+  );
 
   return {
     encounterId: encounter.id,
@@ -143,6 +144,13 @@ export class EncounterNotConsultableError extends Error {
   constructor() {
     super('This patient is not currently awaiting consultation');
     this.name = 'EncounterNotConsultableError';
+  }
+}
+
+export class PinLockedOutError extends Error {
+  constructor() {
+    super(lockoutMessage());
+    this.name = 'PinLockedOutError';
   }
 }
 
@@ -185,6 +193,12 @@ export async function submitConsultation(input: SubmitConsultationInput): Promis
     throw new EncounterNotConsultableError();
   }
 
+  // Same per-account wrong-PIN counter as login: a locked account can't
+  // sign either, and wrong signing PINs count towards the lock.
+  if (await isLockedOut(`staff:${input.staffId}`)) {
+    throw new PinLockedOutError();
+  }
+
   const staff = await findActiveStaffById(input.staffId);
   const pinValid = staff ? await comparePin(staff, input.pin) : false;
 
@@ -198,8 +212,10 @@ export async function submitConsultation(input: SubmitConsultationInput): Promis
   });
 
   if (!pinValid) {
+    if (await recordWrongPin(`staff:${input.staffId}`)) throw new PinLockedOutError();
     throw new InvalidPinError();
   }
+  await clearLockout(`staff:${input.staffId}`);
 
   const updated = await prisma.encounter.update({
     where: { id: encounter.id },
@@ -223,17 +239,15 @@ export class EncounterNotReadyForCheckoutError extends Error {
 }
 
 /**
- * Front-desk-only action: completes the visit and triggers the visit
- * summary. Deliberately separate from the doctor's consultation submission
- * — a doctor finishing a consult never checks a patient out or sends
- * anything by itself.
+ * Front-desk-only action: completes the visit. Deliberately separate from
+ * the doctor's consultation submission — a doctor finishing a consult never
+ * checks a patient out or sends anything by itself.
  *
- * The SMS summary is unconditional — it fires exactly as it always has,
- * regardless of deliveryMethod. Email is strictly additive: only enqueued
- * when staff explicitly asked for it AND the patient actually has an email
- * on file (re-checked here, not just trusted from the request, in case it
- * changed since the checkout screen loaded) AND email delivery is
- * configured at all. None of that ever gates or affects the SMS send.
+ * No visit summary is sent by SMS (discontinued 2026-10-30: patients read
+ * the visit in their portal records). 'sms' therefore means "nothing
+ * extra"; 'sms_and_email' (the value is kept for compatibility) emails the
+ * PDF, only when the patient has an email on file (re-checked here) AND
+ * email delivery is configured at all.
  */
 export async function checkoutEncounter(
   encounterId: string,
@@ -266,8 +280,6 @@ export async function checkoutEncounter(
     entityId: encounter.id,
     metadata: { deliveryMethod },
   });
-
-  await enqueueVisitSummarySms({ encounterId: encounter.id });
 
   if (deliveryMethod === 'sms_and_email') {
     if (encounter.patient.email && emailConfigured) {

@@ -1,11 +1,13 @@
 import express from 'express';
 import request from 'supertest';
 
-jest.mock('../../src/services/checkInService', () => ({ applyPaymentResult: jest.fn() }));
+jest.mock('../../src/services/checkInService', () => ({ handleStkCallback: jest.fn() }));
 jest.mock('../../src/services/billingService', () => ({ applyClinicStkResult: jest.fn() }));
+jest.mock('../../src/mpesa/clinicStk', () => ({ clinicStkConfigured: jest.fn(() => true) }));
 
-import { applyPaymentResult } from '../../src/services/checkInService';
+import { handleStkCallback } from '../../src/services/checkInService';
 import { applyClinicStkResult } from '../../src/services/billingService';
+import { clinicStkConfigured } from '../../src/mpesa/clinicStk';
 import { mpesaRouter } from '../../src/mpesa/router';
 
 const app = express();
@@ -36,7 +38,7 @@ describe('POST /api/mpesa/clinic-callback', () => {
     expect(applyClinicStkResult).toHaveBeenCalledWith(
       expect.objectContaining({ checkoutRequestId: 'ws_CO_1', resultCode: 0, mpesaReceiptNumber: 'QKL98MN76P' }),
     );
-    expect(applyPaymentResult).not.toHaveBeenCalled();
+    expect(handleStkCallback).not.toHaveBeenCalled();
   });
 
   it('passes on a cancellation', async () => {
@@ -56,7 +58,16 @@ describe('POST /api/mpesa/clinic-callback', () => {
 
   it('leaves the ACISI fee callback on its own route', async () => {
     await request(app).post('/api/mpesa/callback').send(success);
-    expect(applyPaymentResult).toHaveBeenCalled();
+    expect(handleStkCallback).toHaveBeenCalled();
+    expect(applyClinicStkResult).not.toHaveBeenCalled();
+  });
+});
+
+describe('clinic callback while clinic M-Pesa requests are switched off (always on a live server)', () => {
+  it('is acknowledged but changes nothing', async () => {
+    (clinicStkConfigured as jest.Mock).mockReturnValueOnce(false);
+    const res = await request(app).post('/api/mpesa/clinic-callback').send(success);
+    expect(res.status).toBe(200);
     expect(applyClinicStkResult).not.toHaveBeenCalled();
   });
 });
