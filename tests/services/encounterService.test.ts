@@ -109,7 +109,7 @@ describe('getEncounterForDoctor (queue-scoping guarantee)', () => {
     expect(mockRecordAudit).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'PATIENT_HISTORY_VIEWED', entityId: 'patient-1', staffId: 'staff-1' }),
     );
-    expect(mockGetScopedHistory).toHaveBeenCalledWith('patient-1', 'clinic-A', 'enc-1');
+    expect(mockGetScopedHistory).toHaveBeenCalledWith('patient-1', 'clinic-A', { includeDiagnosis: true }, 'enc-1');
     expect(detail.status).toBe('IN_CONSULTATION');
     expect(detail.hasHiddenHistoryElsewhere).toBe(true);
   });
@@ -335,5 +335,28 @@ describe('signing PIN shares the per-account wrong-PIN lockout (C6)', () => {
     }
     await expect(submitConsultation({ ...input, staffId })).rejects.toThrow(PinLockedOutError);
     expect(await isLockedOut(`staff:${staffId}`)).toBe(true);
+  });
+});
+
+describe('doctor access is limited to the current queue (C1)', () => {
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const { getEncounterForDoctor, doctorQueueFilter } = require('../../src/services/encounterService');
+  /* eslint-enable @typescript-eslint/no-require-imports */
+
+  it('only WAITING / IN_CONSULTATION visits in their departments, assigned to them or nobody', () => {
+    expect(doctorQueueFilter('clinic-A', ['dept-1'], 'doc-1')).toEqual({
+      clinicId: 'clinic-A',
+      status: { in: ['WAITING', 'IN_CONSULTATION'] },
+      checkIn: { departmentId: { in: ['dept-1'] } },
+      OR: [{ assignedDoctorId: 'doc-1' }, { assignedDoctorId: null }],
+    });
+  });
+
+  it('opening a visit uses that filter, so a signed (READY_FOR_CHECKOUT/DONE) visit is "not found"', async () => {
+    mockFindFirst.mockResolvedValue(null);
+    await expect(getEncounterForDoctor('enc-old', 'clinic-A', ['dept-1'], 'doc-1')).rejects.toThrow(EncounterNotAccessibleError);
+    expect(mockFindFirst).toHaveBeenCalledWith({
+      where: { id: 'enc-old', ...doctorQueueFilter('clinic-A', ['dept-1'], 'doc-1') },
+    });
   });
 });

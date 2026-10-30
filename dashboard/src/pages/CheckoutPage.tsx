@@ -766,6 +766,19 @@ export function CheckoutPage() {
         </div>
       </div>
 
+      {view.prescription && (
+        <section className={`${sectionCard} print:hidden`} aria-label="Prescription for this visit">
+          <h2 className={sectionTitle}>
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gold-tint text-gold-700">
+              <Pill size={18} aria-hidden />
+            </span>
+            Prescription for this visit
+          </h2>
+          <p className="mt-3 whitespace-pre-wrap text-sm text-ink-700">{view.prescription}</p>
+          <p className="mt-2 text-xs text-ink-500">As written by the doctor. Shown so medicines can be added to the bill.</p>
+        </section>
+      )}
+
       {!canBill ? (
         <p className="rounded-2xl border border-slate-200 bg-white p-5 text-sm text-ink-700 shadow-card print:hidden">The bill can be made once the doctor has finished with this patient.</p>
       ) : (

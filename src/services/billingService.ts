@@ -92,6 +92,11 @@ export interface CheckoutView {
   visitStatus: string;
   patient: { id: string; name: string; patientCode: string; phoneNumber: string; smsOptOut: boolean };
   departmentName: string;
+  /**
+   * This visit's prescription, read-only, so front desk can bill the
+   * medicines. Never the diagnosis: front desk doesn't see diagnoses.
+   */
+  prescription: string | null;
   /** The visit's department, with its own consultation fee if it has one (null: use the clinic default). */
   department: { id: string; name: string; consultationFeeKes: number | null };
   settings: {
@@ -173,6 +178,7 @@ export async function getCheckoutView(encounterId: string, clinicId: string): Pr
       smsOptOut: encounter.patient.smsOptOut,
     },
     departmentName: encounter.checkIn.department.name,
+    prescription: encounter.prescription,
     department: encounter.checkIn.department,
     settings: {
       acceptsCash: settings.acceptsCash,

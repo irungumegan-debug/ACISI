@@ -1,4 +1,4 @@
-import { Encounter, EncounterStatus } from '@prisma/client';
+import { Encounter, EncounterStatus, Prisma } from '@prisma/client';
 import { prisma } from '../db/prisma';
 import { recordAuditEvent } from './auditService';
 import { clearLockout, isLockedOut, lockoutMessage, recordWrongPin } from './pinLockout';
@@ -35,14 +35,25 @@ export interface DoctorQueueItem {
  * check-in time) still show up for every doctor in the department, same as
  * behavior before assignment existed.
  */
+/**
+ * The one definition of "currently in this doctor's queue": at their clinic,
+ * waiting or in consultation, in one of their departments, and assigned to
+ * them or to nobody. Every doctor-facing read of a patient goes through this
+ * (queue, visit page, patient search and patient page), so a doctor can
+ * never reach a patient outside it.
+ */
+export function doctorQueueFilter(clinicId: string, departmentIds: string[], staffId: string): Prisma.EncounterWhereInput {
+  return {
+    clinicId,
+    status: { in: ['WAITING', 'IN_CONSULTATION'] },
+    checkIn: { departmentId: { in: departmentIds } },
+    OR: [{ assignedDoctorId: staffId }, { assignedDoctorId: null }],
+  };
+}
+
 export async function getDoctorQueue(clinicId: string, departmentIds: string[], staffId: string): Promise<DoctorQueueItem[]> {
   const encounters = await prisma.encounter.findMany({
-    where: {
-      clinicId,
-      status: { in: ['WAITING', 'IN_CONSULTATION'] },
-      checkIn: { departmentId: { in: departmentIds } },
-      OR: [{ assignedDoctorId: staffId }, { assignedDoctorId: null }],
-    },
+    where: doctorQueueFilter(clinicId, departmentIds, staffId),
     include: { patient: true },
     orderBy: { createdAt: 'asc' },
   });
@@ -79,13 +90,10 @@ export interface EncounterDetail {
 }
 
 async function assertEncounterInDoctorQueue(encounterId: string, clinicId: string, departmentIds: string[], staffId: string): Promise<Encounter> {
+  // Only a visit still in the queue: once signed it is front desk's, and a
+  // doctor sees it again only as history of a patient back in their queue.
   const encounter = await prisma.encounter.findFirst({
-    where: {
-      id: encounterId,
-      clinicId,
-      checkIn: { departmentId: { in: departmentIds } },
-      OR: [{ assignedDoctorId: staffId }, { assignedDoctorId: null }],
-    },
+    where: { id: encounterId, ...doctorQueueFilter(clinicId, departmentIds, staffId) },
   });
   if (!encounter) {
     throw new EncounterNotAccessibleError();
@@ -126,7 +134,7 @@ export async function getEncounterForDoctor(
     metadata: { viewedByClinicId: clinicId, channel: 'DOCTOR_DASHBOARD', encounterId: encounter.id },
   });
 
-  const { history, hasHiddenHistoryElsewhere } = await getScopedHistory(encounter.patientId, clinicId, encounter.id);
+  const { history, hasHiddenHistoryElsewhere } = await getScopedHistory(encounter.patientId, clinicId, { includeDiagnosis: true }, encounter.id);
 
   return {
     encounterId: encounter.id,

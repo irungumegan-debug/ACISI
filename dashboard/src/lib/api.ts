@@ -51,8 +51,11 @@ export interface VisitHistoryEntry {
   encounterId: string;
   clinicName: string;
   visitedAt: string;
+  /** Only ever sent to doctors; null for front desk. */
   diagnosis: string | null;
   prescription: string | null;
+  /** Who handled the visit. */
+  doctorName: string | null;
   isOwnClinic: boolean;
 }
 
@@ -159,8 +162,11 @@ export interface HistoryEntry {
   encounterId: string;
   clinicName: string;
   visitedAt: string;
+  /** Only ever sent to doctors; null for front desk. */
   diagnosis: string | null;
   prescription: string | null;
+  /** Who handled the visit. */
+  doctorName: string | null;
   isOwnClinic: boolean;
 }
 
@@ -262,6 +268,8 @@ export interface CheckoutView {
   visitStatus: EncounterStatus;
   patient: { id: string; name: string; patientCode: string; phoneNumber: string; smsOptOut: boolean };
   departmentName: string;
+  /** This visit's prescription, read-only, for billing medicines. */
+  prescription: string | null;
   /** The visit's department; its own fee (if set) pre-fills the consultation line. */
   department: { id: string; name: string; consultationFeeKes: number | null };
   settings: {
@@ -477,6 +485,11 @@ export const api = {
 
   getPatient(id: string) {
     return request<PatientDetail>(`/patients/${id}`);
+  },
+
+  /** Opens in a new tab for printing; the session cookie goes with it (same origin). */
+  visitRecordUrl(patientId: string, encounterId: string) {
+    return `/api/staff/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(encounterId)}/record`;
   },
 
   getTodayCheckIns() {

@@ -264,9 +264,17 @@ export interface ScopedHistoryEntry {
   encounterId: string;
   clinicName: string;
   visitedAt: Date;
+  /** Always null for front desk (receptionists, clinicians, admins): only doctors see diagnoses. */
   diagnosis: string | null;
   prescription: string | null;
+  /** Who handled the visit (the signing doctor, else the assigned one), so it can be traced later. */
+  doctorName: string | null;
   isOwnClinic: boolean;
+}
+
+export interface ScopedHistoryOptions {
+  /** Doctors only. Front desk never receives a diagnosis from the server. */
+  includeDiagnosis: boolean;
 }
 
 export interface ScopedHistory {
@@ -288,13 +296,18 @@ export interface ScopedHistory {
 export async function getScopedHistory(
   patientId: string,
   viewingClinicId: string,
+  options: ScopedHistoryOptions,
   excludeEncounterId?: string,
 ): Promise<ScopedHistory> {
   const encounters = await prisma.encounter.findMany({
     where: { patientId, id: excludeEncounterId ? { not: excludeEncounterId } : undefined },
     orderBy: { createdAt: 'desc' },
     take: HISTORY_ENCOUNTER_LIMIT,
-    include: { clinic: { select: { name: true } } },
+    include: {
+      clinic: { select: { name: true } },
+      consultedByStaff: { select: { name: true } },
+      assignedDoctor: { select: { name: true } },
+    },
   });
 
   const ownClinicEntries = encounters.filter((e) => e.clinicId === viewingClinicId);
@@ -309,8 +322,9 @@ export async function getScopedHistory(
       encounterId: e.id,
       clinicName: e.clinic.name,
       visitedAt: e.createdAt,
-      diagnosis: e.diagnosis,
+      diagnosis: options.includeDiagnosis ? e.diagnosis : null,
       prescription: e.prescription,
+      doctorName: e.consultedByStaff?.name ?? e.assignedDoctor?.name ?? null,
       isOwnClinic: e.clinicId === viewingClinicId,
     })),
     hasHiddenHistoryElsewhere: !hasConsent && otherClinicEntries.length > 0,

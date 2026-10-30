@@ -140,6 +140,7 @@ export function DoctorEncounterPage() {
                   </span>
                 </p>
               )}
+              {h.doctorName && <p className="mt-1.5 text-xs text-ink-500">Seen by {h.doctorName}</p>}
               </div>
             </li>
           ))}

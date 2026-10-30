@@ -1,5 +1,9 @@
 import { Router } from 'express';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../db/prisma';
+import { doctorQueueFilter } from '../services/encounterService';
+import { getDoctorDepartmentIds } from '../services/departmentService';
+import { buildVisitRecordDataFromEncounter, renderVisitRecordPdf } from '../services/visitRecordDocument';
 import { requireStaffSession, AuthenticatedRequest } from './auth';
 import { getScopedHistory } from '../services/patientService';
 import { recordAuditEvent } from '../services/auditService';
@@ -11,13 +15,27 @@ export const patientsRouter = Router();
 patientsRouter.use(requireStaffSession);
 
 /**
+ * Which patients a staff member may see. Front desk: anyone with a check-in
+ * or visit at this clinic. A doctor: only patients currently in their own
+ * queue (doctorQueueFilter) — enforced here on the server, not just by
+ * hiding the menu item.
+ */
+async function visibleToStaffWhere(req: AuthenticatedRequest): Promise<Prisma.PatientWhereInput> {
+  const { clinicId, role, staffId } = req.dashboardSession;
+  if (role === 'DOCTOR') {
+    const departmentIds = await getDoctorDepartmentIds(staffId);
+    return { encounters: { some: doctorQueueFilter(clinicId, departmentIds, staffId) } };
+  }
+  return { OR: [{ checkIns: { some: { clinicId } } }, { encounters: { some: { clinicId } } }] };
+}
+
+/**
  * Search is scoped to patients who have a check-in or visit history at the
  * logged-in staff member's own clinic — not a global patient search. A
  * clinic shouldn't be able to browse patients it has no relationship with,
  * even though patient records are portable once a relationship exists.
  */
 patientsRouter.get('/', async (req, res) => {
-  const { clinicId } = (req as AuthenticatedRequest).dashboardSession;
   const query = typeof req.query.q === 'string' ? req.query.q.trim() : '';
 
   if (query.length < 2) {
@@ -28,7 +46,7 @@ patientsRouter.get('/', async (req, res) => {
   const patients = await prisma.patient.findMany({
     where: {
       AND: [
-        { OR: [{ checkIns: { some: { clinicId } } }, { encounters: { some: { clinicId } } }] },
+        await visibleToStaffWhere(req as AuthenticatedRequest),
         {
           OR: [
             { phoneNumber: { contains: query } },
@@ -55,13 +73,11 @@ patientsRouter.get('/:id', async (req, res) => {
     return;
   }
 
-  // Same authorization scoping as search: only patients with a relationship
-  // to this clinic are visible, whether reached via search or a direct URL.
+  // Same authorization scoping as search, whether reached via search or a
+  // direct URL. A patient a doctor may not see gets exactly the same 404 as
+  // one who doesn't exist.
   const patient = await prisma.patient.findFirst({
-    where: {
-      id: patientId,
-      OR: [{ checkIns: { some: { clinicId } } }, { encounters: { some: { clinicId } } }],
-    },
+    where: { id: patientId, ...(await visibleToStaffWhere(req as unknown as AuthenticatedRequest)) },
   });
 
   if (!patient) {
@@ -69,7 +85,8 @@ patientsRouter.get('/:id', async (req, res) => {
     return;
   }
 
-  const { history, hasHiddenHistoryElsewhere } = await getScopedHistory(patient.id, clinicId);
+  const isDoctor = (req as unknown as AuthenticatedRequest).dashboardSession.role === 'DOCTOR';
+  const { history, hasHiddenHistoryElsewhere } = await getScopedHistory(patient.id, clinicId, { includeDiagnosis: isDoctor });
 
   await recordAuditEvent({
     actorType: 'STAFF',
@@ -184,4 +201,49 @@ patientsRouter.patch('/:id/details', async (req, res) => {
     metadata: { fields: Object.keys(update), clinicId },
   });
   res.json(identityView(updated));
+});
+
+/**
+ * "Print visit record": when a patient asks the front desk for a paper copy
+ * of one of their visits at this clinic. Front desk never sees diagnoses on
+ * screen (C2), but the printed record the patient asked for includes it, the
+ * same PDF the patient can download from their own portal. Front-desk roles
+ * only, this clinic's visits only, and every print is audit-logged.
+ */
+patientsRouter.get('/:id/visits/:encounterId/record', async (req, res) => {
+  const { clinicId, staffId, role } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  if (role === 'DOCTOR') {
+    res.status(403).json({ error: 'Printing visit records is done at the front desk' });
+    return;
+  }
+
+  const encounter = await prisma.encounter.findFirst({
+    where: { id: req.params.encounterId, patientId: req.params.id, clinicId, patient: { deletedAt: null } },
+    include: { patient: true, clinic: true, checkIn: { include: { department: true } }, consultedByStaff: true },
+  });
+  if (!encounter) {
+    res.status(404).json({ error: 'Visit record not found' });
+    return;
+  }
+
+  const pdf = await renderVisitRecordPdf(buildVisitRecordDataFromEncounter(encounter));
+
+  await recordAuditEvent({
+    actorType: 'STAFF',
+    actorId: staffId,
+    staffId,
+    clinicId,
+    action: 'VISIT_RECORD_PRINTED_FOR_PATIENT',
+    entityType: 'Encounter',
+    entityId: encounter.id,
+    metadata: { patientId: encounter.patientId },
+  });
+
+  const dateStamp = encounter.createdAt.toISOString().slice(0, 10);
+  res.set({
+    'Content-Type': 'application/pdf',
+    'Content-Disposition': `inline; filename="ACISI-visit-${dateStamp}.pdf"`,
+    'Cache-Control': 'no-store',
+  });
+  res.send(pdf);
 });

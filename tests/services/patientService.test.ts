@@ -30,11 +30,23 @@ beforeEach(() => {
   jest.clearAllMocks();
 });
 
+const DOCTOR = { includeDiagnosis: true };
+const FRONT_DESK = { includeDiagnosis: false };
+
 describe('getScopedHistory', () => {
+  it('never returns a diagnosis to front desk (C2), but keeps the prescription and who handled the visit', async () => {
+    mockFindManyEncounters.mockResolvedValue([encounter({ consultedByStaff: { name: 'Dr. Amani' } })]);
+
+    const result = await getScopedHistory('patient-1', 'clinic-A', FRONT_DESK);
+
+    expect(result.history[0]).toMatchObject({ diagnosis: null, prescription: expect.any(String), doctorName: 'Dr. Amani' });
+    expect(JSON.stringify(result)).not.toContain('Flu');
+  });
+
   it('always shows the viewing clinic\'s own encounters, consent or not', async () => {
     mockFindManyEncounters.mockResolvedValue([encounter()]);
 
-    const result = await getScopedHistory('patient-1', 'clinic-A');
+    const result = await getScopedHistory('patient-1', 'clinic-A', DOCTOR);
 
     expect(result.history).toHaveLength(1);
     expect(result.history[0]).toMatchObject({ isOwnClinic: true, diagnosis: 'Flu' });
@@ -48,7 +60,7 @@ describe('getScopedHistory', () => {
     ]);
     mockFindFirstConsent.mockResolvedValue({ granted: false });
 
-    const result = await getScopedHistory('patient-1', 'clinic-A');
+    const result = await getScopedHistory('patient-1', 'clinic-A', DOCTOR);
 
     expect(result.history).toHaveLength(0);
     expect(result.hasHiddenHistoryElsewhere).toBe(true);
@@ -61,7 +73,7 @@ describe('getScopedHistory', () => {
     ]);
     mockFindFirstConsent.mockResolvedValue({ granted: true });
 
-    const result = await getScopedHistory('patient-1', 'clinic-A');
+    const result = await getScopedHistory('patient-1', 'clinic-A', DOCTOR);
 
     expect(result.history).toHaveLength(2);
     expect(result.hasHiddenHistoryElsewhere).toBe(false);
@@ -71,7 +83,7 @@ describe('getScopedHistory', () => {
   it('excludes the encounter currently being viewed from the returned history', async () => {
     mockFindManyEncounters.mockResolvedValue([encounter()]);
 
-    await getScopedHistory('patient-1', 'clinic-A', 'enc-current');
+    await getScopedHistory('patient-1', 'clinic-A', DOCTOR, 'enc-current');
 
     expect(mockFindManyEncounters).toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ id: { not: 'enc-current' } }) }),

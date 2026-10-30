@@ -149,22 +149,11 @@ describe('GET /checkins/today', () => {
     expect(mockFindManyCheckIns).toHaveBeenCalledTimes(1);
   });
 
-  it('shows a doctor only the patients in their own departments', async () => {
+  it('refuses doctors on the server: the front-desk queue lists every patient with phone numbers (C1)', async () => {
     mockLoadSession.mockResolvedValue({ ...SESSION, role: 'DOCTOR', staffId: 'doc-1' });
-    (getDoctorDepartmentIds as jest.Mock).mockResolvedValue(['dept-braces', 'dept-invisalign']);
-    mockFindManyCheckIns.mockResolvedValue([]);
-
-    await withCookie(request(buildApp()).get('/checkins/today'));
-
-    expect(getDoctorDepartmentIds).toHaveBeenCalledWith('doc-1');
-    expect(mockFindManyCheckIns).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          clinicId: 'clinic-1',
-          departmentId: { in: ['dept-braces', 'dept-invisalign'] },
-        }),
-      }),
-    );
+    const res = await withCookie(request(buildApp()).get('/checkins/today'));
+    expect(res.status).toBe(403);
+    expect(mockFindManyCheckIns).not.toHaveBeenCalled();
   });
 
   it('shows front desk every department', async () => {
@@ -327,6 +316,12 @@ describe('GET /checkins/today', () => {
 });
 
 describe('POST /checkins/:id/confirm-payment', () => {
+  it('refuses doctors on the server (C1)', async () => {
+    mockLoadSession.mockResolvedValue({ ...SESSION, role: 'DOCTOR', staffId: 'doc-1' });
+    const res = await withCookie(request(buildApp()).post('/checkins/ci-1/confirm-payment').send({ mpesaCode: 'QAB12CD34E' }));
+    expect(res.status).toBe(403);
+  });
+
   it("confirms payment with the M-Pesa code from the patient's SMS, attributed to the signed-in staff member", async () => {
     mockConfirmPaid.mockResolvedValue({ id: 'ci-1', status: 'PAID' });
 

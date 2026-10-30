@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Link, useParams } from 'react-router-dom';
 import { api, ApiError, PatientDetail, PatientIdentity, PatientIdentityRecord } from '../lib/api';
-import { ArrowLeft, Building2, CalendarDays, FileText, IdCard, Lock, MessageSquareOff, Phone, Stethoscope } from 'lucide-react';
+import { ArrowLeft, Building2, CalendarDays, FileText, IdCard, Lock, MessageSquareOff, Phone, Pill, Printer, Stethoscope } from 'lucide-react';
 import { Avatar, btn, Card, EmptyState, SkeletonList } from '../components/ui';
 import { ID_TYPE_LABEL, IdentityFields } from '../components/IdentityFields';
 
@@ -11,6 +11,8 @@ export function PatientDetailPage() {
   const [patient, setPatient] = useState<PatientDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const { session } = useAuth();
+  const isDoctor = session?.role === 'DOCTOR';
 
   useEffect(() => {
     if (!id) return;
@@ -66,6 +68,11 @@ export function PatientDetailPage() {
       <IdentityCard patient={patient} onSaved={(saved) => setPatient({ ...patient, ...saved })} />
 
       <Card title="Visit history" icon={FileText}>
+      {!isDoctor && (
+        <p className="mb-4 text-xs text-ink-500">
+          Diagnoses are shown to doctors only. If the patient asks for a paper copy of a visit, use Print visit record.
+        </p>
+      )}
       {patient.history.length === 0 && !patient.hasHiddenHistoryElsewhere ? (
         <EmptyState icon={FileText} title="No prior visits on record." />
       ) : (
@@ -84,15 +91,26 @@ export function PatientDetailPage() {
                   </span>
                   <span className="text-sm text-ink-500">{new Date(entry.visitedAt).toLocaleDateString()}</span>
                 </div>
-                {(entry.diagnosis || entry.prescription) && (
+                {entry.prescription && (
                   <p className="mt-2 flex items-start gap-2 text-sm text-ink-700">
-                    <Stethoscope size={15} aria-hidden className="mt-0.5 flex-none text-teal-700" />
-                    <span>
-                      {entry.diagnosis}
-                      {entry.diagnosis && entry.prescription ? ' — ' : ''}
-                      {entry.prescription}
-                    </span>
+                    <Pill size={15} aria-hidden className="mt-0.5 flex-none text-teal-700" />
+                    <span>{entry.prescription}</span>
                   </p>
+                )}
+                {entry.doctorName && (
+                  <p className="mt-1.5 flex items-center gap-2 text-xs text-ink-500">
+                    <Stethoscope size={13} aria-hidden className="flex-none" /> Seen by {entry.doctorName}
+                  </p>
+                )}
+                {entry.isOwnClinic && !isDoctor && (
+                  <a
+                    href={api.visitRecordUrl(patient.id, entry.encounterId)}
+                    target="_blank"
+                    rel="noopener"
+                    className={`${btn.secondary} mt-3 inline-flex`}
+                  >
+                    <Printer size={15} aria-hidden /> Print visit record
+                  </a>
                 )}
               </div>
             </li>
