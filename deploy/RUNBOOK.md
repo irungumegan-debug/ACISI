@@ -122,6 +122,51 @@ sudo -u postgres psql acisi -c "DELETE FROM _prisma_migrations WHERE migration_n
 Data written into the new columns since the release is lost (including SMS
 counts and plan changes); nothing older is touched.
 
+## Switching ACISI's M-Pesa to production (Buy Goods till)
+
+Do this only after the release that adds `MPESA_TILL_NUMBER` is deployed.
+Nothing here prints a key.
+
+1. Backup: `sudo systemctl start acisi-backup`
+2. `sudo nano /etc/acisi/acisi.env` and set:
+   ```
+   MPESA_ENV=production
+   MPESA_CONSUMER_KEY=<live key>
+   MPESA_CONSUMER_SECRET=<live secret>
+   MPESA_SHORTCODE=<store / head-office number>
+   MPESA_TILL_NUMBER=<till number>
+   MPESA_PASSKEY=<live passkey>
+   MPESA_CALLBACK_URL=https://acisi.co.ke/api/mpesa/callback
+   ```
+   There is no base-URL setting: `MPESA_ENV=production` selects
+   `https://api.safaricom.co.ke`. Clinic checkout prompts switch off by
+   themselves on a production server.
+3. Check what is set (secrets show only their length):
+   ```
+   sudo grep -E '^(MPESA_ENV|MPESA_SHORTCODE|MPESA_TILL_NUMBER|MPESA_CALLBACK_URL)=' /etc/acisi/acisi.env
+   sudo awk -F= '/^MPESA_(CONSUMER_KEY|CONSUMER_SECRET|PASSKEY)=/{print $1, "length", length($2)}' /etc/acisi/acisi.env
+   ```
+4. Check the live keys work (expect `200`):
+   ```
+   sudo bash -c 'set -a; . /etc/acisi/acisi.env; set +a; printf "user = \"%s:%s\"\n" "$MPESA_CONSUMER_KEY" "$MPESA_CONSUMER_SECRET" | curl -s -o /dev/null -w "%{http_code}\n" -K - "https://api.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials"'
+   ```
+5. Forget the sandbox login token (otherwise it is reused for up to an hour), then restart:
+   ```
+   sudo bash -c 'set -a; . /etc/acisi/acisi.env; set +a; redis-cli -u "$REDIS_URL" DEL mpesa:access_token'
+   sudo systemctl restart acisi
+   sleep 15; curl -s https://acisi.co.ke/healthz; echo
+   sudo journalctl -u acisi -n 50 --no-pager | grep -iE "invalid environment|daraja" || echo "no config or Daraja errors"
+   ```
+6. Callback reachable from outside (expect `400`: it is live and refused an empty body):
+   `curl -s -o /dev/null -w "%{http_code}\n" -X POST https://acisi.co.ke/api/mpesa/callback -H 'Content-Type: application/json' -d '{}'`
+7. Real test: check in from your own phone and pay. Then
+   `sudo journalctl -u acisi --since "10 min ago" --no-pager | grep "Check-in payment"`
+   should show `"resultCode":0` and `"status":"PAID"` (no phone numbers).
+   The M-Pesa SMS should name ACISI's till.
+
+**Back to sandbox:** put the sandbox values back, remove `MPESA_TILL_NUMBER`,
+and repeat steps 5–6.
+
 ## Backups
 
 **What:** every night at about 02:00 EAT, `acisi-backup` writes two encrypted files to
