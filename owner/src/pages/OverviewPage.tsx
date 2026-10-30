@@ -69,6 +69,7 @@ export function OverviewPage() {
     <>
       <PageHeader title="Overview" subtitle="Everything on the ACISI platform, across every clinic." />
       <SmsWarning />
+      <MpesaWarning />
       {loading && !data && <Loading />}
       {error && <ErrorText>{error}</ErrorText>}
       {data && (
@@ -126,6 +127,22 @@ function SmsWarning() {
       <strong>SMS sending is failing:</strong> {data.consecutiveFailures} failures in a row{since ? ` since ${since}` : ''}. Check
       Africa&apos;s Talking (credit, API key, service status). Patients can still use the portal; codes that can&apos;t be
       sent fall back to verification at the clinic. This warning clears after the next successful SMS.
+    </div>
+  );
+}
+
+const dateTime = (iso: string) => new Date(iso).toLocaleString('en-KE', { dateStyle: 'medium', timeStyle: 'short' });
+
+/** C20: shown after 3 or more M-Pesa check-in prompts in a row fail or time out. */
+function MpesaWarning() {
+  const { data } = useLoad(() => api.mpesaHealth(), []);
+  if (!data?.failing) return null;
+  return (
+    <div role="alert" className="mb-4 rounded-2xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">
+      <strong>M-Pesa prompts are failing – check Daraja/Safaricom.</strong> {data.consecutiveFailures} prompts in a row failed or timed out
+      {data.failingSince ? ` since ${dateTime(data.failingSince)}` : ''}. Last successful payment:{' '}
+      {data.lastSuccessAt ? dateTime(data.lastSuccessAt) : 'none recorded yet'}. Patients are still checked in and queued; their fees
+      are owed until paid. This warning clears after the next successful payment.
     </div>
   );
 }

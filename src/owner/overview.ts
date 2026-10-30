@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../db/prisma';
 import { getSmsHealth } from '../services/smsService';
+import { getMpesaHealth } from '../services/mpesaHealth';
 
 export const ownerOverviewRouter = Router();
 
@@ -55,4 +56,9 @@ ownerOverviewRouter.get('/', async (_req, res) => {
 /** Is SMS sending (Africa's Talking) failing right now? Shown as a warning on the Overview page. */
 ownerOverviewRouter.get('/sms-health', async (_req, res) => {
   res.json(await getSmsHealth());
+});
+
+/** C20: are ACISI's M-Pesa check-in prompts failing? Counters and times only. */
+ownerOverviewRouter.get('/mpesa-health', async (_req, res) => {
+  res.json(await getMpesaHealth());
 });

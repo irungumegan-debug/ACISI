@@ -119,6 +119,9 @@ export interface SmsHealth {
   threshold: number;
 }
 
+/** ACISI's M-Pesa check-in prompts (C20): same shape as the SMS health. */
+export type MpesaHealth = SmsHealth;
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api/owner${path}`, {
     credentials: 'include',
@@ -166,6 +169,9 @@ export const api = {
   },
   smsHealth() {
     return request<SmsHealth>('/overview/sms-health');
+  },
+  mpesaHealth() {
+    return request<MpesaHealth>('/overview/mpesa-health');
   },
   clinics(q?: string) {
     return request<{ clinics: ClinicListItem[] }>(`/clinics${qs({ q })}`);
