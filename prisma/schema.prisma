@@ -146,20 +146,26 @@ enum AppointmentStatus {
 }
 
 model Clinic {
-  id         String   @id @default(cuid())
-  name       String
-  county     String?
+  id                  String     @id @default(cuid())
+  name                String
+  county              String?
   /// Short numeric code staff give patients to select this clinic within
   /// the shared USSD menu, e.g. "482". Not a phone number, not secret.
-  ussdCode   String   @unique
+  ussdCode            String     @unique
   /// Persistent invite code (e.g. "SUNRISE-7F2K") shared with prospective
   /// doctors/staff so their signup can attach to this clinic. Regenerable by
   /// a clinic admin — regenerating invalidates the old code for future
   /// signups, but never affects staff who already joined with it.
-  inviteCode String   @unique
-  isActive   Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  inviteCode          String     @unique
+  isActive            Boolean    @default(true)
+  /// The clinic's ACISI plan (C24). Sets the default monthly SMS allowance;
+  /// the owner can change both from the owner site.
+  plan                ClinicPlan @default(STARTER)
+  /// SMS a month included in the plan; above it, each SMS is charged
+  /// SMS_OVERAGE_KES. Starts at the plan's amount, can be changed per clinic.
+  smsMonthlyAllowance Int        @default(500)
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
 
   staff            Staff[]
   checkIns         CheckIn[]
@@ -909,4 +915,26 @@ model RecordAccessRequest {
 
   @@index([patientId, clinicId])
   @@map("record_access_requests")
+}
+
+enum ClinicPlan {
+  STARTER
+  CLINIC
+  CLINIC_PLUS
+}
+
+/// One row per SMS sent to a patient on a clinic's behalf (receipts,
+/// appointment reminders, walk-in invitations), counted against the
+/// clinic's monthly allowance (C24). Security codes are never recorded here.
+/// Holds no phone number, no text and no patient: just which clinic, what
+/// kind, how many SMS parts Africa's Talking billed, and when.
+model ClinicSmsMessage {
+  id       String   @id @default(cuid())
+  clinicId String
+  purpose  String
+  parts    Int
+  sentAt   DateTime @default(now())
+
+  @@index([clinicId, sentAt])
+  @@map("clinic_sms_messages")
 }
