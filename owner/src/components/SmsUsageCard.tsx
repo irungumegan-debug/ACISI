@@ -4,7 +4,7 @@ import { formatKes } from '../lib/format';
 import { Button, Card, ErrorText } from './ui';
 
 function monthName(month: string): string {
-  const [y, m] = month.split('-').map(Number);
+  const [y = 0, m = 1] = month.split('-').map(Number);
   return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-KE', {
     month: 'long',
     year: 'numeric',
