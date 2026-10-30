@@ -10,7 +10,7 @@ jest.mock('../../src/db/prisma', () => ({
 jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
 jest.mock('../../src/services/patientService', () => ({ getScopedHistory: jest.fn() }));
 jest.mock('../../src/services/staffService', () => ({ findActiveStaffById: jest.fn(), comparePin: jest.fn() }));
-jest.mock('../../src/jobs/queue', () => ({ enqueueVisitSummarySms: jest.fn(), enqueueVisitSummaryEmail: jest.fn() }));
+jest.mock('../../src/jobs/queue', () => ({ enqueueVisitSummaryEmail: jest.fn() }));
 
 let mockEmailConfigured = true;
 jest.mock('../../src/config/email', () => ({
@@ -23,7 +23,7 @@ import { prisma } from '../../src/db/prisma';
 import { recordAuditEvent } from '../../src/services/auditService';
 import { getScopedHistory } from '../../src/services/patientService';
 import { findActiveStaffById, comparePin } from '../../src/services/staffService';
-import { enqueueVisitSummaryEmail, enqueueVisitSummarySms } from '../../src/jobs/queue';
+import { enqueueVisitSummaryEmail } from '../../src/jobs/queue';
 import {
   EncounterNotAccessibleError,
   EncounterNotConsultableError,
@@ -43,7 +43,6 @@ const mockRecordAudit = recordAuditEvent as jest.Mock;
 const mockGetScopedHistory = getScopedHistory as jest.Mock;
 const mockFindActiveStaffById = findActiveStaffById as jest.Mock;
 const mockComparePin = comparePin as jest.Mock;
-const mockEnqueueVisitSms = enqueueVisitSummarySms as jest.Mock;
 const mockEnqueueVisitEmail = enqueueVisitSummaryEmail as jest.Mock;
 
 const DOCTOR_STAFF = { id: 'staff-1', name: 'Dr. Amani Wambui', pinHash: 'hashed' };
@@ -225,7 +224,6 @@ describe('submitConsultation', () => {
     expect(mockRecordAudit).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'CONSULTATION_SIGNED', entityId: 'enc-1', staffId: 'staff-1' }),
     );
-    expect(mockEnqueueVisitSms).not.toHaveBeenCalled();
   });
 });
 
@@ -234,7 +232,6 @@ describe('checkoutEncounter', () => {
     mockFindFirst.mockResolvedValue({ id: 'enc-1', status: 'IN_CONSULTATION', patient: { email: null } });
 
     await expect(checkoutEncounter('enc-1', 'clinic-A', 'staff-1')).rejects.toThrow(EncounterNotReadyForCheckoutError);
-    expect(mockEnqueueVisitSms).not.toHaveBeenCalled();
     expect(mockEnqueueVisitEmail).not.toHaveBeenCalled();
   });
 
@@ -243,8 +240,6 @@ describe('checkoutEncounter', () => {
     mockUpdate.mockResolvedValue({ id: 'enc-1', status: 'DONE' });
 
     await checkoutEncounter('enc-1', 'clinic-A', 'staff-1');
-
-    expect(mockEnqueueVisitSms).toHaveBeenCalledWith({ encounterId: 'enc-1' });
     expect(mockEnqueueVisitEmail).not.toHaveBeenCalled();
   });
 
@@ -253,8 +248,6 @@ describe('checkoutEncounter', () => {
     mockUpdate.mockResolvedValue({ id: 'enc-1', status: 'DONE' });
 
     await checkoutEncounter('enc-1', 'clinic-A', 'staff-1', 'sms');
-
-    expect(mockEnqueueVisitSms).toHaveBeenCalledWith({ encounterId: 'enc-1' });
     expect(mockEnqueueVisitEmail).not.toHaveBeenCalled();
   });
 
@@ -263,8 +256,6 @@ describe('checkoutEncounter', () => {
     mockUpdate.mockResolvedValue({ id: 'enc-1', status: 'DONE' });
 
     await checkoutEncounter('enc-1', 'clinic-A', 'staff-1', 'sms_and_email');
-
-    expect(mockEnqueueVisitSms).toHaveBeenCalledWith({ encounterId: 'enc-1' });
     expect(mockEnqueueVisitEmail).toHaveBeenCalledWith({ encounterId: 'enc-1' });
   });
 
@@ -273,8 +264,6 @@ describe('checkoutEncounter', () => {
     mockUpdate.mockResolvedValue({ id: 'enc-1', status: 'DONE' });
 
     await checkoutEncounter('enc-1', 'clinic-A', 'staff-1', 'sms_and_email');
-
-    expect(mockEnqueueVisitSms).toHaveBeenCalledWith({ encounterId: 'enc-1' });
     expect(mockEnqueueVisitEmail).not.toHaveBeenCalled();
   });
 
@@ -284,8 +273,6 @@ describe('checkoutEncounter', () => {
     mockUpdate.mockResolvedValue({ id: 'enc-1', status: 'DONE' });
 
     await checkoutEncounter('enc-1', 'clinic-A', 'staff-1', 'sms_and_email');
-
-    expect(mockEnqueueVisitSms).toHaveBeenCalledWith({ encounterId: 'enc-1' });
     expect(mockEnqueueVisitEmail).not.toHaveBeenCalled();
   });
 
@@ -358,5 +345,14 @@ describe('doctor access is limited to the current queue (C1)', () => {
     expect(mockFindFirst).toHaveBeenCalledWith({
       where: { id: 'enc-old', ...doctorQueueFilter('clinic-A', ['dept-1'], 'doc-1') },
     });
+  });
+});
+
+describe('no visit summary by SMS (discontinued 2026-10-30)', () => {
+  it('the job queue no longer has a visit-summary SMS at all', () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const queue = jest.requireActual('../../src/jobs/queue');
+    expect(queue.enqueueVisitSummarySms).toBeUndefined();
+    expect(queue.visitSummarySmsQueue).toBeUndefined();
   });
 });

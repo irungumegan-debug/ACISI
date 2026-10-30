@@ -1,7 +1,7 @@
 import {
+  buildCheckInFeeSms,
   appendIfNoExtraPart,
   buildPaymentReceiptSms,
-  buildVisitSummarySms,
   buildWalkInInviteSms,
   formatKes,
   PRIVACY_NOTICE_SMS_LINE,
@@ -66,29 +66,6 @@ describe('buildPaymentReceiptSms', () => {
   });
 });
 
-describe('buildVisitSummarySms', () => {
-  it('has the clinic name, date and medicines with how to take them', () => {
-    expect(
-      buildVisitSummarySms({
-        clinicName: 'Sunrise Family Clinic',
-        date: '05/10/2026',
-        prescription: 'Amoxicillin 500mg, 1 capsule 3 times a day for 5 days',
-      }),
-    ).toBe(
-      'Sunrise Family Clinic\nVisit: 05/10/2026\nMedicines: Amoxicillin 500mg, 1 capsule 3 times a day for 5 days\nThank you for visiting.\nPrivacy: acisi.co.ke/privacy',
-    );
-  });
-
-  it('says "None" when nothing was prescribed', () => {
-    expect(buildVisitSummarySms({ clinicName: 'Sunrise', date: '05/10/2026', prescription: '  ' })).toContain('Medicines: None');
-  });
-
-  it('keeps the prescription exactly as written, even if it runs past one SMS', () => {
-    const prescription = 'Levothyroxine 50µg once daily before breakfast. '.repeat(4).trim();
-    expect(buildVisitSummarySms({ clinicName: 'Sunrise', date: '05/10/2026', prescription })).toContain(prescription);
-  });
-});
-
 describe('smsPartCount', () => {
   it('counts GSM-7 messages: 160 in one SMS, 153 per part after that', () => {
     expect(smsPartCount('a'.repeat(160))).toBe(1);
@@ -138,24 +115,26 @@ describe('privacy line on receipts and visit summaries', () => {
     }
   });
 
-  it('is left off a visit summary when it would add an SMS part', () => {
-    const prescription = 'Amoxicillin 500mg, 1 capsule 3 times a day for 5 days, with food'; // summary ends up at 140 characters
-    const sms = buildVisitSummarySms({ clinicName: 'Sunrise Family Clinic', date: '05/10/2026', prescription });
-    expect(sms).not.toContain('Privacy');
-    expect(sms.endsWith('Thank you for visiting.')).toBe(true);
+});
+
+describe('buildCheckInFeeSms (shortened 2026-10-30)', () => {
+  it('paid: clinic and payment confirmed, two lines, one SMS', () => {
+    expect(buildCheckInFeeSms({ clinicName: 'Sunrise Family Clinic', amountKes: 100, paid: true })).toBe(
+      'ACISI: Check-in confirmed at Sunrise Family Clinic.\nPayment confirmed: KES 100.',
+    );
   });
 
-  it('is added to a two-part visit summary when the second part has room', () => {
-    const prescription = 'Amoxicillin 500mg 1 capsule 3 times a day for 5 days. '.repeat(3).trim();
-    const sms = buildVisitSummarySms({ clinicName: 'Sunrise Family Clinic', date: '05/10/2026', prescription });
-    expect(sms.endsWith('\nPrivacy: acisi.co.ke/privacy')).toBe(true);
-    expect(smsPartCount(sms)).toBe(2);
+  it('not paid: short, points to the profile, one SMS', () => {
+    expect(buildCheckInFeeSms({ clinicName: 'Sunrise Family Clinic', amountKes: 100, paid: false })).toBe(
+      'ACISI: Check-in at Sunrise Family Clinic: payment not received.\nPay from your ACISI profile.',
+    );
   });
 
-  it('counts a prescription with a non-GSM character (e.g. µg) by the shorter UCS-2 limit', () => {
-    const sms = buildVisitSummarySms({ clinicName: 'A', date: '05/10/2026', prescription: 'B12 5µg' });
-    // 62 UCS-2 characters, one SMS: adding the line would make it 2 parts, so it's left off.
-    expect(sms).not.toContain('Privacy');
-    expect(smsPartCount(sms)).toBe(1);
+  it('never runs past one SMS, however long the clinic name', () => {
+    for (const paid of [true, false]) {
+      const sms = buildCheckInFeeSms({ clinicName: 'Very Long Clinic Name '.repeat(10), amountKes: 1200, paid });
+      expect(smsPartCount(sms)).toBe(1);
+      expect(sms.split('\n')).toHaveLength(2);
+    }
   });
 });

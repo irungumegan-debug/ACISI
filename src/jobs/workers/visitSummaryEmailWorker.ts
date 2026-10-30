@@ -7,7 +7,7 @@ import { logger } from '../../utils/logger';
 import { VisitSummaryEmailJobData } from '../queue';
 
 /**
- * Separate worker from smsReceiptWorker/visitSummarySmsWorker by design —
+ * Separate worker from every SMS by design —
  * only ever enqueued when staff explicitly chose email delivery at
  * checkout and the patient had an email on file at that moment. Nothing
  * here can affect the SMS summary, which is sent by a completely

@@ -4,7 +4,6 @@ import { logger } from './utils/logger';
 import { ensureOwnerFromEnv } from './services/ownerService';
 import { startSmsReceiptWorker } from './jobs/workers/smsReceiptWorker';
 import { startStkStatusWorker } from './jobs/workers/stkStatusWorker';
-import { startVisitSummarySmsWorker } from './jobs/workers/visitSummarySmsWorker';
 import { startVisitSummaryEmailWorker } from './jobs/workers/visitSummaryEmailWorker';
 import { startClinicStkStatusWorker } from './jobs/workers/clinicStkStatusWorker';
 import { scheduleCheckInPaymentSweep, scheduleHourlyMaintenance } from './jobs/queue';
@@ -13,7 +12,6 @@ import { startMaintenanceWorker } from './jobs/workers/maintenanceWorker';
 const app = createApp();
 const smsWorker = startSmsReceiptWorker();
 const stkStatusWorker = startStkStatusWorker();
-const visitSummaryWorker = startVisitSummarySmsWorker();
 const visitSummaryEmailWorker = startVisitSummaryEmailWorker();
 const clinicStkStatusWorker = startClinicStkStatusWorker();
 const maintenanceWorker = startMaintenanceWorker();
@@ -30,7 +28,7 @@ void ensureOwnerFromEnv({ email: env.OWNER_EMAIL, name: env.OWNER_NAME, password
 async function shutdown(signal: string): Promise<void> {
   logger.info({ signal }, 'Shutting down');
   server.close();
-  await Promise.all([smsWorker.close(), stkStatusWorker.close(), visitSummaryWorker.close(), visitSummaryEmailWorker.close(), clinicStkStatusWorker.close(), maintenanceWorker.close()]);
+  await Promise.all([smsWorker.close(), stkStatusWorker.close(), visitSummaryEmailWorker.close(), clinicStkStatusWorker.close(), maintenanceWorker.close()]);
   process.exit(0);
 }
 

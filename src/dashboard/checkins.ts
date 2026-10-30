@@ -177,12 +177,11 @@ checkinsRouter.post('/:id/confirm-payment', async (req, res) => {
 const checkoutSchema = z.object({ deliveryMethod: z.enum(['sms', 'sms_and_email']).optional() });
 
 /**
- * Completes the visit and triggers the visit summary — only once the
- * doctor's consultation has moved the encounter to READY_FOR_CHECKOUT.
- * Keyed by checkInId (front desk's natural unit) even though the state
- * lives on Encounter, since CheckIn:Encounter is 1:1. The SMS summary
- * always fires; deliveryMethod only controls whether email is *also* sent
- * — see encounterService.checkoutEncounter.
+ * Completes the visit — only once the doctor's consultation has moved the
+ * encounter to READY_FOR_CHECKOUT. Keyed by checkInId (front desk's natural
+ * unit) even though the state lives on Encounter, since CheckIn:Encounter
+ * is 1:1. No SMS summary is sent; deliveryMethod only controls whether the
+ * visit PDF is emailed — see encounterService.checkoutEncounter.
  */
 checkinsRouter.post('/:id/checkout', async (req, res) => {
   const parsed = checkoutSchema.safeParse(req.body);

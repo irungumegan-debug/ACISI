@@ -541,11 +541,11 @@ function QueueCard({
                   value={delivery}
                   onChange={(e) => onDelivery(e.target.value as CheckoutDeliveryMethod)}
                   disabled={busy}
-                  aria-label="Visit summary delivery"
+                  aria-label="Visit summary email"
                   className="min-h-9 rounded-full border border-slate-300 bg-white px-3 py-1 text-[13px] text-navy-900"
                 >
-                  <option value="sms">SMS summary only</option>
-                  <option value="sms_and_email">SMS + email PDF</option>
+                  <option value="sms">No email (patient sees it in their portal)</option>
+                  <option value="sms_and_email">Email the visit PDF</option>
                 </select>
               )}
               <button

@@ -6,7 +6,7 @@ import { clearLockout, isLockedOut, lockoutMessage, recordWrongPin } from './pin
 import { getScopedHistory, ScopedHistoryEntry } from './patientService';
 import { comparePin, findActiveStaffById } from './staffService';
 import { emailConfigured } from '../config/email';
-import { enqueueVisitSummaryEmail, enqueueVisitSummarySms } from '../jobs/queue';
+import { enqueueVisitSummaryEmail } from '../jobs/queue';
 import { logger } from '../utils/logger';
 
 export type CheckoutDeliveryMethod = 'sms' | 'sms_and_email';
@@ -239,17 +239,15 @@ export class EncounterNotReadyForCheckoutError extends Error {
 }
 
 /**
- * Front-desk-only action: completes the visit and triggers the visit
- * summary. Deliberately separate from the doctor's consultation submission
- * — a doctor finishing a consult never checks a patient out or sends
- * anything by itself.
+ * Front-desk-only action: completes the visit. Deliberately separate from
+ * the doctor's consultation submission — a doctor finishing a consult never
+ * checks a patient out or sends anything by itself.
  *
- * The SMS summary is unconditional — it fires exactly as it always has,
- * regardless of deliveryMethod. Email is strictly additive: only enqueued
- * when staff explicitly asked for it AND the patient actually has an email
- * on file (re-checked here, not just trusted from the request, in case it
- * changed since the checkout screen loaded) AND email delivery is
- * configured at all. None of that ever gates or affects the SMS send.
+ * No visit summary is sent by SMS (discontinued 2026-10-30: patients read
+ * the visit in their portal records). 'sms' therefore means "nothing
+ * extra"; 'sms_and_email' (the value is kept for compatibility) emails the
+ * PDF, only when the patient has an email on file (re-checked here) AND
+ * email delivery is configured at all.
  */
 export async function checkoutEncounter(
   encounterId: string,
@@ -282,8 +280,6 @@ export async function checkoutEncounter(
     entityId: encounter.id,
     metadata: { deliveryMethod },
   });
-
-  await enqueueVisitSummarySms({ encounterId: encounter.id });
 
   if (deliveryMethod === 'sms_and_email') {
     if (encounter.patient.email && emailConfigured) {

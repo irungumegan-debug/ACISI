@@ -272,7 +272,7 @@ export function DoctorEncounterPage() {
                 </button>
               </div>
               <p className="text-xs text-ink-500">
-                This doesn&apos;t check the patient out — front desk confirms payment and sends the visit summary.
+                This doesn&apos;t check the patient out — front desk takes payment and checks the patient out.
               </p>
             </form>
           </>

@@ -2,6 +2,7 @@ import { Worker } from 'bullmq';
 import { redisQueueConnection } from '../../config/redis';
 import { prisma } from '../../db/prisma';
 import { sendPatientSms } from '../../services/smsService';
+import { buildCheckInFeeSms } from '../../services/smsTemplates';
 import { logger } from '../../utils/logger';
 import { SmsReceiptJobData } from '../queue';
 
@@ -24,9 +25,7 @@ export function startSmsReceiptWorker(): Worker<SmsReceiptJobData> {
         return;
       }
 
-      const message = job.data.succeeded
-        ? `ACISI: Check-in confirmed at ${checkIn.clinic.name}. Payment of KES ${checkIn.amountKes} received. Thank you.`
-        : `ACISI: Your check-in fee payment at ${checkIn.clinic.name} did not go through. You are still in the queue. You can pay it from your ACISI profile.`;
+      const message = buildCheckInFeeSms({ clinicName: checkIn.clinic.name, amountKes: Number(checkIn.amountKes), paid: job.data.succeeded });
 
       // Not essential: respects "does not want SMS" (C13).
       const outcome = await sendPatientSms(checkIn.patient, message, { purpose: 'CHECK_IN_FEE_RECEIPT' });
