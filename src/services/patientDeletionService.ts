@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { REDACTED, redactPhoneNumbers } from '../utils/redactPhoneNumbers';
 import { prisma } from '../db/prisma';
 import { sendSms } from './smsService';
 import { CONSENT_VERSION } from '../config/constants';
@@ -14,30 +15,7 @@ export class PatientNotFoundError extends Error {
 
 export type PatientDeletionActor = { type: 'PATIENT' } | { type: 'OWNER'; ownerId: string };
 
-/** Placeholder written over every M-Pesa phone number tied to a deleted patient. */
-const REDACTED = 'REDACTED';
-
-/**
- * Daraja callbacks carry the payer's phone number as a CallbackMetadata item
- * ({ Name: 'PhoneNumber', Value: 2547... }); other shapes may use a plain
- * PhoneNumber/MSISDN key. Returns a copy with every one of those replaced,
- * leaving the receipt number, amount and result codes intact for
- * reconciliation.
- */
-export function redactPhoneNumbers(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(redactPhoneNumbers);
-  if (value === null || typeof value !== 'object') return value;
-
-  const source = value as Record<string, unknown>;
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(source)) {
-    out[k] = /^(phonenumber|msisdn)$/i.test(k) ? REDACTED : redactPhoneNumbers(v);
-  }
-  if (source.Name === 'PhoneNumber' && 'Value' in source) {
-    out.Value = REDACTED;
-  }
-  return out;
-}
+export { redactPhoneNumbers } from '../utils/redactPhoneNumbers';
 
 /**
  * Deletes a patient's account: wipes everything that identifies them (name,
@@ -112,6 +90,23 @@ export async function deletePatientAccount(patientId: string, actor: PatientDele
           phoneNumber: REDACTED,
           rawCallbackPayload:
             t.rawCallbackPayload === null ? undefined : (redactPhoneNumbers(t.rawCallbackPayload) as Prisma.InputJsonValue),
+        },
+      });
+    }
+
+    // Clinic checkout payments (C14): no phone number kept, and none inside
+    // Safaricom's stored reply either.
+    const payments = await tx.payment.findMany({
+      where: { bill: { encounter: { patientId } } },
+      select: { id: true, rawCallbackPayload: true },
+    });
+    for (const p of payments) {
+      await tx.payment.update({
+        where: { id: p.id },
+        data: {
+          phoneNumber: null,
+          rawCallbackPayload:
+            p.rawCallbackPayload === null ? undefined : (redactPhoneNumbers(p.rawCallbackPayload) as Prisma.InputJsonValue),
         },
       });
     }

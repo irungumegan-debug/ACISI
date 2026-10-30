@@ -82,3 +82,8 @@ export async function staffNeedsTermsAcceptance(staffId: string): Promise<boolea
     context: { in: ['CLINIC_REGISTRATION', 'STAFF_LOGIN'] },
   }));
 }
+
+/** Every staff member must have accepted the current confidentiality undertaking (signup, clinic registration, or the console screen). */
+export async function staffNeedsConfidentialityAcceptance(staffId: string): Promise<boolean> {
+  return !(await hasCurrent('CONFIDENTIALITY_UNDERTAKING', { staffId }));
+}

@@ -12,10 +12,11 @@ jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn(
 jest.mock('../../src/services/visitRecordDocument', () => ({
   ...jest.requireActual('../../src/services/visitRecordDocument'),
   renderVisitRecordPdf: jest.fn(),
+  renderVisitRecordsPdf: jest.fn(async () => Buffer.from('%PDF-1.3 all visits')),
 }));
 
 jest.mock('../../src/db/prisma', () => ({
-  prisma: { encounter: { findFirst: jest.fn() } },
+  prisma: { encounter: { findFirst: jest.fn(), findMany: jest.fn() } },
 }));
 
 import { loadPatientSession, PATIENT_SESSION_COOKIE_NAME } from '../../src/portal/session';
@@ -147,5 +148,41 @@ describe('GET /records/:encounterId/download', () => {
     await withCookie(request(buildApp()).get('/records/enc-2/download'));
 
     expect(mockRenderPdf).toHaveBeenCalledWith(expect.objectContaining({ signature: null }));
+  });
+});
+
+describe('GET /records/download-all (C16)', () => {
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const { prisma } = require('../../src/db/prisma');
+  const { renderVisitRecordsPdf } = require('../../src/services/visitRecordDocument');
+  const { recordAuditEvent } = require('../../src/services/auditService');
+  /* eslint-enable @typescript-eslint/no-require-imports */
+  const visit = (id: string) => ({
+    id,
+    createdAt: new Date('2026-01-15'),
+    diagnosis: 'Flu',
+    prescription: 'Paracetamol',
+    consultedAt: null,
+    patient: { firstName: 'Jane', lastName: 'Wanjiru', patientCode: 'ACI-7F2K' },
+    clinic: { name: 'Sunrise Family Clinic', county: null },
+    checkIn: { department: { name: 'General' } },
+    consultedByStaff: null,
+  });
+
+  it("gives every one of the patient's own visits in one PDF, with no 5-visit limit, and logs it", async () => {
+    prisma.encounter.findMany.mockResolvedValue(Array.from({ length: 12 }, (_, i) => visit(`enc-${i}`)));
+    const res = await withCookie(request(buildApp()).get('/records/download-all'));
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('application/pdf');
+    const query = prisma.encounter.findMany.mock.calls[0][0];
+    expect(query.where).toEqual({ patientId: 'patient-1' });
+    expect(query.take).toBeUndefined();
+    expect(renderVisitRecordsPdf.mock.calls[0][0]).toHaveLength(12);
+    expect(recordAuditEvent).toHaveBeenCalledWith(expect.objectContaining({ action: 'PATIENT_SELF_DOWNLOADED_ALL_RECORDS', metadata: { visitCount: 12 } }));
+  });
+
+  it('404s when there are no visits yet', async () => {
+    prisma.encounter.findMany.mockResolvedValue([]);
+    expect((await withCookie(request(buildApp()).get('/records/download-all'))).status).toBe(404);
   });
 });

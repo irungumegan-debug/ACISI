@@ -14,6 +14,10 @@ const registerSchema = z.object({
   role: z.enum(['RECEPTIONIST', 'CLINICIAN', 'DOCTOR']),
   /** Required when role is DOCTOR; see GET /api/clinics/invite-code/:code/departments. */
   departmentId: z.string().optional(),
+  /** Optional work email (contact only). */
+  email: z.string().trim().email('Please enter a valid email address').max(254).optional().or(z.literal('')),
+  /** "I have read and accept the confidentiality undertaking" — required. */
+  acceptConfidentiality: z.boolean().optional(),
 });
 
 /**
@@ -24,7 +28,8 @@ const registerSchema = z.object({
 staffRegistrationRouter.post('/', async (req, res) => {
   const parsed = registerSchema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: 'Please fill in all required fields with a valid PIN' });
+    const emailIssue = parsed.error.issues.find((i) => i.path[0] === 'email');
+    res.status(400).json({ error: emailIssue?.message ?? 'Please fill in all required fields with a valid PIN' });
     return;
   }
 
@@ -45,6 +50,11 @@ staffRegistrationRouter.post('/', async (req, res) => {
     return;
   }
 
+  if (parsed.data.acceptConfidentiality !== true) {
+    res.status(400).json({ error: 'Please accept the confidentiality undertaking to create your account' });
+    return;
+  }
+
   try {
     const staff = await registerStaffViaInviteCode({
       name: parsed.data.name,
@@ -53,6 +63,8 @@ staffRegistrationRouter.post('/', async (req, res) => {
       inviteCode: parsed.data.inviteCode,
       role: parsed.data.role,
       departmentId: parsed.data.departmentId,
+      email: parsed.data.email || undefined,
+      acceptedConfidentialityUndertaking: true,
     });
 
     res.status(201).json({ staffCode: staff.staffCode });

@@ -55,6 +55,7 @@ describe('POST /register (staff/doctor signup)', () => {
       inviteCode: 'SUNRISE-7F2K',
       pin: '730194',
       role: 'RECEPTIONIST',
+      acceptConfidentiality: true,
     });
 
     expect(res.status).toBe(201);
@@ -70,6 +71,7 @@ describe('POST /register (staff/doctor signup)', () => {
       inviteCode: 'BOGUS-0000',
       pin: '730194',
       role: 'DOCTOR',
+      acceptConfidentiality: true,
     });
 
     expect(res.status).toBe(400);
@@ -85,8 +87,52 @@ describe('POST /register (staff/doctor signup)', () => {
       inviteCode: 'SUNRISE-7F2K',
       pin: '730194',
       role: 'DOCTOR',
+      acceptConfidentiality: true,
     });
 
     expect(res.status).toBe(409);
+  });
+
+  it('refuses signup without the confidentiality undertaking (C19)', async () => {
+    const res = await request(buildApp()).post('/register').send({
+      name: 'Anne Otieno',
+      phoneNumber: '0712345678',
+      inviteCode: 'SUNRISE-7F2K',
+      pin: '730194',
+      role: 'RECEPTIONIST',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Please accept the confidentiality undertaking to create your account');
+    expect(mockRegisterStaff).not.toHaveBeenCalled();
+  });
+
+  it('passes an optional work email and the acceptance on (C10, C19)', async () => {
+    mockRegisterStaff.mockResolvedValue({ staffCode: 'ACI-STF-1002' });
+    await request(buildApp()).post('/register').send({
+      name: 'Anne Otieno',
+      phoneNumber: '0712345678',
+      inviteCode: 'SUNRISE-7F2K',
+      pin: '730194',
+      role: 'RECEPTIONIST',
+      email: 'anne@sunrise.co.ke',
+      acceptConfidentiality: true,
+    });
+    expect(mockRegisterStaff).toHaveBeenCalledWith(
+      expect.objectContaining({ email: 'anne@sunrise.co.ke', acceptedConfidentialityUndertaking: true }),
+    );
+  });
+
+  it('refuses a malformed email with a clear message', async () => {
+    const res = await request(buildApp()).post('/register').send({
+      name: 'Anne Otieno',
+      phoneNumber: '0712345678',
+      inviteCode: 'SUNRISE-7F2K',
+      pin: '730194',
+      role: 'RECEPTIONIST',
+      email: 'not-an-email',
+      acceptConfidentiality: true,
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Please enter a valid email address');
   });
 });

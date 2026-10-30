@@ -6,6 +6,7 @@ import { formatKenyaDate } from '../utils/kenyaTime';
 import { generateBillNumber } from '../utils/idCodes';
 import { recordAuditEvent } from './auditService';
 import { sendPatientSms } from './smsService';
+import { redactPhoneNumbers } from '../utils/redactPhoneNumbers';
 import {
   assertWithinBalance,
   BillingError,
@@ -509,23 +510,24 @@ export async function requestStkPayment(
         method: 'MPESA_STK',
         status: 'PENDING',
         amountKes: input.amountKes,
-        phoneNumber,
+        // The phone number goes to Safaricom for the prompt only; it is
+        // never stored on the payment (C14).
         idempotencyKey: input.idempotencyKey,
         takenByStaffId: input.staffId,
       },
     });
-    return { payment, settings, patientCode: encounter.patient.patientCode, billNumber: bill.billNumber, clinicName: encounter.clinic.name };
+    return { payment, phoneNumber, settings, patientCode: encounter.patient.patientCode, billNumber: bill.billNumber, clinicName: encounter.clinic.name };
   }));
   if ('duplicateOf' in created) {
     return { payment: created.duplicateOf, bill: await prisma.bill.findUniqueOrThrow({ where: { id: created.duplicateOf.billId } }) };
   }
-  const { payment, settings, patientCode, billNumber, clinicName } = created;
+  const { payment, phoneNumber, settings, patientCode, billNumber, clinicName } = created;
 
   let sent: Payment;
   try {
     const response = await sendClinicStkPush({
       amountKes: payment.amountKes,
-      phoneNumberE164: payment.phoneNumber as string,
+      phoneNumberE164: phoneNumber,
       accountReference: buildAccountReference(settings.mobileMoneyType === 'PAYBILL' ? settings.paybillAccountFormat : null, {
         patientCode,
         billNumber,
@@ -608,7 +610,8 @@ export async function applyClinicStkResult(result: ClinicStkResult): Promise<boo
         resultCode: result.resultCode,
         resultDesc: result.resultDesc,
         mpesaReceiptNumber: newStatus === 'SUCCEEDED' ? receipt : null,
-        rawCallbackPayload: (result.rawPayload ?? undefined) as Prisma.InputJsonValue | undefined,
+        // Kept for reconciliation, with every phone number blanked out (C14).
+        rawCallbackPayload: (result.rawPayload == null ? undefined : redactPhoneNumbers(result.rawPayload)) as Prisma.InputJsonValue | undefined,
         completedAt: newStatus === 'SUCCEEDED' ? new Date() : null,
       },
     });

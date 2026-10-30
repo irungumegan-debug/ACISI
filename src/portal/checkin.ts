@@ -6,7 +6,7 @@ import { requirePatientSession, AuthenticatedPatientRequest } from './auth';
 import { initiateCheckIn, queryCheckInPayment } from '../services/checkInService';
 import { getOwnVisitHistory } from '../services/patientService';
 import { recordAuditEvent } from '../services/auditService';
-import { buildVisitRecordDataFromEncounter, renderVisitRecordPdf } from '../services/visitRecordDocument';
+import { buildVisitRecordDataFromEncounter, renderVisitRecordPdf, renderVisitRecordsPdf } from '../services/visitRecordDocument';
 import { patientNeedsWebCheckInPrivacyAck, recordLegalAcceptances } from '../services/legalService';
 import { PRIVACY_NOTICE_VERSION } from '../config/legal';
 import {
@@ -287,6 +287,41 @@ portalRecordsRouter.get('/', async (req, res) => {
  * can't be distinguished from one that doesn't exist) covers both a bad ID
  * and an attempt to reach another patient's visit.
  */
+/**
+ * Every visit in one PDF, one page each (C16). Only the logged-in
+ * patient's own visits; audit-logged like a single download.
+ */
+portalRecordsRouter.get('/download-all', async (req, res) => {
+  const { patientId } = (req as unknown as AuthenticatedPatientRequest).patientSession;
+  const encounters = await prisma.encounter.findMany({
+    where: { patientId },
+    orderBy: { createdAt: 'desc' },
+    include: { patient: true, clinic: true, checkIn: { include: { department: true } }, consultedByStaff: true },
+  });
+  if (encounters.length === 0) {
+    res.status(404).json({ error: 'You have no visits on record yet' });
+    return;
+  }
+
+  const pdf = await renderVisitRecordsPdf(encounters.map(buildVisitRecordDataFromEncounter));
+
+  await recordAuditEvent({
+    actorType: 'PATIENT',
+    actorId: patientId,
+    action: 'PATIENT_SELF_DOWNLOADED_ALL_RECORDS',
+    entityType: 'Patient',
+    entityId: patientId,
+    metadata: { visitCount: encounters.length },
+  });
+
+  res.set({
+    'Content-Type': 'application/pdf',
+    'Content-Disposition': `attachment; filename="ACISI-all-visits-${new Date().toISOString().slice(0, 10)}.pdf"`,
+    'Cache-Control': 'no-store',
+  });
+  res.send(pdf);
+});
+
 portalRecordsRouter.get('/:encounterId/download', async (req, res) => {
   const { patientId } = (req as unknown as AuthenticatedPatientRequest).patientSession;
 

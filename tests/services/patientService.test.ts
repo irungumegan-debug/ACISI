@@ -124,6 +124,8 @@ describe('getOwnVisitHistory', () => {
     ]);
     expect(mockFindFirstConsent).not.toHaveBeenCalled(); // this is the patient's own data — no consent gate applies
     expect(mockFindManyEncounters).toHaveBeenCalledWith(expect.objectContaining({ where: { patientId: 'patient-1' } }));
+    // C16: every visit, not only the latest 5.
+    expect(mockFindManyEncounters.mock.calls[0][0].take).toBeUndefined();
   });
 
   it('reports diagnosis/prescription as null when not yet recorded, rather than throwing', async () => {

@@ -118,6 +118,8 @@ export interface NewWalkInPatientDetails {
   /** Whole years; stored as 1 January of the birth year, the same convention USSD registration uses. */
   age?: number;
   sex?: Sex;
+  /** Optional email address. */
+  email?: string;
   /** The patient agreed to ACISI creating a health record for them — required to register anyone. */
   registrationConsent: boolean;
 }
@@ -222,6 +224,7 @@ async function findOrCreatePatient(
       lastName,
       dateOfBirth: resolveDateOfBirth(details),
       sex: details.sex ?? 'UNKNOWN',
+      email: details.email?.trim() || undefined,
       consentChannel: 'STAFF_ASSISTED',
       // Cross-clinic sharing stays off by default; the patient can opt in later.
       crossClinicConsent: false,

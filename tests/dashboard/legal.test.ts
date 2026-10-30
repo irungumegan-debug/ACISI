@@ -13,7 +13,7 @@ jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn(
 
 import { loadDashboardSession, SESSION_COOKIE_NAME } from '../../src/dashboard/session';
 import { prisma } from '../../src/db/prisma';
-import { TERMS_OF_SERVICE_VERSION } from '../../src/config/legal';
+import { CONFIDENTIALITY_UNDERTAKING_VERSION, TERMS_OF_SERVICE_VERSION } from '../../src/config/legal';
 import { legalRouter } from '../../src/dashboard/legal';
 
 const mockFindAcceptance = prisma.legalAcceptance.findFirst as jest.Mock;
@@ -66,6 +66,10 @@ describe('console login: existing staff accept the current Terms once', () => {
   });
 
   it('records the Terms with its version, the staff member and the clinic', async () => {
+    // Terms outstanding; confidentiality undertaking already accepted.
+    mockFindAcceptance.mockImplementation(async ({ where }: { where: { document: string } }) =>
+      where.document === 'CONFIDENTIALITY_UNDERTAKING' ? { id: 'cu-1' } : null,
+    );
     const res = await withCookie(request(buildApp()).post('/legal/accept').send({ accept: true }));
     expect(res.status).toBe(201);
     expect(mockCreateMany).toHaveBeenCalledWith({
@@ -76,5 +80,41 @@ describe('console login: existing staff accept the current Terms once', () => {
   it('needs a staff session', async () => {
     (loadDashboardSession as jest.Mock).mockResolvedValue(null);
     expect((await withCookie(request(buildApp()).get('/legal'))).status).toBe(401);
+  });
+});
+
+
+describe('confidentiality undertaking for staff who joined before it existed (C19)', () => {
+  const termsDone = async ({ where }: { where: { document: string } }) => (where.document === 'TERMS_OF_SERVICE' ? { id: 't-1' } : null);
+
+  it('the console asks for it, with its text', async () => {
+    mockFindAcceptance.mockImplementation(termsDone);
+    const res = await withCookie(request(buildApp()).get('/legal'));
+    expect(res.body).toMatchObject({ termsAcceptanceRequired: true, termsRequired: false, confidentialityRequired: true });
+    expect(res.body.confidentialityText).toEqual(expect.any(String));
+  });
+
+  it('cannot continue without ticking it', async () => {
+    mockFindAcceptance.mockImplementation(termsDone);
+    const res = await withCookie(request(buildApp()).post('/legal/accept').send({ accept: true }));
+    expect(res.status).toBe(400);
+    expect(mockCreateMany).not.toHaveBeenCalled();
+  });
+
+  it('records it with its version, date (row time), staff member and clinic', async () => {
+    mockFindAcceptance.mockImplementation(termsDone);
+    const res = await withCookie(request(buildApp()).post('/legal/accept').send({ accept: true, acceptConfidentiality: true }));
+    expect(res.status).toBe(201);
+    expect(mockCreateMany).toHaveBeenCalledWith({
+      data: [
+        {
+          document: 'CONFIDENTIALITY_UNDERTAKING',
+          version: CONFIDENTIALITY_UNDERTAKING_VERSION,
+          context: 'STAFF_LOGIN',
+          staffId: 'staff-1',
+          clinicId: 'clinic-A',
+        },
+      ],
+    });
   });
 });

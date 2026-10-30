@@ -85,6 +85,10 @@ export interface SharingOverview {
 
 export const api = {
   // ---- Clinics ----
+  confidentialityUndertaking() {
+    return request<{ text: string; version: string }>('/clinics/confidentiality-undertaking');
+  },
+
   listClinics() {
     return request<{ clinics: ClinicListItem[] }>('/clinics');
   },
@@ -98,6 +102,9 @@ export const api = {
     departments: { name: string; code: string; consultationFeeKes: number | null }[];
     /** "I accept the Terms of Service and have read the Privacy Notice" — required by the server. */
     acceptLegal: boolean;
+    adminEmail?: string;
+    /** The admin's confidentiality undertaking — required by the server. */
+    acceptConfidentiality: boolean;
   }) {
     return request<{ clinicName: string; inviteCode: string; staffCode: string }>('/clinics/register', {
       method: 'POST',
@@ -123,6 +130,9 @@ export const api = {
     pin: string;
     role: 'RECEPTIONIST' | 'DOCTOR';
     departmentId?: string;
+    email?: string;
+    /** Required by the server. */
+    acceptConfidentiality: boolean;
   }) {
     return request<{ staffCode: string }>('/staff/register', {
       method: 'POST',
@@ -280,6 +290,10 @@ export const api = {
   /** Not a fetch — same-origin browser navigation already carries the session cookie, so this just builds the href for a plain download link. */
   recordDownloadUrl(encounterId: string) {
     return `/api/patients/records/${encodeURIComponent(encounterId)}/download`;
+  },
+
+  allRecordsDownloadUrl() {
+    return '/api/patients/records/download-all';
   },
 };
 

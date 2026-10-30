@@ -32,6 +32,7 @@ export interface ClinicStaffListItem {
   id: string;
   staffCode: string;
   name: string;
+  email: string | null;
   role: string;
   departmentName: string | null;
   /** Every department a doctor works in (empty for other roles). */
@@ -222,6 +223,7 @@ export interface WalkInRequest {
     dateOfBirth?: string;
     age?: number;
     sex?: Sex;
+    email?: string;
     registrationConsent: boolean;
   };
 }
@@ -355,6 +357,13 @@ class ApiError extends Error {
   }
 }
 
+export interface LegalStatus {
+  termsAcceptanceRequired: boolean;
+  termsRequired?: boolean;
+  confidentialityRequired?: boolean;
+  confidentialityText?: string;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api/staff${path}`, {
     credentials: 'include',
@@ -477,10 +486,13 @@ export const api = {
 
   /** Whether this staff member must accept the current Terms of Service before using the console. */
   getLegalStatus() {
-    return request<{ termsAcceptanceRequired: boolean }>('/legal');
+    return request<LegalStatus>('/legal');
   },
-  acceptTerms() {
-    return request<{ termsAcceptanceRequired: boolean }>('/legal/accept', { method: 'POST', body: JSON.stringify({ accept: true }) });
+  acceptTerms(acceptConfidentiality: boolean) {
+    return request<{ termsAcceptanceRequired: boolean }>('/legal/accept', {
+      method: 'POST',
+      body: JSON.stringify({ accept: true, acceptConfidentiality }),
+    });
   },
 
   searchPatients(query: string) {

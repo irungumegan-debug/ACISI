@@ -244,10 +244,10 @@ export interface OwnVisitHistoryEntry {
  * own visits, in full.
  */
 export async function getOwnVisitHistory(patientId: string): Promise<OwnVisitHistoryEntry[]> {
+  // Every visit, not just the most recent few: the patient's own full record (C16).
   const encounters = await prisma.encounter.findMany({
     where: { patientId },
     orderBy: { createdAt: 'desc' },
-    take: HISTORY_ENCOUNTER_LIMIT,
     include: { clinic: { select: { name: true } }, checkIn: { include: { department: { select: { name: true } } } } },
   });
 

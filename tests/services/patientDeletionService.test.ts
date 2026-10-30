@@ -5,6 +5,7 @@ jest.mock('../../src/db/prisma', () => {
     consent: { create: jest.fn() },
     appointment: { updateMany: jest.fn() },
     mpesaTransaction: { findMany: jest.fn(), update: jest.fn() },
+    payment: { findMany: jest.fn(async () => []), update: jest.fn() },
   };
   return { prisma: { $transaction: jest.fn(async (fn: (t: typeof tx) => unknown) => fn(tx)), __tx: tx } };
 });
@@ -144,5 +145,15 @@ describe('deletePatientAccount', () => {
     tx.patient!.findUnique!.mockResolvedValueOnce(null);
     await expect(deletePatientAccount('p-1', { type: 'PATIENT' })).rejects.toBeInstanceOf(PatientNotFoundError);
     expect(tx.patient!.update).not.toHaveBeenCalled();
+  });
+
+  it('removes phone numbers from the patient\'s clinic checkout payments too (C14)', async () => {
+    tx.payment!.findMany!.mockResolvedValue([{ id: 'pay-1', rawCallbackPayload: DARAJA_CALLBACK }]);
+    await deletePatientAccount('p-1', { type: 'PATIENT' });
+    expect(tx.payment!.findMany).toHaveBeenCalledWith({ where: { bill: { encounter: { patientId: 'p-1' } } }, select: { id: true, rawCallbackPayload: true } });
+    const update = tx.payment!.update!.mock.calls[0][0];
+    expect(update.where).toEqual({ id: 'pay-1' });
+    expect(update.data.phoneNumber).toBeNull();
+    expect(JSON.stringify(update.data.rawCallbackPayload)).not.toMatch(/2547\d{8}/);
   });
 });

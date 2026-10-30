@@ -138,6 +138,7 @@ ownerClinicsRouter.get('/:id', async (req, res) => {
       name: s.name,
       role: s.role,
       phoneNumber: s.phoneNumber,
+      email: s.email,
       // Doctors can work in several departments; others keep their single (optional) one.
       departmentName: s.departments.length ? s.departments.map((d) => d.department.name).join(', ') : (s.department?.name ?? null),
       isActive: s.isActive,

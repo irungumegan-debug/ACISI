@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 import { usePatientAuth } from '../context/PatientAuthContext';
@@ -24,6 +24,27 @@ function AcceptLegalCheckbox({ checked, onChange }: { checked: boolean; onChange
         .
       </span>
     </label>
+  );
+}
+
+/** Required confidentiality undertaking for everyone who will have access to patient data (staff, doctors, the clinic admin). */
+function ConfidentialityCheckbox({ checked, onChange }: { checked: boolean; onChange: (checked: boolean) => void }) {
+  const [text, setText] = useState<string | null>(null);
+  useEffect(() => {
+    api
+      .confidentialityUndertaking()
+      .then((res) => setText(res.text))
+      .catch(() => setText(null));
+  }, []);
+  return (
+    <div className="legal-check" style={{ display: 'block' }}>
+      <p style={{ fontWeight: 600, marginBottom: 6 }}>Confidentiality undertaking</p>
+      <p style={{ fontSize: 13, whiteSpace: 'pre-wrap', marginBottom: 8 }}>{text ?? 'Loading…'}</p>
+      <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+        <input type="checkbox" required checked={checked} onChange={(e) => onChange(e.target.checked)} disabled={!text} />
+        <span>I have read and accept this confidentiality undertaking.</span>
+      </label>
+    </div>
   );
 }
 
@@ -195,6 +216,8 @@ function StaffSignupForm({
 }) {
   const [name, setName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
+  const [email, setEmail] = useState('');
+  const [acceptConfidentiality, setAcceptConfidentiality] = useState(false);
   const [inviteCode, setInviteCode] = useState('');
   const [pin, setPin] = useState('');
   const [departments, setDepartments] = useState<{ id: string; name: string }[]>([]);
@@ -239,6 +262,8 @@ function StaffSignupForm({
         pin,
         role,
         departmentId: role === 'DOCTOR' ? departmentId : undefined,
+        email: email.trim() || undefined,
+        acceptConfidentiality,
       });
       onDone(res.staffCode);
     } catch (err) {
@@ -267,6 +292,10 @@ function StaffSignupForm({
       <div className="field">
         <label>Phone number</label>
         <input type="tel" required placeholder="07XX XXX XXX" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} />
+      </div>
+      <div className="field">
+        <label>Work email (optional)</label>
+        <input type="email" autoComplete="email" placeholder="name@clinic.co.ke" value={email} onChange={(e) => setEmail(e.target.value)} />
       </div>
       <div className="field">
         <label>Clinic invite code</label>
@@ -304,8 +333,10 @@ function StaffSignupForm({
         <p className="field-hint">6 digits. Avoid birthdays, your phone number, and easy patterns like 123456 or 111111.</p>
       </div>
 
+      <ConfidentialityCheckbox checked={acceptConfidentiality} onChange={setAcceptConfidentiality} />
+
       {error && <p className="auth-error">{error}</p>}
-      <button className="auth-submit" type="submit" disabled={submitting}>
+      <button className="auth-submit" type="submit" disabled={submitting || !acceptConfidentiality}>
         {submitting ? 'Creating account…' : 'Create account'}
       </button>
     </form>
@@ -324,6 +355,8 @@ function ClinicSignupForm({ onBack, onDone }: { onBack: () => void; onDone: (inv
   const [county, setCounty] = useState('');
   const [adminName, setAdminName] = useState('');
   const [adminPhoneNumber, setAdminPhoneNumber] = useState('');
+  const [adminEmail, setAdminEmail] = useState('');
+  const [acceptConfidentiality, setAcceptConfidentiality] = useState(false);
   const [adminPin, setAdminPin] = useState('');
   const [departments, setDepartments] = useState<DraftDepartment[]>([{ name: 'General', code: 'GEN', fee: '' }]);
   const [acceptLegal, setAcceptLegal] = useState(false);
@@ -354,6 +387,8 @@ function ClinicSignupForm({ onBack, onDone }: { onBack: () => void; onDone: (inv
         county: county || undefined,
         adminName,
         adminPhoneNumber,
+        adminEmail: adminEmail.trim() || undefined,
+        acceptConfidentiality,
         adminPin,
         departments: departments.map((d) => ({ name: cleanName(d.name), code: d.code.trim().toUpperCase(), consultationFeeKes: d.fee.trim() ? Number(d.fee.trim()) : null })),
         acceptLegal,
@@ -405,6 +440,10 @@ function ClinicSignupForm({ onBack, onDone }: { onBack: () => void; onDone: (inv
             <input type="tel" required placeholder="07XX XXX XXX" value={adminPhoneNumber} onChange={(e) => setAdminPhoneNumber(e.target.value)} />
           </div>
           <div className="field">
+            <label>Work email (optional)</label>
+            <input type="email" autoComplete="email" placeholder="name@clinic.co.ke" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} />
+          </div>
+          <div className="field">
             <label>Create a PIN</label>
             <input type="password" inputMode="numeric" required minLength={6} maxLength={6} pattern="\d{6}" placeholder="6-digit PIN" value={adminPin} onChange={(e) => setAdminPin(e.target.value)} />
             <p className="field-hint">6 digits. Avoid birthdays, your phone number, and easy patterns like 123456 or 111111.</p>
@@ -424,8 +463,9 @@ function ClinicSignupForm({ onBack, onDone }: { onBack: () => void; onDone: (inv
           </p>
           <DepartmentPicker departments={departments} onChange={setDepartments} />
           <AcceptLegalCheckbox checked={acceptLegal} onChange={setAcceptLegal} />
+          <ConfidentialityCheckbox checked={acceptConfidentiality} onChange={setAcceptConfidentiality} />
           {error && <p className="auth-error">{error}</p>}
-          <button className="auth-submit" type="submit" disabled={submitting || !acceptLegal}>
+          <button className="auth-submit" type="submit" disabled={submitting || !acceptLegal || !acceptConfidentiality}>
             {submitting ? 'Registering…' : 'Register clinic'}
           </button>
         </>

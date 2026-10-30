@@ -620,6 +620,10 @@ function RecordsPanel({ patientCode }: { patientCode: string }) {
             <p>No visits on record yet.</p>
           </div>
         ) : (
+          <>
+          <a className="btn btn-primary" style={{ marginBottom: 16 }} href={api.allRecordsDownloadUrl()} download>
+            <Download size={16} aria-hidden /> Download all my visits ({history.length})
+          </a>
           <div className="timeline">
             {history.map((h) => (
               <div className="t-entry" key={h.encounterId}>
@@ -653,6 +657,7 @@ function RecordsPanel({ patientCode }: { patientCode: string }) {
               </div>
             ))}
           </div>
+          </>
         )}
       </div>
     </>

@@ -196,6 +196,7 @@ export function SettingsPage() {
                       </p>
                       <p className="text-xs text-ink-500">
                         {member.staffCode} · {ROLE_LABEL[member.role] ?? member.role}
+                        {member.email ? ` · ${member.email}` : ''}
                         {member.role !== 'DOCTOR' && member.departmentName ? ` · ${member.departmentName}` : ''}
                       </p>
                       {member.role === 'DOCTOR' && (

@@ -166,6 +166,13 @@ describe('finding or creating the patient', () => {
     expect(result).toMatchObject({ patientId: 'p-new', isNewPatient: true });
   });
 
+  it('saves an optional email for a new walk-in patient (C11)', async () => {
+    mockFindPatient.mockResolvedValue(null);
+    mockRegister.mockResolvedValue({ ...PATIENT, id: 'p-new' });
+    await checkInWalkIn(input({ phone: '+254799000111', newPatient: { fullName: 'Amina Achieng', email: ' amina@example.com ', registrationConsent: true } }));
+    expect(mockRegister).toHaveBeenCalledWith(expect.objectContaining({ email: 'amina@example.com' }));
+  });
+
   it('refuses to register a new patient without their record consent', async () => {
     mockFindPatient.mockResolvedValue(null);
     await expect(checkInWalkIn(input({ newPatient: { fullName: 'Amina Achieng', registrationConsent: false } }))).rejects.toMatchObject({
