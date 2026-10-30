@@ -83,3 +83,20 @@ export const CODE_NOT_SENT_MESSAGE =
 export const FEE_REMINDER_DAY = 7;
 /** …and from this many days remote check-in and booking are restricted (only when FEE_RESTRICTION_ENABLED=true). */
 export const FEE_RESTRICTION_DAY = 14;
+
+/** ACISI plans and the SMS each includes per month (C24). The owner can override a clinic's allowance. */
+export const CLINIC_PLANS = {
+  STARTER: { label: 'Starter', smsAllowance: 500 },
+  CLINIC: { label: 'Clinic', smsAllowance: 1500 },
+  CLINIC_PLUS: { label: 'Clinic Plus', smsAllowance: 4000 },
+} as const;
+
+/** Charge per SMS above a clinic's monthly allowance, in KES. */
+export const SMS_OVERAGE_KES = 2;
+
+/**
+ * The SMS sent to patients on a clinic's behalf, counted against its
+ * allowance. Anything else (PIN, phone-verification and sharing codes, the
+ * ACISI check-in fee SMS, the account-deleted notice) is never counted.
+ */
+export const CLINIC_COUNTED_SMS_PURPOSES: readonly string[] = ['PAYMENT_RECEIPT', 'APPOINTMENT_REMINDER', 'WALK_IN_INVITE'];

@@ -246,10 +246,10 @@ async function findOrCreatePatient(
  * after the patient's SMS consent has been recorded. Never throws: a failed
  * SMS must not undo or block the check-in, it's just reported back.
  */
-async function sendWalkInInvite(patient: Patient, clinicName: string, staffId: string): Promise<WalkInSmsOutcome> {
+async function sendWalkInInvite(patient: Patient, clinicName: string, clinicId: string, staffId: string): Promise<WalkInSmsOutcome> {
   // Sent only straight after the patient agreed to SMS from the clinic at
   // the desk (which also clears any earlier "does not want SMS").
-  const outcome = await sendSms(patient.phoneNumber, buildWalkInInviteSms(clinicName), 'WALK_IN_INVITE');
+  const outcome = await sendSms(patient.phoneNumber, buildWalkInInviteSms(clinicName), 'WALK_IN_INVITE', clinicId);
   if (outcome === 'sent') {
     await recordAuditEvent({
       actorType: 'STAFF',
@@ -410,7 +410,7 @@ export async function checkInWalkIn(input: WalkInCheckInInput): Promise<WalkInCh
     },
   });
 
-  const sms: WalkInSmsOutcome = input.smsConsent ? await sendWalkInInvite(patient, clinic.name, input.staffId) : 'not_requested';
+  const sms: WalkInSmsOutcome = input.smsConsent ? await sendWalkInInvite(patient, clinic.name, input.clinicId, input.staffId) : 'not_requested';
 
   return {
     checkInId,

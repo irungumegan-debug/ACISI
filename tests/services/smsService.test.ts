@@ -1,8 +1,10 @@
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 jest.mock('../../src/config/redis', () => require('../helpers/fakeRedis').fakeRedisModule());
 jest.mock('../../src/config/africastalking', () => ({ smsClient: { send: jest.fn() } }));
+jest.mock('../../src/db/prisma', () => ({ prisma: { clinicSmsMessage: { create: jest.fn() } } }));
 
 import { smsClient } from '../../src/config/africastalking';
+import { prisma } from '../../src/db/prisma';
 import { getSmsHealth, sendPatientSms, sendSms } from '../../src/services/smsService';
 import { resetFakeRedis } from '../helpers/fakeRedis';
 
@@ -63,5 +65,37 @@ describe('SMS failure warning for the owner page', () => {
   it('never throws', async () => {
     mockSend.mockRejectedValue(new Error('down'));
     await expect(sendSms('+254700000001', 'x', 'X')).resolves.toBe('failed');
+  });
+});
+
+describe('SMS counted per clinic (C24)', () => {
+  const countCreate = prisma.clinicSmsMessage.create as jest.Mock;
+
+  it.each(['PAYMENT_RECEIPT', 'APPOINTMENT_REMINDER', 'WALK_IN_INVITE'])('counts a sent %s against the clinic, in SMS parts, with no number or text', async (purpose) => {
+    mockSend.mockResolvedValue(ACCEPTED);
+    await sendSms('+254700000001', 'x'.repeat(200), purpose, 'clinic-1');
+    expect(countCreate).toHaveBeenCalledWith({ data: { clinicId: 'clinic-1', purpose, parts: 2 } });
+  });
+
+  it.each(['PIN_RESET', 'PIN_RESET_CODE', 'PHONE_VERIFICATION', 'IN_PERSON_SETUP', 'RECORD_ACCESS_CODE', 'CHECK_IN_FEE_RECEIPT', 'ACCOUNT_DELETED'])(
+    'does not count security codes or ACISI messages (%s), even if a clinic is given',
+    async (purpose) => {
+      mockSend.mockResolvedValue(ACCEPTED);
+      await sendSms('+254700000001', 'Your code is 123456', purpose, 'clinic-1');
+      expect(countCreate).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not count a send that failed or a patient who opted out', async () => {
+    mockSend.mockRejectedValue(new Error('down'));
+    await sendSms('+254700000001', 'Receipt', 'PAYMENT_RECEIPT', 'clinic-1');
+    await sendPatientSms({ ...PATIENT, smsOptOut: true }, 'Receipt', { purpose: 'PAYMENT_RECEIPT', clinicId: 'clinic-1' });
+    expect(countCreate).not.toHaveBeenCalled();
+  });
+
+  it('a counting error never breaks the send', async () => {
+    mockSend.mockResolvedValue(ACCEPTED);
+    countCreate.mockRejectedValueOnce(new Error('db down'));
+    await expect(sendSms('+254700000001', 'Receipt', 'PAYMENT_RECEIPT', 'clinic-1')).resolves.toBe('sent');
   });
 });

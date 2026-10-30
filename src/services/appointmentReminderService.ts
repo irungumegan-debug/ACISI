@@ -39,7 +39,7 @@ export async function sendDueAppointmentReminders(now: Date = new Date()): Promi
     const outcome = await sendPatientSms(
       appointment.patient,
       buildAppointmentReminderSms({ clinicName: appointment.clinic.name, scheduledFor: appointment.scheduledFor }),
-      { purpose: 'APPOINTMENT_REMINDER' },
+      { purpose: 'APPOINTMENT_REMINDER', clinicId: appointment.clinicId },
     );
     if (outcome === 'sent') sent += 1;
     else skipped += 1;

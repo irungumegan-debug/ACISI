@@ -714,7 +714,7 @@ export async function sendPaidReceiptSms(billId: string): Promise<ReceiptSmsOutc
       date: formatKenyaDate(bill.paidAt ?? new Date()),
       payments: bill.payments.map((p) => ({ method: p.method, reference: p.mpesaReceiptNumber ?? p.reference })),
     });
-    if ((await sendPatientSms(patient, message, { purpose: 'PAYMENT_RECEIPT' })) !== 'sent') return 'failed';
+    if ((await sendPatientSms(patient, message, { purpose: 'PAYMENT_RECEIPT', clinicId: bill.clinicId })) !== 'sent') return 'failed';
     await recordAuditEvent({ actorType: 'SYSTEM', action: 'RECEIPT_SMS_SENT', entityType: 'Bill', entityId: bill.id });
     return 'sent';
   } catch (err) {

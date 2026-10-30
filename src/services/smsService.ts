@@ -1,6 +1,8 @@
 import { smsClient } from '../config/africastalking';
 import { redis } from '../config/redis';
-import { SMS_FAILURE_WARNING_THRESHOLD } from '../config/constants';
+import { CLINIC_COUNTED_SMS_PURPOSES, SMS_FAILURE_WARNING_THRESHOLD } from '../config/constants';
+import { prisma } from '../db/prisma';
+import { smsPartCount } from './smsTemplates';
 import { logger } from '../utils/logger';
 
 /**
@@ -56,17 +58,34 @@ async function noteSuccess(): Promise<void> {
  * counted for the owner warning and logged by purpose only, never the
  * number or the text).
  */
-export async function sendSms(to: string, message: string, purpose: string): Promise<'sent' | 'failed'> {
+export async function sendSms(to: string, message: string, purpose: string, clinicId?: string): Promise<'sent' | 'failed'> {
   try {
     const response = await smsClient.send({ to: [to], message });
     if (!smsWasAccepted(response)) throw new Error('Recipient rejected by SMS provider');
     // Health tracking runs in the background: it never delays or breaks a send.
     void noteSuccess();
+    await countClinicSms(clinicId, purpose, message);
     return 'sent';
   } catch (err) {
     void noteFailure();
     logger.error({ err, purpose }, 'SMS send failed');
     return 'failed';
+  }
+}
+
+/**
+ * C24: an SMS sent to a patient on a clinic's behalf is counted against the
+ * clinic's monthly allowance, in billed SMS parts. Security codes and
+ * ACISI's own messages are not (CLINIC_COUNTED_SMS_PURPOSES). Only the
+ * clinic, purpose, parts and time are stored: no number, text or patient.
+ * Never breaks the send it is counting.
+ */
+async function countClinicSms(clinicId: string | undefined, purpose: string, message: string): Promise<void> {
+  if (!clinicId || !CLINIC_COUNTED_SMS_PURPOSES.includes(purpose)) return;
+  try {
+    await prisma.clinicSmsMessage.create({ data: { clinicId, purpose, parts: smsPartCount(message) } });
+  } catch (err) {
+    logger.error({ err, purpose }, 'Could not count clinic SMS');
   }
 }
 
@@ -83,11 +102,11 @@ export interface SmsPatient {
 export async function sendPatientSms(
   patient: SmsPatient,
   message: string,
-  options: { purpose: string; essential?: boolean },
+  options: { purpose: string; essential?: boolean; clinicId?: string },
 ): Promise<SmsOutcome> {
   if (patient.deletedAt) return 'deleted_account';
   if (patient.smsOptOut && !options.essential) return 'opted_out';
-  return sendSms(patient.phoneNumber, message, options.purpose);
+  return sendSms(patient.phoneNumber, message, options.purpose, options.clinicId);
 }
 
 export interface SmsHealth {

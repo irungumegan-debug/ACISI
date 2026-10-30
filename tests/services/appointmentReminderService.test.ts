@@ -52,7 +52,7 @@ describe('appointment reminder SMS (C12)', () => {
     expect(result.sent).toBe(1);
     const [patient, , options] = (sendPatientSms as jest.Mock).mock.calls[0];
     expect(patient).toBe(APPT.patient);
-    expect(options).toEqual({ purpose: 'APPOINTMENT_REMINDER' });
+    expect(options).toEqual({ purpose: 'APPOINTMENT_REMINDER', clinicId: 'c1' });
     expect(recordAuditEvent).toHaveBeenCalledWith(expect.objectContaining({ action: 'APPOINTMENT_REMINDER_SMS_SENT', entityId: 'a1', clinicId: 'c1' }));
   });
 
