@@ -519,6 +519,9 @@ model CheckIn {
   /// or a later "Pay now"). The payment sweep times out from here, not from
   /// createdAt, so a fee paid days later isn't marked "needs review" at once.
   paymentRequestedAt        DateTime?
+  /// "Resend prompt" presses from the patient's check-in screen (at most
+  /// MAX_PROMPT_RESENDS_PER_CHECK_IN).
+  paymentPromptResends      Int       @default(0)
 
   encounter         Encounter?
   mpesaTransactions MpesaTransaction[]

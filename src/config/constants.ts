@@ -64,6 +64,19 @@ export const OTP_REQUEST_RATE_LIMIT_WINDOW_SECONDS = PIN_LOCKOUT.windowMinutes *
 /** After this many SMS failures in a row, the owner page warns that Africa's Talking may be down. */
 export const SMS_FAILURE_WARNING_THRESHOLD = 3;
 
+/** After this many M-Pesa check-in prompts in a row fail or time out, the owner page warns to check Daraja/Safaricom. */
+export const MPESA_FAILURE_WARNING_THRESHOLD = 3;
+
+/** "Resend prompt" on the patient's check-in screen: at most this many per check-in. */
+export const MAX_PROMPT_RESENDS_PER_CHECK_IN = 3;
+
+/**
+ * …and not until the previous prompt has had this long. An STK prompt
+ * stays on the phone for about a minute; resending sooner could leave two
+ * live prompts for the same fee.
+ */
+export const PROMPT_RESEND_WAIT_SECONDS = 60;
+
 /** A "Request records" or phone-verification code is valid this long after it is shown or sent. */
 export const ONE_TIME_CODE_TTL_SECONDS = 10 * 60;
 /** Wrong tries allowed on one such code before it stops working. */
