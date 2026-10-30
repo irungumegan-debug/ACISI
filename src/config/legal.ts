@@ -26,3 +26,6 @@ export const CONFIDENTIALITY_UNDERTAKING_TEXT =
   '[PLACEHOLDER: final wording to be supplied by ACISI] I will keep confidential all patient information I see in ' +
   'ACISI, use it only for my work at this clinic, and not share it with anyone who is not entitled to it, during ' +
   'and after my time at the clinic.';
+
+/** The tick-box wording for the undertaking, shown at staff signup, clinic registration and the console screen. */
+export const CONFIDENTIALITY_UNDERTAKING_CHECKBOX = 'I have read and agree to the ACISI Confidentiality Undertaking.';

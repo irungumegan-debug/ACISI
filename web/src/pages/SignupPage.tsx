@@ -39,11 +39,11 @@ function ConfidentialityCheckbox({ checked, onChange }: { checked: boolean; onCh
   }, []);
   return (
     <div className="legal-check" style={{ display: 'block' }}>
-      <p style={{ fontWeight: 600, marginBottom: 6 }}>Confidentiality undertaking</p>
+      <p style={{ fontWeight: 600, marginBottom: 6 }}>ACISI Confidentiality Undertaking</p>
       <p style={{ fontSize: 13, whiteSpace: 'pre-wrap', marginBottom: 8 }}>{text ?? 'Loading…'}</p>
       <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
         <input type="checkbox" required checked={checked} onChange={(e) => onChange(e.target.checked)} disabled={!text} />
-        <span>I have read and accept this confidentiality undertaking.</span>
+        <span>I have read and agree to the ACISI Confidentiality Undertaking.</span>
       </label>
     </div>
   );
