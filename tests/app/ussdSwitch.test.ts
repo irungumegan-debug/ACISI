@@ -1,3 +1,7 @@
+// Each test loads the whole app (every route and service), which can take
+// several seconds when the machine is busy.
+jest.setTimeout(30_000);
+
 import request from 'supertest';
 import type { Express } from 'express';
 
