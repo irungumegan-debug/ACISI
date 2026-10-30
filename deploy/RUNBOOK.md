@@ -102,11 +102,21 @@ release is merged. Each command is safe to copy as-is.
 7. **Check:** log in to the console as front desk and as a doctor, and open
    the patient portal. See the manual checklist in the release notes.
 
+Step 3 runs two migrations: `20261030090000_odpc_alignment` and
+`20261031090000_clinic_sms_usage` (clinic plan, SMS allowance and SMS
+count; every existing clinic starts on Starter, 500 SMS a month).
+
 **Undo (only if something goes badly wrong):** deploy the previous version
-(`git checkout <previous commit>` in step 3), then run
-`sudo -u postgres psql acisi -f /opt/acisi/app/prisma/rollback/20261030090000_odpc_alignment.down.sql`
-and `sudo -u postgres psql acisi -c "DELETE FROM _prisma_migrations WHERE migration_name = '20261030090000_odpc_alignment'"`.
-Data written into the new columns since the release is lost; nothing older is touched.
+(`git checkout <previous commit>` in step 3), then undo the migrations,
+newest first:
+```
+sudo -u postgres psql acisi -f /opt/acisi/app/prisma/rollback/20261031090000_clinic_sms_usage.down.sql
+sudo -u postgres psql acisi -c "DELETE FROM _prisma_migrations WHERE migration_name = '20261031090000_clinic_sms_usage'"
+sudo -u postgres psql acisi -f /opt/acisi/app/prisma/rollback/20261030090000_odpc_alignment.down.sql
+sudo -u postgres psql acisi -c "DELETE FROM _prisma_migrations WHERE migration_name = '20261030090000_odpc_alignment'"
+```
+Data written into the new columns since the release is lost (including SMS
+counts and plan changes); nothing older is touched.
 
 ## Backups
 
