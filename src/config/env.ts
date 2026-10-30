@@ -25,7 +25,20 @@ const envSchema = z.object({
   MPESA_ENV: z.enum(['sandbox', 'production']).default('sandbox'),
   MPESA_CONSUMER_KEY: z.string().min(1, 'MPESA_CONSUMER_KEY is required'),
   MPESA_CONSUMER_SECRET: z.string().min(1, 'MPESA_CONSUMER_SECRET is required'),
+  /**
+   * Paybill: the paybill number. Buy Goods: the STORE (head-office) number,
+   * which Daraja wants in BusinessShortCode, the password and the status
+   * query; the till itself goes in MPESA_TILL_NUMBER.
+   */
   MPESA_SHORTCODE: z.string().min(1, 'MPESA_SHORTCODE is required'),
+  /**
+   * Set for a Buy Goods till: prompts are sent as CustomerBuyGoodsOnline with
+   * this till as PartyB. Leave unset for a Paybill. Never shown to patients.
+   */
+  MPESA_TILL_NUMBER: z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+    z.string().trim().regex(/^\d+$/, 'MPESA_TILL_NUMBER must be digits only').optional(),
+  ),
   MPESA_PASSKEY: z.string().min(1, 'MPESA_PASSKEY is required'),
   MPESA_CALLBACK_URL: z.string().url('MPESA_CALLBACK_URL must be a valid URL'),
 
