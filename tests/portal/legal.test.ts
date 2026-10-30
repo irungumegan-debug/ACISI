@@ -307,6 +307,7 @@ describe('web check-in: one check-in per clinic per day, and status polling', ()
       inQueue: false,
       amountKes: null,
       queuePosition: null,
+      promptResend: null,
       existing: false,
     });
     // Only PAID visits not yet finished, and PENDING_PAYMENT ones still within the STK window, count.
@@ -367,6 +368,7 @@ describe('web check-in: one check-in per clinic per day, and status polling', ()
       inQueue: false,
       amountKes: null,
       queuePosition: null,
+      promptResend: null,
     });
     expect(mockFindCheckIn.mock.calls[0][0].where).toEqual({ id: 'ci-1', patientId: 'patient-1' });
   });

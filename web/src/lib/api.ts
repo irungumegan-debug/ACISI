@@ -70,6 +70,8 @@ export interface CheckInSummary {
   queuePosition: number | null;
   /** Pay later: already in the clinic's queue while the ACISI fee is confirmed. */
   inQueue?: boolean;
+  /** "Resend prompt": null when there is nothing to pay; availableAt is when the button works (null = now). */
+  promptResend?: { resendsLeft: number; availableAt: string | null } | null;
 }
 
 export interface FeeStatus {
@@ -271,6 +273,11 @@ export const api = {
   /** Polled after the M-Pesa prompt is sent, until the check-in is PAID or FAILED. */
   getCheckIn(checkInId: string) {
     return request<CheckInSummary>(`/patients/checkin/${encodeURIComponent(checkInId)}`);
+  },
+
+  /** Sends the M-Pesa prompt for this check-in again (at most 3 times per check-in). */
+  resendCheckInPrompt(checkInId: string) {
+    return request<CheckInSummary>(`/patients/checkin/${encodeURIComponent(checkInId)}/resend-prompt`, { method: 'POST' });
   },
 
   /** The patient's own ID document and next of kin (null when not on file). */

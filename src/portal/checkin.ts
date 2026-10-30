@@ -4,7 +4,8 @@ import { getFeeStatus } from '../services/feeService';
 import { z } from 'zod';
 import { prisma } from '../db/prisma';
 import { requirePatientSession, AuthenticatedPatientRequest } from './auth';
-import { initiateCheckIn, queryCheckInPayment } from '../services/checkInService';
+import { initiateCheckIn, PromptResendError, queryCheckInPayment, resendCheckInPrompt } from '../services/checkInService';
+import { MAX_PROMPT_RESENDS_PER_CHECK_IN, PROMPT_RESEND_WAIT_SECONDS } from '../config/constants';
 import { getOwnVisitHistory } from '../services/patientService';
 import { recordAuditEvent } from '../services/auditService';
 import { buildVisitRecordDataFromEncounter, renderVisitRecordPdf, renderVisitRecordsPdf } from '../services/visitRecordDocument';
@@ -103,6 +104,9 @@ async function describeOwnCheckIn(checkInId: string, patientId: string) {
     },
   });
   if (!checkIn) return null;
+  const promptSentAt = checkIn.paymentRequestedAt ?? checkIn.createdAt;
+  const awaitingFee =
+    Boolean(checkIn.queuedBeforePaymentAt) && ['PENDING_PAYMENT', 'FAILED', 'NEEDS_REVIEW'].includes(checkIn.status) && !checkIn.feeSettledAt;
   return {
     checkInId: checkIn.id,
     status: checkIn.status,
@@ -112,6 +116,17 @@ async function describeOwnCheckIn(checkInId: string, patientId: string) {
     clinicName: checkIn.clinic.name,
     departmentName: checkIn.department.name,
     queuePosition: checkIn.encounter ? await queuePositionFor(checkIn.encounter, checkIn.departmentId) : null,
+    /**
+     * "Resend prompt" (C20): how many are left for this check-in, and from
+     * when the button works. Never anything about ACISI's till.
+     */
+    promptResend: awaitingFee
+      ? {
+          resendsLeft: Math.max(0, MAX_PROMPT_RESENDS_PER_CHECK_IN - checkIn.paymentPromptResends),
+          availableAt:
+            checkIn.status === 'PENDING_PAYMENT' ? new Date(promptSentAt.getTime() + PROMPT_RESEND_WAIT_SECONDS * 1000).toISOString() : null,
+        }
+      : null,
   };
 }
 
@@ -253,7 +268,7 @@ portalCheckinRouter.get('/:checkInId', async (req, res) => {
   const checkInId = req.params.checkInId as string;
   const own = await prisma.checkIn.findFirst({
     where: { id: checkInId, patientId },
-    select: { status: true, createdAt: true },
+    select: { status: true, createdAt: true, paymentRequestedAt: true },
   });
   if (!own) {
     res.status(404).json({ error: 'Check-in not found' });
@@ -263,7 +278,8 @@ portalCheckinRouter.get('/:checkInId', async (req, res) => {
   // Don't rely on the callback alone: from ~20s after the STK push, ask
   // Safaricom directly while the patient waits (throttled per check-in, and
   // a no-op if the callback has already settled it).
-  if (own.status === 'PENDING_PAYMENT' && Date.now() - own.createdAt.getTime() >= PORTAL_QUERY_AFTER_MS) {
+  // Timed from the latest prompt, so a resent one gets its own ~20s first.
+  if (own.status === 'PENDING_PAYMENT' && Date.now() - (own.paymentRequestedAt ?? own.createdAt).getTime() >= PORTAL_QUERY_AFTER_MS) {
     try {
       await queryCheckInPayment(checkInId);
     } catch (err) {
@@ -273,6 +289,26 @@ portalCheckinRouter.get('/:checkInId', async (req, res) => {
   }
 
   res.json(await describeOwnCheckIn(checkInId, patientId));
+});
+
+/**
+ * "Resend prompt" (C20): the M-Pesa prompt for this check-in's fee didn't
+ * arrive or was missed. Up to 3 per check-in; the patient stays in the queue
+ * whatever happens.
+ */
+portalCheckinRouter.post('/:checkInId/resend-prompt', async (req, res) => {
+  const { patientId } = (req as unknown as AuthenticatedPatientRequest).patientSession;
+  const checkInId = req.params.checkInId as string;
+  try {
+    const result = await resendCheckInPrompt(checkInId, patientId);
+    res.json({ ...(await describeOwnCheckIn(checkInId, patientId)), resendStatus: result.status });
+  } catch (err) {
+    if (err instanceof PromptResendError) {
+      res.status(err.status).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
 });
 
 portalRecordsRouter.get('/', async (req, res) => {
