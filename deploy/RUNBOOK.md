@@ -55,6 +55,59 @@ Database migrations run automatically on start (`prisma migrate deploy`).
 If the service files in `deploy/` changed, copy them again (see "Install
 or update the backup job").
 
+## Release 2026-10-30: data-protection alignment (one-time steps)
+
+See `CHANGELOG.md` for what changed. Do these once, in order, when this
+release is merged. Each command is safe to copy as-is.
+
+1. **Backup first:** `sudo systemctl start acisi-backup && sudo journalctl -u acisi-backup -n 5 --no-pager`
+   (should end with "Backup written").
+2. **Settings** (`sudo nano /etc/acisi/acisi.env`), add these two lines:
+   ```
+   USSD_ENABLED=false
+   FEE_RESTRICTION_ENABLED=false
+   ```
+   Both are also the defaults, so this only makes them visible. Turn
+   `FEE_RESTRICTION_ENABLED=true` only after the Terms of Service say that
+   accounts can be restricted over unpaid fees.
+3. **Update the app** (this also runs the database migration on start):
+   ```
+   sudo -u acisi -H bash -c 'cd /opt/acisi/app && git pull && npm ci && npm run build'
+   sudo systemctl restart acisi
+   sleep 15; curl -s https://acisi.co.ke/healthz; echo
+   sudo journalctl -u acisi -n 30 --no-pager | grep -i -E "migration|error" || true
+   ```
+4. **Nginx** (new security headers and an access log without query strings):
+   ```
+   sudo cp /etc/nginx/sites-available/acisi /root/acisi.nginx.before-2026-10-30
+   sudo install -m 644 /opt/acisi/app/deploy/nginx/acisi.conf /etc/nginx/sites-available/acisi
+   sudo nginx -t && sudo systemctl reload nginx
+   curl -sI https://acisi.co.ke | grep -i -E "content-security|x-frame|strict-transport"
+   ```
+   If `nginx -t` reports an error, nothing changed; put the old file back with
+   `sudo cp /root/acisi.nginx.before-2026-10-30 /etc/nginx/sites-available/acisi`.
+5. **Remove phone numbers already stored on clinic payments** (preview, then apply):
+   ```
+   sudo bash -c 'set -a; . /etc/acisi/acisi.env; set +a; cd /opt/acisi/app && npm run -s redact-payment-phones'
+   sudo bash -c 'set -a; . /etc/acisi/acisi.env; set +a; cd /opt/acisi/app && npm run -s redact-payment-phones -- --apply'
+   ```
+   The first prints counts only and changes nothing. Run the second only if
+   the counts look right.
+6. **Clear old logs** that were written before this release (they can contain
+   login tokens and search text):
+   ```
+   sudo journalctl --rotate && sudo journalctl --vacuum-time=1s
+   sudo bash -c 'for f in /var/log/nginx/access.log*; do : > "$f"; done'
+   ```
+7. **Check:** log in to the console as front desk and as a doctor, and open
+   the patient portal. See the manual checklist in the release notes.
+
+**Undo (only if something goes badly wrong):** deploy the previous version
+(`git checkout <previous commit>` in step 3), then run
+`sudo -u postgres psql acisi -f /opt/acisi/app/prisma/rollback/20261030090000_odpc_alignment.down.sql`
+and `sudo -u postgres psql acisi -c "DELETE FROM _prisma_migrations WHERE migration_name = '20261030090000_odpc_alignment'"`.
+Data written into the new columns since the release is lost; nothing older is touched.
+
 ## Backups
 
 **What:** every night at about 02:00 EAT, `acisi-backup` writes two encrypted files to
