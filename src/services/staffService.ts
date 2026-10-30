@@ -8,6 +8,8 @@ import { env } from '../config/env';
 import { findClinicByInviteCode } from './clinicService';
 import { findActiveDepartment } from './departmentService';
 import { pinPolicyError } from '../utils/pinPolicy';
+import { clearLockout } from './pinLockout';
+import { revokeSessionsFor } from './sessionRevocation';
 
 
 const MAX_CODE_GENERATION_ATTEMPTS = 10;
@@ -181,7 +183,12 @@ async function setPin(staffId: string, newPin: string): Promise<Staff> {
     throw new InvalidPinFormatError(pinError);
   }
   const pinHash = await hashPin(newPin);
-  return prisma.staff.update({ where: { id: staffId }, data: { pinHash } });
+  const updated = await prisma.staff.update({ where: { id: staffId }, data: { pinHash } });
+  // Every PIN reset (self, admin, server script) lifts a lockout and logs
+  // the person out everywhere: whoever had the old PIN loses their session.
+  await clearLockout(`staff:${staffId}`);
+  await revokeSessionsFor(`staff:${staffId}`);
+  return updated;
 }
 
 export class StaffNotFoundError extends Error {

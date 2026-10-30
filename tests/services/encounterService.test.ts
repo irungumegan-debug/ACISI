@@ -1,3 +1,5 @@
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+jest.mock('../../src/config/redis', () => require('../helpers/fakeRedis').fakeRedisModule());
 jest.mock('../../src/db/prisma', () => ({
   prisma: {
     encounter: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
@@ -296,5 +298,42 @@ describe('checkoutEncounter', () => {
     expect(mockRecordAudit).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'ENCOUNTER_CHECKED_OUT', metadata: { deliveryMethod: 'sms_and_email' } }),
     );
+  });
+});
+
+describe('signing PIN shares the per-account wrong-PIN lockout (C6)', () => {
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const { recordWrongPin, isLockedOut } = require('../../src/services/pinLockout');
+  const { PIN_LOCKOUT } = require('../../src/config/constants');
+  const { PinLockedOutError } = require('../../src/services/encounterService');
+  /* eslint-enable @typescript-eslint/no-require-imports */
+  const input = {
+    encounterId: 'enc-1',
+    clinicId: 'clinic-A',
+    departmentIds: ['dept-1'],
+    staffId: 'lock-doc',
+    diagnosis: 'Flu',
+    prescription: 'Paracetamol',
+    pin: '1234',
+  };
+
+  it('a doctor locked out at login cannot sign, and the PIN is not even checked', async () => {
+    for (let i = 0; i < PIN_LOCKOUT.maxAttempts; i++) await recordWrongPin('staff:lock-doc');
+    mockFindFirst.mockResolvedValue({ id: 'enc-1', status: 'IN_CONSULTATION' });
+    mockComparePin.mockClear();
+    await expect(submitConsultation(input)).rejects.toThrow(PinLockedOutError);
+    expect(mockComparePin).not.toHaveBeenCalled();
+  });
+
+  it('wrong signing PINs count towards the same lock', async () => {
+    mockFindFirst.mockResolvedValue({ id: 'enc-1', status: 'IN_CONSULTATION' });
+    mockFindActiveStaffById.mockResolvedValue(DOCTOR_STAFF);
+    mockComparePin.mockResolvedValue(false);
+    const staffId = 'count-doc';
+    for (let i = 0; i < PIN_LOCKOUT.maxAttempts - 1; i++) {
+      await expect(submitConsultation({ ...input, staffId })).rejects.toThrow(InvalidPinError);
+    }
+    await expect(submitConsultation({ ...input, staffId })).rejects.toThrow(PinLockedOutError);
+    expect(await isLockedOut(`staff:${staffId}`)).toBe(true);
   });
 });

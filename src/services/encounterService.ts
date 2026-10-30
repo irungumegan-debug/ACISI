@@ -1,6 +1,7 @@
 import { Encounter, EncounterStatus } from '@prisma/client';
 import { prisma } from '../db/prisma';
 import { recordAuditEvent } from './auditService';
+import { clearLockout, isLockedOut, lockoutMessage, recordWrongPin } from './pinLockout';
 import { getScopedHistory, ScopedHistoryEntry } from './patientService';
 import { comparePin, findActiveStaffById } from './staffService';
 import { emailConfigured } from '../config/email';
@@ -146,6 +147,13 @@ export class EncounterNotConsultableError extends Error {
   }
 }
 
+export class PinLockedOutError extends Error {
+  constructor() {
+    super(lockoutMessage());
+    this.name = 'PinLockedOutError';
+  }
+}
+
 export class InvalidPinError extends Error {
   constructor() {
     super('Incorrect PIN. Please try again.');
@@ -185,6 +193,12 @@ export async function submitConsultation(input: SubmitConsultationInput): Promis
     throw new EncounterNotConsultableError();
   }
 
+  // Same per-account wrong-PIN counter as login: a locked account can't
+  // sign either, and wrong signing PINs count towards the lock.
+  if (await isLockedOut(`staff:${input.staffId}`)) {
+    throw new PinLockedOutError();
+  }
+
   const staff = await findActiveStaffById(input.staffId);
   const pinValid = staff ? await comparePin(staff, input.pin) : false;
 
@@ -198,8 +212,10 @@ export async function submitConsultation(input: SubmitConsultationInput): Promis
   });
 
   if (!pinValid) {
+    if (await recordWrongPin(`staff:${input.staffId}`)) throw new PinLockedOutError();
     throw new InvalidPinError();
   }
+  await clearLockout(`staff:${input.staffId}`);
 
   const updated = await prisma.encounter.update({
     where: { id: encounter.id },

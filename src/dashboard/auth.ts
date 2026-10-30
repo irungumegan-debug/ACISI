@@ -1,13 +1,8 @@
 import { NextFunction, Request, Response, Router } from 'express';
 import { z } from 'zod';
 import { redis } from '../config/redis';
-import {
-  LOGIN_RATE_LIMIT_MAX_ATTEMPTS,
-  LOGIN_RATE_LIMIT_WINDOW_SECONDS,
-  DASHBOARD_SESSION_TTL_SECONDS,
-  OTP_REQUEST_RATE_LIMIT_MAX_ATTEMPTS,
-  OTP_REQUEST_RATE_LIMIT_WINDOW_SECONDS,
-} from '../config/constants';
+import { OTP_REQUEST_RATE_LIMIT_MAX_ATTEMPTS, OTP_REQUEST_RATE_LIMIT_WINDOW_SECONDS } from '../config/constants';
+import { clearLockout, isLockedOut, lockoutMessage, LockoutSubject, recordWrongPin } from '../services/pinLockout';
 import {
   findActiveStaffWithClinicByCode,
   InvalidPinFormatError,
@@ -15,10 +10,10 @@ import {
   verifyStaffPin,
 } from '../services/staffService';
 import { requestStaffPinResetOtp, verifyStaffPinResetOtp } from '../services/otpService';
-import { revokeSessionsFor } from '../services/sessionRevocation';
 import { pinPolicyError } from '../utils/pinPolicy';
 import {
   createDashboardSession,
+  dashboardSessionTtlSeconds,
   destroyDashboardSession,
   loadDashboardSession,
   DashboardSession,
@@ -30,26 +25,6 @@ export interface AuthenticatedRequest extends Request {
   dashboardSession: DashboardSession;
 }
 
-function rateLimitKey(staffCode: string): string {
-  return `dashboard:login_attempts:${staffCode}`;
-}
-
-async function isRateLimited(staffCode: string): Promise<boolean> {
-  const count = await redis.get(rateLimitKey(staffCode));
-  return Number(count ?? 0) >= LOGIN_RATE_LIMIT_MAX_ATTEMPTS;
-}
-
-async function recordFailedAttempt(staffCode: string): Promise<void> {
-  const k = rateLimitKey(staffCode);
-  const count = await redis.incr(k);
-  if (count === 1) {
-    await redis.expire(k, LOGIN_RATE_LIMIT_WINDOW_SECONDS);
-  }
-}
-
-async function clearRateLimit(staffCode: string): Promise<void> {
-  await redis.del(rateLimitKey(staffCode));
-}
 
 const loginSchema = z.object({
   staffCode: z.string().min(1),
@@ -66,22 +41,25 @@ authRouter.post('/login', async (req, res) => {
   }
 
   const staffCode = parsed.data.staffCode.trim().toUpperCase();
+  const staff = await findActiveStaffWithClinicByCode(staffCode);
+  // Counted per account (one staff ID is one account), so a lockout holds
+  // however the request is made.
+  const subject: LockoutSubject = staff ? `staff:${staff.id}` : `unknown:staff:${staffCode}`;
 
-  if (await isRateLimited(staffCode)) {
-    res.status(429).json({ error: 'Too many failed attempts. Try again in a few minutes.' });
+  if (await isLockedOut(subject)) {
+    res.status(429).json({ error: lockoutMessage() });
     return;
   }
 
-  const staff = await findActiveStaffWithClinicByCode(staffCode);
   const isValid = staff ? await verifyStaffPin(staff, parsed.data.pin) : false;
 
   if (!staff || !isValid) {
-    await recordFailedAttempt(staffCode);
-    res.status(401).json({ error: 'Invalid staff ID or PIN' });
+    const nowLocked = await recordWrongPin(subject);
+    res.status(nowLocked ? 429 : 401).json({ error: nowLocked ? lockoutMessage() : 'Invalid staff ID or PIN' });
     return;
   }
 
-  await clearRateLimit(staffCode);
+  await clearLockout(subject);
 
   const token = await createDashboardSession({
     staffId: staff.id,
@@ -101,7 +79,7 @@ authRouter.post('/login', async (req, res) => {
     // X-Forwarded-Proto from the platform's TLS-terminating edge proxy.
     secure: req.secure,
     sameSite: 'lax',
-    maxAge: DASHBOARD_SESSION_TTL_SECONDS * 1000,
+    maxAge: dashboardSessionTtlSeconds(staff.role) * 1000,
   });
 
   res.json({ staffName: staff.name, clinicName: staff.clinic.name, role: staff.role });
@@ -214,8 +192,7 @@ authRouter.post('/reset-pin', async (req, res) => {
     throw err;
   }
 
-  await clearRateLimit(staffCode);
-  await revokeSessionsFor(`staff:${staff.id}`);
+  // resetStaffPinBySelf has lifted any lockout and logged out every session.
   res.json({ message: 'PIN updated. You can now log in with your new PIN.' });
 });
 

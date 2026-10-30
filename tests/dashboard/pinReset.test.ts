@@ -39,7 +39,9 @@ import { findActiveStaffWithClinicByCode, resetStaffPinBySelf, verifyStaffPin, I
 import { requestStaffPinResetOtp, verifyStaffPinResetOtp } from '../../src/services/otpService';
 import { createDashboardSession, loadDashboardSession } from '../../src/dashboard/session';
 import { authRouter } from '../../src/dashboard/auth';
-import { LOGIN_RATE_LIMIT_MAX_ATTEMPTS, OTP_REQUEST_RATE_LIMIT_MAX_ATTEMPTS } from '../../src/config/constants';
+import { PIN_LOCKOUT, OTP_REQUEST_RATE_LIMIT_MAX_ATTEMPTS } from '../../src/config/constants';
+import { clearLockout } from '../../src/services/pinLockout';
+import { revokeSessionsFor } from '../../src/services/sessionRevocation';
 
 const mockFindStaff = findActiveStaffWithClinicByCode as jest.Mock;
 const mockVerifyPin = verifyStaffPin as jest.Mock;
@@ -132,14 +134,18 @@ describe('POST /auth/reset-pin', () => {
     const app = buildApp();
     mockFindStaff.mockResolvedValue(STAFF);
     mockVerifyPin.mockResolvedValue(false);
-    for (let i = 0; i < LOGIN_RATE_LIMIT_MAX_ATTEMPTS; i++) {
+    for (let i = 0; i < PIN_LOCKOUT.maxAttempts; i++) {
       await request(app).post('/auth/login').send({ staffCode: 'ACI-STF-TEST', pin: '0000' });
     }
     mockVerifyPin.mockResolvedValue(true);
     expect((await request(app).post('/auth/login').send({ staffCode: 'ACI-STF-TEST', pin: '730194' })).status).toBe(429);
 
     mockVerifyOtp.mockResolvedValue(true);
-    mockResetPin.mockResolvedValue(STAFF);
+    // The real resetStaffPinBySelf lifts the lock (staffService.test.ts); stand that in here.
+    mockResetPin.mockImplementation(async (id: string) => {
+      await clearLockout(`staff:${id}`);
+      return STAFF;
+    });
     const reset = await request(app).post('/auth/reset-pin').send({ staffCode: 'ACI-STF-TEST', code: '123456', newPin: '730194' });
     expect(reset.status).toBe(200);
     expect(mockResetPin).toHaveBeenCalledWith('staff-1', '730194');
@@ -161,7 +167,11 @@ describe('POST /auth/reset-pin', () => {
     jest.setSystemTime(2_000);
     mockFindStaff.mockResolvedValue(STAFF);
     mockVerifyOtp.mockResolvedValue(true);
-    mockResetPin.mockResolvedValue(STAFF);
+    // The real resetStaffPinBySelf revokes every session (staffService.test.ts); stand that in here.
+    mockResetPin.mockImplementation(async (id: string) => {
+      await revokeSessionsFor(`staff:${id}`);
+      return STAFF;
+    });
     await request(buildApp()).post('/auth/reset-pin').send({ staffCode: 'ACI-STF-TEST', code: '123456', newPin: '730194' });
     expect(await loadDashboardSession(oldSession)).toBeNull();
   });

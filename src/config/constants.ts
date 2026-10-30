@@ -24,8 +24,11 @@ export const HISTORY_ENCOUNTER_LIMIT = 5;
 /** Clinics shown per page in the USSD check-in clinic-selection menu. */
 export const CLINICS_PER_PAGE = 5;
 
-/** Staff dashboard web session lifetime — roughly a shift. */
+/** Staff dashboard web session lifetime — roughly a shift. Also the patient portal's. */
 export const DASHBOARD_SESSION_TTL_SECONDS = 8 * 60 * 60;
+
+/** Clinic admins (role ADMIN) see payments, staff and settings, so their sessions are shorter. */
+export const CLINIC_ADMIN_SESSION_TTL_SECONDS = 6 * 60 * 60;
 
 /**
  * Owner site session lifetime — deliberately much shorter than a staff
@@ -37,9 +40,18 @@ export const OWNER_SESSION_TTL_SECONDS = 2 * 60 * 60;
 /** Minimum length for the owner's password (set via scripts/createOwner.ts). */
 export const OWNER_PASSWORD_MIN_LENGTH = 12;
 
-/** Brute-force guard on the dashboard PIN login endpoint. */
-export const LOGIN_RATE_LIMIT_MAX_ATTEMPTS = 5;
-export const LOGIN_RATE_LIMIT_WINDOW_SECONDS = 15 * 60;
+/**
+ * The one setting for wrong-PIN lockout (and the owner's wrong passwords):
+ * after `maxAttempts` wrong tries within `windowMinutes`, the ACCOUNT is
+ * locked for `lockMinutes`, however the phone number or ID was typed. Used
+ * by web login (patients, staff, owner), the doctor's signing PIN and the
+ * delete-account PIN — see services/pinLockout.ts. Change it here only.
+ */
+export const PIN_LOCKOUT = { maxAttempts: 5, windowMinutes: 5, lockMinutes: 5 } as const;
+
+/** Older names, kept in step with PIN_LOCKOUT. */
+export const LOGIN_RATE_LIMIT_MAX_ATTEMPTS = PIN_LOCKOUT.maxAttempts;
+export const LOGIN_RATE_LIMIT_WINDOW_SECONDS = PIN_LOCKOUT.windowMinutes * 60;
 
 /** Patient PIN-reset OTP: how long a code is valid, and how many guesses it tolerates. */
 export const OTP_TTL_SECONDS = 10 * 60;
@@ -47,4 +59,4 @@ export const OTP_MAX_VERIFY_ATTEMPTS = 5;
 
 /** Guards against SMS-bombing a phone number with repeated OTP requests. */
 export const OTP_REQUEST_RATE_LIMIT_MAX_ATTEMPTS = 3;
-export const OTP_REQUEST_RATE_LIMIT_WINDOW_SECONDS = 15 * 60;
+export const OTP_REQUEST_RATE_LIMIT_WINDOW_SECONDS = PIN_LOCKOUT.windowMinutes * 60;

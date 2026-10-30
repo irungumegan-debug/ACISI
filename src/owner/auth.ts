@@ -1,17 +1,13 @@
 import { NextFunction, Request, Response, Router } from 'express';
 import { z } from 'zod';
-import { redis } from '../config/redis';
-import { LOGIN_RATE_LIMIT_MAX_ATTEMPTS, LOGIN_RATE_LIMIT_WINDOW_SECONDS, OWNER_SESSION_TTL_SECONDS } from '../config/constants';
+import { OWNER_SESSION_TTL_SECONDS } from '../config/constants';
+import { clearLockout, isLockedOut, lockoutMessage, recordWrongPin } from '../services/pinLockout';
 import { authenticateOwner, normalizeOwnerEmail } from '../services/ownerService';
 import { createOwnerSession, destroyOwnerSession, loadOwnerSession, OwnerSession, OWNER_SESSION_COOKIE_NAME } from './session';
 import { logger } from '../utils/logger';
 
 export interface AuthenticatedOwnerRequest extends Request {
   ownerSession: OwnerSession;
-}
-
-function rateLimitKey(email: string): string {
-  return `owner:login_attempts:${email}`;
 }
 
 const loginSchema = z.object({
@@ -29,23 +25,19 @@ ownerAuthRouter.post('/login', async (req, res) => {
   }
 
   const email = normalizeOwnerEmail(parsed.data.email);
-  const attempts = Number((await redis.get(rateLimitKey(email))) ?? 0);
-  if (attempts >= LOGIN_RATE_LIMIT_MAX_ATTEMPTS) {
-    res.status(429).json({ error: 'Too many failed attempts. Try again in a few minutes.' });
+  if (await isLockedOut(`owner:${email}`)) {
+    res.status(429).json({ error: lockoutMessage('passwords') });
     return;
   }
 
   const owner = await authenticateOwner(email, parsed.data.password);
   if (!owner) {
-    const count = await redis.incr(rateLimitKey(email));
-    if (count === 1) {
-      await redis.expire(rateLimitKey(email), LOGIN_RATE_LIMIT_WINDOW_SECONDS);
-    }
-    res.status(401).json({ error: 'Invalid email or password' });
+    const nowLocked = await recordWrongPin(`owner:${email}`);
+    res.status(nowLocked ? 429 : 401).json({ error: nowLocked ? lockoutMessage('passwords') : 'Invalid email or password' });
     return;
   }
 
-  await redis.del(rateLimitKey(email));
+  await clearLockout(`owner:${email}`);
 
   const token = await createOwnerSession({ ownerId: owner.id, email: owner.email, name: owner.name });
 

@@ -58,7 +58,8 @@ import {
 } from '../../src/services/patientService';
 import { requestPinResetOtp, verifyPinResetOtp } from '../../src/services/otpService';
 import { portalAuthRouter } from '../../src/portal/auth';
-import { LOGIN_RATE_LIMIT_MAX_ATTEMPTS } from '../../src/config/constants';
+import { PIN_LOCKOUT } from '../../src/config/constants';
+import { clearLockout } from '../../src/services/pinLockout';
 
 const mockFindPatient = findPatientByPhoneOrCode as jest.Mock;
 const mockRegisterPatient = registerPatient as jest.Mock;
@@ -205,17 +206,32 @@ describe('POST /patients/login', () => {
     expect(res.headers['set-cookie']?.[0]).toContain('acisi_patient_session=');
   });
 
-  it('rate-limits after repeated failed attempts', async () => {
+  it('locks the ACCOUNT on the 5th wrong PIN however the phone number or ID is typed (no bypass)', async () => {
+    mockFindPatient.mockResolvedValue(PATIENT);
+    mockVerifyPin.mockResolvedValue(false);
+    const app = buildApp();
+    const formats = ['ACI-7F2K', '0712345678', '+254712345678', '254712345678', '0712 345 678'];
+
+    for (const identifier of formats.slice(0, PIN_LOCKOUT.maxAttempts - 1)) {
+      expect((await request(app).post('/patients/login').send({ identifier, pin: '000000' })).status).toBe(401);
+    }
+    const locking = await request(app).post('/patients/login').send({ identifier: formats[4], pin: '000000' });
+    expect(locking.status).toBe(429);
+    expect(locking.body.error).toBe('Too many wrong PINs. Try again in 5 minutes.');
+
+    // Even the right PIN, typed yet another way, is refused while locked.
+    mockVerifyPin.mockResolvedValue(true);
+    expect((await request(app).post('/patients/login').send({ identifier: 'aci-7f2k', pin: '730194' })).status).toBe(429);
+  });
+
+  it('counts guesses at an unknown number in one place, whatever format is typed', async () => {
     mockFindPatient.mockResolvedValue(null);
     const app = buildApp();
-
-    for (let i = 0; i < LOGIN_RATE_LIMIT_MAX_ATTEMPTS; i++) {
-      const res = await request(app).post('/patients/login').send({ identifier: 'ACI-7F2K', pin: 'wrong' });
-      expect(res.status).toBe(401);
+    const formats = ['0799000111', '+254799000111', '254799000111', '0799 000 111'];
+    for (const identifier of formats) {
+      expect((await request(app).post('/patients/login').send({ identifier, pin: '000000' })).status).toBe(401);
     }
-
-    const res = await request(app).post('/patients/login').send({ identifier: 'ACI-7F2K', pin: 'wrong' });
-    expect(res.status).toBe(429);
+    expect((await request(app).post('/patients/login').send({ identifier: '799000111', pin: '000000' })).status).toBe(429);
   });
 });
 
@@ -255,17 +271,18 @@ describe('POST /patients/reset-pin', () => {
       .send({ identifier: 'ACI-7F2K', code: '123456', newPin: '730194' });
 
     expect(res.status).toBe(200);
-    expect(mockSetPin).toHaveBeenCalledWith('patient-1', '730194');
+    expect(mockSetPin).toHaveBeenCalledWith('patient-1', '730194', 'SMS_CODE');
   });
 
-  it('automatically unlocks a patient who was locked out, under every identifier they log in with', async () => {
+  it('a reset unlocks a locked-out patient under every identifier (setPatientPin lifts the lock)', async () => {
     const app = buildApp();
+    // The real setPatientPin clears the per-account lock (tested in
+    // patientService.test.ts); stand that in here.
+    mockSetPin.mockImplementation((id: string) => clearLockout(`patient:${id}`));
     mockFindPatient.mockResolvedValue(PATIENT);
     mockVerifyPin.mockResolvedValue(false);
-    for (const identifier of ['ACI-7F2K', '+254712345678']) {
-      for (let i = 0; i < LOGIN_RATE_LIMIT_MAX_ATTEMPTS; i++) {
-        await request(app).post('/patients/login').send({ identifier, pin: '0000' });
-      }
+    for (let i = 0; i < PIN_LOCKOUT.maxAttempts; i++) {
+      await request(app).post('/patients/login').send({ identifier: 'ACI-7F2K', pin: '000000' });
     }
     mockVerifyPin.mockResolvedValue(true);
     expect((await request(app).post('/patients/login').send({ identifier: 'ACI-7F2K', pin: '730194' })).status).toBe(429);

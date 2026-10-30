@@ -2,12 +2,11 @@ import { NextFunction, Request, Response, Router } from 'express';
 import { z } from 'zod';
 import { redis } from '../config/redis';
 import {
-  LOGIN_RATE_LIMIT_MAX_ATTEMPTS,
-  LOGIN_RATE_LIMIT_WINDOW_SECONDS,
   DASHBOARD_SESSION_TTL_SECONDS,
   OTP_REQUEST_RATE_LIMIT_MAX_ATTEMPTS,
   OTP_REQUEST_RATE_LIMIT_WINDOW_SECONDS,
 } from '../config/constants';
+import { clearLockout, isLockedOut, lockoutMessage, LockoutSubject, recordWrongPin } from '../services/pinLockout';
 import { InvalidPhoneNumberError, toE164 } from '../utils/phone';
 import { pinPolicyError } from '../utils/pinPolicy';
 import {
@@ -19,7 +18,6 @@ import {
 import { requestPinResetOtp, verifyPinResetOtp } from '../services/otpService';
 import { deletePatientAccount, PatientNotFoundError } from '../services/patientDeletionService';
 import { prisma } from '../db/prisma';
-import { revokeSessionsFor } from '../services/sessionRevocation';
 import {
   createPatientSession,
   destroyPatientSession,
@@ -50,8 +48,14 @@ async function recordAttempt(prefix: string, identifier: string, windowSeconds: 
   }
 }
 
-async function clearAttempts(prefix: string, identifier: string): Promise<void> {
-  await redis.del(rateLimitKey(prefix, identifier));
+/** The phone number in E.164 or the patient ID upper-cased, so every way of typing one maps to one counter. */
+function normaliseIdentifier(identifier: string): string {
+  if (/^ACI-/i.test(identifier)) return identifier.toUpperCase();
+  try {
+    return toE164(identifier);
+  } catch {
+    return identifier.toLowerCase();
+  }
 }
 
 export const portalAuthRouter = Router();
@@ -155,22 +159,25 @@ portalAuthRouter.post('/login', async (req, res) => {
   }
 
   const identifier = parsed.data.identifier.trim();
+  const patient = await findPatientByPhoneOrCode(identifier);
+  // Counted per account: 0712…, +254 712… and the patient ID all reach the
+  // same counter, so typing the number another way never buys more tries.
+  const subject: LockoutSubject = patient ? `patient:${patient.id}` : `unknown:patient:${normaliseIdentifier(identifier)}`;
 
-  if (await isRateLimited('login_attempts', identifier, LOGIN_RATE_LIMIT_MAX_ATTEMPTS)) {
-    res.status(429).json({ error: 'Too many failed attempts. Try again in a few minutes.' });
+  if (await isLockedOut(subject)) {
+    res.status(429).json({ error: lockoutMessage() });
     return;
   }
 
-  const patient = await findPatientByPhoneOrCode(identifier);
   const isValid = patient ? await verifyPatientPin(patient, parsed.data.pin) : false;
 
   if (!patient || !isValid) {
-    await recordAttempt('login_attempts', identifier, LOGIN_RATE_LIMIT_WINDOW_SECONDS);
-    res.status(401).json({ error: 'Invalid phone number/patient ID or PIN' });
+    const nowLocked = await recordWrongPin(subject);
+    res.status(nowLocked ? 429 : 401).json({ error: nowLocked ? lockoutMessage() : 'Invalid phone number/patient ID or PIN' });
     return;
   }
 
-  await clearAttempts('login_attempts', identifier);
+  await clearLockout(subject);
 
   const token = await createPatientSession({
     patientId: patient.id,
@@ -269,16 +276,9 @@ portalAuthRouter.post('/reset-pin', async (req, res) => {
     return;
   }
 
-  await setPatientPin(patient.id, parsed.data.newPin);
-
-  // Unlock automatically: clear the failed-login counter for every form of
-  // identifier they might log in with (it's keyed by what was typed), and
-  // log out any existing sessions, since the old PIN may be what someone
-  // else was using.
-  for (const id of new Set([parsed.data.identifier.trim(), patient.patientCode, patient.phoneNumber])) {
-    await clearAttempts('login_attempts', id);
-  }
-  await revokeSessionsFor(`patient:${patient.id}`);
+  // setPatientPin also lifts any lockout, logs out every existing session
+  // (the old PIN may be what someone else was using) and is audit-logged.
+  await setPatientPin(patient.id, parsed.data.newPin, 'SMS_CODE');
 
   res.json({ message: 'PIN updated. You can now log in with your new PIN.' });
 });
@@ -300,16 +300,17 @@ portalAuthRouter.post('/account/delete', requirePatientSession, async (req, res)
 
   const { patientId } = (req as AuthenticatedPatientRequest).patientSession;
 
-  if (await isRateLimited('delete_attempts', patientId, LOGIN_RATE_LIMIT_MAX_ATTEMPTS)) {
-    res.status(429).json({ error: 'Too many failed attempts. Try again in a few minutes.' });
+  // Same per-account counter as login, so a wrong PIN here counts there too.
+  if (await isLockedOut(`patient:${patientId}`)) {
+    res.status(429).json({ error: lockoutMessage() });
     return;
   }
 
   const patient = await prisma.patient.findFirst({ where: { id: patientId, deletedAt: null } });
   const isValid = patient ? await verifyPatientPin(patient, parsed.data.pin) : false;
   if (!patient || !isValid) {
-    await recordAttempt('delete_attempts', patientId, LOGIN_RATE_LIMIT_WINDOW_SECONDS);
-    res.status(401).json({ error: 'Incorrect PIN' });
+    const nowLocked = await recordWrongPin(`patient:${patientId}`);
+    res.status(nowLocked ? 429 : 401).json({ error: nowLocked ? lockoutMessage() : 'Incorrect PIN' });
     return;
   }
 
@@ -323,7 +324,6 @@ portalAuthRouter.post('/account/delete', requirePatientSession, async (req, res)
     throw err;
   }
 
-  await clearAttempts('delete_attempts', patientId);
   res.clearCookie(PATIENT_SESSION_COOKIE_NAME);
   res.status(204).send();
 });

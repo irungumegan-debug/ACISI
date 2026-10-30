@@ -45,7 +45,7 @@ jest.mock('../../src/services/staffService', () => ({
 
 import { findActiveStaffWithClinicByCode, verifyStaffPin } from '../../src/services/staffService';
 import { authRouter } from '../../src/dashboard/auth';
-import { LOGIN_RATE_LIMIT_MAX_ATTEMPTS } from '../../src/config/constants';
+import { PIN_LOCKOUT } from '../../src/config/constants';
 
 const mockFindStaff = findActiveStaffWithClinicByCode as jest.Mock;
 const mockVerifyPin = verifyStaffPin as jest.Mock;
@@ -108,37 +108,62 @@ describe('POST /auth/login', () => {
     expect(res.headers['set-cookie']?.[0]).toContain('HttpOnly');
   });
 
-  it('rate-limits after repeated failed attempts from the same staff ID', async () => {
-    mockFindStaff.mockResolvedValue(null);
+  it('locks the account on the 5th wrong PIN, says how long to wait, and refuses even the right PIN while locked', async () => {
+    mockFindStaff.mockResolvedValue(STAFF);
+    mockVerifyPin.mockResolvedValue(false);
     const app = buildApp();
 
-    for (let i = 0; i < LOGIN_RATE_LIMIT_MAX_ATTEMPTS; i++) {
+    for (let i = 0; i < PIN_LOCKOUT.maxAttempts - 1; i++) {
       const res = await request(app).post('/auth/login').send({ staffCode: 'ACI-STF-7F2K', pin: '1234' });
       expect(res.status).toBe(401);
     }
+    const locking = await request(app).post('/auth/login').send({ staffCode: 'ACI-STF-7F2K', pin: '1234' });
+    expect(locking.status).toBe(429);
+    expect(locking.body.error).toBe('Too many wrong PINs. Try again in 5 minutes.');
 
-    const res = await request(app).post('/auth/login').send({ staffCode: 'ACI-STF-7F2K', pin: '1234' });
-    expect(res.status).toBe(429);
+    mockVerifyPin.mockResolvedValue(true);
+    const whileLocked = await request(app).post('/auth/login').send({ staffCode: 'aci-stf-7f2k ', pin: '730194' });
+    expect(whileLocked.status).toBe(429);
+    expect(mockVerifyPin).toHaveBeenCalledTimes(PIN_LOCKOUT.maxAttempts);
   });
 
-  it('clears the rate limit counter on a successful login', async () => {
-    const app = buildApp();
+  it('also slows down guessing at staff IDs that do not exist', async () => {
     mockFindStaff.mockResolvedValue(null);
+    const app = buildApp();
+    for (let i = 0; i < PIN_LOCKOUT.maxAttempts - 1; i++) {
+      expect((await request(app).post('/auth/login').send({ staffCode: 'ACI-STF-NONE', pin: '1234' })).status).toBe(401);
+    }
+    expect((await request(app).post('/auth/login').send({ staffCode: 'ACI-STF-NONE', pin: '1234' })).status).toBe(429);
+  });
 
-    await request(app).post('/auth/login').send({ staffCode: 'ACI-STF-7F2K', pin: 'wrong' });
-    await request(app).post('/auth/login').send({ staffCode: 'ACI-STF-7F2K', pin: 'wrong' });
-
+  it('clears the wrong-PIN counter on a successful login', async () => {
+    const app = buildApp();
     mockFindStaff.mockResolvedValue(STAFF);
+    mockVerifyPin.mockResolvedValue(false);
+
+    await request(app).post('/auth/login').send({ staffCode: 'ACI-STF-7F2K', pin: 'wrong' });
+    await request(app).post('/auth/login').send({ staffCode: 'ACI-STF-7F2K', pin: 'wrong' });
+
     mockVerifyPin.mockResolvedValue(true);
     const success = await request(app).post('/auth/login').send({ staffCode: 'ACI-STF-7F2K', pin: '1234' });
     expect(success.status).toBe(200);
 
-    // Rate limit counter should be cleared, so failures start fresh again.
-    mockFindStaff.mockResolvedValue(null);
-    for (let i = 0; i < LOGIN_RATE_LIMIT_MAX_ATTEMPTS - 1; i++) {
+    // The counter was cleared, so failures start fresh again.
+    mockVerifyPin.mockResolvedValue(false);
+    for (let i = 0; i < PIN_LOCKOUT.maxAttempts - 1; i++) {
       const res = await request(app).post('/auth/login').send({ staffCode: 'ACI-STF-7F2K', pin: 'wrong' });
       expect(res.status).toBe(401);
     }
+  });
+
+  it('gives a clinic admin a 6-hour session and everyone else an 8-hour one', async () => {
+    mockVerifyPin.mockResolvedValue(true);
+    mockFindStaff.mockResolvedValue({ ...STAFF, role: 'ADMIN' });
+    const admin = await request(buildApp()).post('/auth/login').send({ staffCode: 'ACI-STF-7F2K', pin: '1234' });
+    expect(admin.headers['set-cookie']?.[0]).toContain(`Max-Age=${6 * 60 * 60}`);
+    mockFindStaff.mockResolvedValue(STAFF);
+    const staff = await request(buildApp()).post('/auth/login').send({ staffCode: 'ACI-STF-7F2K', pin: '1234' });
+    expect(staff.headers['set-cookie']?.[0]).toContain(`Max-Age=${8 * 60 * 60}`);
   });
 });
 

@@ -5,6 +5,7 @@ import {
   EncounterNotAccessibleError,
   EncounterNotConsultableError,
   InvalidPinError,
+  PinLockedOutError,
   getDoctorQueue,
   getEncounterForDoctor,
   submitConsultation,
@@ -125,6 +126,10 @@ doctorRouter.post('/encounters/:id/consult', async (req, res) => {
     }
     if (err instanceof InvalidPinError) {
       res.status(401).json({ error: err.message });
+      return;
+    }
+    if (err instanceof PinLockedOutError) {
+      res.status(429).json({ error: err.message });
       return;
     }
     throw err;

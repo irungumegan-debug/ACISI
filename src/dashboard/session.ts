@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { redis } from '../config/redis';
-import { DASHBOARD_SESSION_TTL_SECONDS } from '../config/constants';
+import { CLINIC_ADMIN_SESSION_TTL_SECONDS, DASHBOARD_SESSION_TTL_SECONDS } from '../config/constants';
 import { logger } from '../utils/logger';
 import { isSessionRevoked } from '../services/sessionRevocation';
 
@@ -36,9 +36,14 @@ function key(token: string): string {
  * No signing/verification complexity needed, and revocation is a single
  * Redis delete.
  */
+/** 8 hours (a shift) for staff and doctors; 6 hours for clinic admins. */
+export function dashboardSessionTtlSeconds(role: string): number {
+  return role === 'ADMIN' ? CLINIC_ADMIN_SESSION_TTL_SECONDS : DASHBOARD_SESSION_TTL_SECONDS;
+}
+
 export async function createDashboardSession(session: DashboardSession): Promise<string> {
   const token = crypto.randomBytes(32).toString('hex');
-  await redis.set(key(token), JSON.stringify({ ...session, issuedAt: Date.now() }), 'EX', DASHBOARD_SESSION_TTL_SECONDS);
+  await redis.set(key(token), JSON.stringify({ ...session, issuedAt: Date.now() }), 'EX', dashboardSessionTtlSeconds(session.role));
   return token;
 }
 

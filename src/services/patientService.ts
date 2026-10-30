@@ -1,4 +1,6 @@
 import bcrypt from 'bcrypt';
+import { clearLockout } from './pinLockout';
+import { revokeSessionsFor } from './sessionRevocation';
 import { Patient, Sex } from '@prisma/client';
 import { prisma } from '../db/prisma';
 import { recordAuditEvent } from './auditService';
@@ -159,9 +161,34 @@ export async function verifyPatientPin(patient: Patient, pin: string): Promise<b
   return isValid;
 }
 
-export async function setPatientPin(patientId: string, pin: string): Promise<void> {
+/**
+ * Sets a patient's PIN after they proved who they are with a one-time code:
+ * an SMS code (`SMS_CODE`) or a code front desk showed them after ringing
+ * their phone in front of them (`IN_PERSON_CODE`). Either way the phone is
+ * now verified. Also lifts any wrong-PIN lockout, logs out every existing
+ * session (the old PIN may be what someone else was using) and writes the
+ * audit row for the PIN change itself.
+ */
+export async function setPatientPin(patientId: string, pin: string, via: 'SMS_CODE' | 'IN_PERSON_CODE'): Promise<void> {
   const pinHash = await bcrypt.hash(pin, env.STAFF_PIN_SALT_ROUNDS);
-  await prisma.patient.update({ where: { id: patientId }, data: { pinHash } });
+  const patient = await prisma.patient.findUniqueOrThrow({ where: { id: patientId }, select: { phoneVerifiedAt: true } });
+  await prisma.patient.update({
+    where: { id: patientId },
+    data: {
+      pinHash,
+      ...(patient.phoneVerifiedAt ? {} : { phoneVerifiedAt: new Date(), phoneVerifiedVia: via === 'SMS_CODE' ? 'SMS' : 'IN_PERSON' }),
+    },
+  });
+  await clearLockout(`patient:${patientId}`);
+  await revokeSessionsFor(`patient:${patientId}`);
+  await recordAuditEvent({
+    actorType: 'PATIENT',
+    actorId: patientId,
+    action: 'PATIENT_PIN_CHANGED',
+    entityType: 'Patient',
+    entityId: patientId,
+    metadata: { via },
+  });
 }
 
 export async function hasActiveDataSharingConsent(patientId: string): Promise<boolean> {
