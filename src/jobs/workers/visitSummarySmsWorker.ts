@@ -1,7 +1,7 @@
 import { Worker } from 'bullmq';
 import { redisQueueConnection } from '../../config/redis';
 import { prisma } from '../../db/prisma';
-import { smsClient } from '../../config/africastalking';
+import { sendPatientSms } from '../../services/smsService';
 import { logger } from '../../utils/logger';
 import { formatKenyaDate } from '../../utils/kenyaTime';
 import { buildVisitSummarySms } from '../../services/smsTemplates';
@@ -39,7 +39,9 @@ export function startVisitSummarySmsWorker(): Worker<VisitSummarySmsJobData> {
         prescription: encounter.prescription,
       });
 
-      await smsClient.send({ to: [encounter.patient.phoneNumber], message });
+      const outcome = await sendPatientSms(encounter.patient, message, { purpose: 'VISIT_SUMMARY' });
+      // Throwing lets the queue retry (3 tries) when Africa's Talking fails.
+      if (outcome === 'failed') throw new Error('Visit summary SMS failed');
     },
     { connection: redisQueueConnection },
   );

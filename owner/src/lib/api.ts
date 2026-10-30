@@ -83,6 +83,14 @@ export class ApiError extends Error {
   }
 }
 
+export interface SmsHealth {
+  failing: boolean;
+  consecutiveFailures: number;
+  failingSince: string | null;
+  lastSuccessAt: string | null;
+  threshold: number;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api/owner${path}`, {
     credentials: 'include',
@@ -119,6 +127,9 @@ export const api = {
   },
   overview() {
     return request<Overview>('/overview');
+  },
+  smsHealth() {
+    return request<SmsHealth>('/overview/sms-health');
   },
   clinics(q?: string) {
     return request<{ clinics: ClinicListItem[] }>(`/clinics${qs({ q })}`);

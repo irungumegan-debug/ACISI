@@ -2,9 +2,8 @@ import crypto from 'node:crypto';
 import dayjs from 'dayjs';
 import { Patient, Prisma, Sex } from '@prisma/client';
 import { prisma } from '../db/prisma';
-import { smsClient } from '../config/africastalking';
+import { sendSms } from './smsService';
 import { CONSENT_VERSION } from '../config/constants';
-import { logger } from '../utils/logger';
 import { InvalidPhoneNumberError, toE164 } from '../utils/phone';
 import { recordAuditEvent } from './auditService';
 import { findPatientByPhone, registerPatient } from './patientService';
@@ -240,26 +239,15 @@ async function findOrCreatePatient(
 }
 
 /**
- * Africa's Talking resolves even when it rejects a recipient (bad number,
- * no credit, blacklisted), reporting it per recipient instead. Treat the
- * send as failed unless a recipient was actually accepted.
- */
-function smsWasAccepted(response: unknown): boolean {
-  const recipients = (response as { SMSMessageData?: { Recipients?: { status?: string; statusCode?: number }[] } })
-    ?.SMSMessageData?.Recipients;
-  if (!Array.isArray(recipients)) return true;
-  return recipients.some((r) => r.status === 'Success' || (r.statusCode !== undefined && r.statusCode >= 100 && r.statusCode <= 102));
-}
-
-/**
  * Sends the one-off "check in from home next time" invite. Only ever called
  * after the patient's SMS consent has been recorded. Never throws: a failed
  * SMS must not undo or block the check-in, it's just reported back.
  */
 async function sendWalkInInvite(patient: Patient, clinicName: string, staffId: string): Promise<WalkInSmsOutcome> {
-  try {
-    const response = await smsClient.send({ to: [patient.phoneNumber], message: buildWalkInInviteSms(clinicName) });
-    if (!smsWasAccepted(response)) throw new Error('SMS rejected by provider');
+  // Sent only straight after the patient agreed to SMS from the clinic at
+  // the desk (which also clears any earlier "does not want SMS").
+  const outcome = await sendSms(patient.phoneNumber, buildWalkInInviteSms(clinicName), 'WALK_IN_INVITE');
+  if (outcome === 'sent') {
     await recordAuditEvent({
       actorType: 'STAFF',
       actorId: staffId,
@@ -268,11 +256,8 @@ async function sendWalkInInvite(patient: Patient, clinicName: string, staffId: s
       entityType: 'Patient',
       entityId: patient.id,
     });
-    return 'sent';
-  } catch (err) {
-    logger.error({ err, patientId: patient.id }, 'Failed to send walk-in invite SMS');
-    return 'failed';
   }
+  return outcome;
 }
 
 /**

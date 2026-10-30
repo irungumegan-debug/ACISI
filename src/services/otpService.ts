@@ -1,11 +1,19 @@
 import bcrypt from 'bcrypt';
 import { prisma } from '../db/prisma';
-import { smsClient } from '../config/africastalking';
+import { sendPatientSms, sendSms } from './smsService';
 import { logger } from '../utils/logger';
 import { recordAuditEvent } from './auditService';
 import { OTP_MAX_VERIFY_ATTEMPTS, OTP_TTL_SECONDS } from '../config/constants';
 import { generateOtpCode } from '../utils/idCodes';
 import { Patient, Staff } from '@prisma/client';
+
+/** The code could not be sent by SMS (Africa's Talking down or the number rejected). */
+export class SmsNotSentError extends Error {
+  constructor() {
+    super('The code could not be sent by SMS');
+    this.name = 'SmsNotSentError';
+  }
+}
 
 /**
  * Generates a PIN-reset OTP, stores its hash, and sends it by SMS. This is
@@ -25,14 +33,15 @@ export async function requestPinResetOtp(patient: Patient): Promise<void> {
     },
   });
 
-  try {
-    await smsClient.send({
-      to: [patient.phoneNumber],
-      message: `Your ACISI PIN reset code is ${code}. It expires in ${Math.round(OTP_TTL_SECONDS / 60)} minutes. Do not share it with anyone.`,
-    });
-  } catch (err) {
-    logger.error({ err, patientId: patient.id }, 'Failed to send PIN reset OTP SMS');
-    throw err;
+  // Essential: goes even to patients who don't want clinic SMS.
+  const outcome = await sendPatientSms(
+    patient,
+    `Your ACISI PIN reset code is ${code}. It expires in ${Math.round(OTP_TTL_SECONDS / 60)} minutes. Do not share it with anyone.`,
+    { purpose: 'PIN_RESET_CODE', essential: true },
+  );
+  if (outcome !== 'sent') {
+    logger.error({ patientId: patient.id, outcome }, 'Failed to send PIN reset OTP SMS');
+    throw new SmsNotSentError();
   }
 
   await recordAuditEvent({
@@ -88,14 +97,14 @@ export async function requestStaffPinResetOtp(staff: Staff): Promise<void> {
     },
   });
 
-  try {
-    await smsClient.send({
-      to: [staff.phoneNumber],
-      message: `Your ACISI staff PIN reset code is ${code}. It expires in ${Math.round(OTP_TTL_SECONDS / 60)} minutes. Do not share it with anyone.`,
-    });
-  } catch (err) {
-    logger.error({ err, staffId: staff.id }, 'Failed to send staff PIN reset OTP SMS');
-    throw err;
+  const outcome = await sendSms(
+    staff.phoneNumber,
+    `Your ACISI staff PIN reset code is ${code}. It expires in ${Math.round(OTP_TTL_SECONDS / 60)} minutes. Do not share it with anyone.`,
+    'STAFF_PIN_RESET_CODE',
+  );
+  if (outcome !== 'sent') {
+    logger.error({ staffId: staff.id }, 'Failed to send staff PIN reset OTP SMS');
+    throw new SmsNotSentError();
   }
 
   await recordAuditEvent({

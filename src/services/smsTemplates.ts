@@ -166,3 +166,24 @@ export function buildVisitSummarySms(input: {
   const summary = `${clinic}\nVisit: ${input.date}\nMedicines: ${medicines}\nThank you for visiting.`;
   return appendIfNoExtraPart(summary, '\n', PRIVACY_NOTICE_SMS_LINE);
 }
+
+const KENYA_OFFSET_MS = 3 * 60 * 60 * 1000;
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * Appointment reminder, sent the day before for confirmed appointments:
+ * "ACISI: Reminder of your appointment at Sunrise Family Clinic on Fri 31
+ * Oct at 10:00." Clinic, day and time only: no department, no reason, no
+ * health details. Always one SMS (the clinic name is shortened if needed).
+ */
+export function buildAppointmentReminderSms(input: { clinicName: string; scheduledFor: Date }): string {
+  const k = new Date(input.scheduledFor.getTime() + KENYA_OFFSET_MS);
+  const when = `${WEEKDAYS[k.getUTCDay()]} ${k.getUTCDate()} ${MONTHS[k.getUTCMonth()]} at ${String(k.getUTCHours()).padStart(2, '0')}:${String(k.getUTCMinutes()).padStart(2, '0')}`;
+  const before = 'ACISI: Reminder of your appointment at ';
+  const after = ` on ${when}.`;
+  const room = SINGLE_SMS_MAX_CHARS - before.length - after.length;
+  let name = toSmsSafe(input.clinicName) || 'the clinic';
+  if (name.length > room) name = name.slice(0, room - 3).trimEnd() + '...';
+  return `${before}${name}${after}`;
+}

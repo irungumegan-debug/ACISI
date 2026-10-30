@@ -60,10 +60,11 @@ export async function sendSms(to: string, message: string, purpose: string): Pro
   try {
     const response = await smsClient.send({ to: [to], message });
     if (!smsWasAccepted(response)) throw new Error('Recipient rejected by SMS provider');
-    await noteSuccess();
+    // Health tracking runs in the background: it never delays or breaks a send.
+    void noteSuccess();
     return 'sent';
   } catch (err) {
-    await noteFailure();
+    void noteFailure();
     logger.error({ err, purpose }, 'SMS send failed');
     return 'failed';
   }

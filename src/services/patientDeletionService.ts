@@ -1,8 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../db/prisma';
-import { smsClient } from '../config/africastalking';
+import { sendSms } from './smsService';
 import { CONSENT_VERSION } from '../config/constants';
-import { logger } from '../utils/logger';
 import { recordAuditEvent } from './auditService';
 import { revokeSessionsFor } from './sessionRevocation';
 
@@ -131,16 +130,12 @@ export async function deletePatientAccount(patientId: string, actor: PatientDele
     metadata: { channel },
   });
 
-  // Best-effort: the deletion has already happened, and this is the last
-  // time the real number is ever used.
-  try {
-    await smsClient.send({
-      to: [original.phoneNumber],
-      message:
-        'ACISI: Your account has been deleted and your personal details removed. ' +
-        'To use ACISI again, simply register as a new patient.',
-    });
-  } catch (err) {
-    logger.error({ err, patientId }, 'Failed to send account deletion confirmation SMS');
-  }
+  // Best-effort and essential (goes even if they had opted out): the
+  // deletion has already happened, and this is the last time the real
+  // number is ever used.
+  await sendSms(
+    original.phoneNumber,
+    'ACISI: Your account has been deleted and your personal details removed. To use ACISI again, simply register as a new patient.',
+    'ACCOUNT_DELETED',
+  );
 }

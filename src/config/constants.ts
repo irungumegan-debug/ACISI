@@ -68,3 +68,6 @@ export const SMS_FAILURE_WARNING_THRESHOLD = 3;
 export const ONE_TIME_CODE_TTL_SECONDS = 10 * 60;
 /** Wrong tries allowed on one such code before it stops working. */
 export const ONE_TIME_CODE_MAX_ATTEMPTS = 5;
+
+/** Appointment reminder SMS go out the day before, from this hour (Kenya time). */
+export const APPOINTMENT_REMINDER_HOUR = 9;

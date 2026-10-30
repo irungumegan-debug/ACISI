@@ -100,3 +100,20 @@ export async function scheduleCheckInPaymentSweep(): Promise<void> {
 export async function scheduleClinicStkStatusCheck(data: ClinicStkStatusCheckJobData): Promise<void> {
   await clinicStkStatusCheckQueue.add('check-clinic-stk', data, { delay: 90_000, attempts: 2, backoff: { type: 'fixed', delay: 15_000 } });
 }
+
+/** The hourly housekeeping job carries no data. */
+export type MaintenanceJobData = Record<string, never>;
+
+/** Hourly housekeeping: appointment reminders, expired pending signups, unpaid-fee notices (see maintenanceWorker). */
+export const maintenanceQueue = new Queue<MaintenanceJobData>('maintenance', {
+  connection: redisQueueConnection,
+});
+
+/**
+ * Starts (or keeps — an idempotent upsert, safe on every boot) the hourly
+ * housekeeping run, on the hour in Kenya time, so the 09:00 appointment
+ * reminders go out at 09:00.
+ */
+export async function scheduleHourlyMaintenance(): Promise<void> {
+  await maintenanceQueue.upsertJobScheduler('hourly-maintenance', { pattern: '0 * * * *', tz: 'Africa/Nairobi' }, { name: 'hourly', data: {} });
+}
