@@ -53,6 +53,9 @@ const ROW = {
   encounter: null,
 };
 
+// A made-up till: whatever is set on the server must never reach a patient.
+(env as { MPESA_TILL_NUMBER?: string }).MPESA_TILL_NUMBER = '5123456';
+
 beforeEach(() => {
   jest.clearAllMocks();
   (loadPatientSession as jest.Mock).mockResolvedValue({
@@ -64,11 +67,12 @@ beforeEach(() => {
 });
 
 describe('"Resend prompt" on the check-in screen (C20)', () => {
-  it("the check-in screen says how many resends are left, and never shows ACISI's till number", async () => {
+  it("the check-in screen says how many resends are left, and never shows ACISI's shortcode or till number", async () => {
     const res = await withCookie(request(buildApp()).get('/checkin/ci-1'));
     expect(res.status).toBe(200);
     expect(res.body.promptResend).toEqual({ resendsLeft: 2, availableAt: null });
     expect(JSON.stringify(res.body)).not.toContain(env.MPESA_SHORTCODE);
+    expect(JSON.stringify(res.body)).not.toContain('5123456');
   });
 
   it('a prompt still live on the phone: the button works from a minute after it was sent', async () => {
@@ -96,6 +100,7 @@ describe('"Resend prompt" on the check-in screen (C20)', () => {
     expect(resendCheckInPrompt).toHaveBeenCalledWith('ci-1', 'patient-1');
     expect(res.body).toMatchObject({ checkInId: 'ci-1', resendStatus: 'PENDING_PAYMENT' });
     expect(JSON.stringify(res.body)).not.toContain(env.MPESA_SHORTCODE);
+    expect(JSON.stringify(res.body)).not.toContain('5123456');
   });
 
   it('passes on the reason a resend was refused', async () => {

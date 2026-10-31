@@ -133,11 +133,18 @@ Nothing here prints a key.
    MPESA_ENV=production
    MPESA_CONSUMER_KEY=<live key>
    MPESA_CONSUMER_SECRET=<live secret>
-   MPESA_SHORTCODE=<store / head-office number>
+   MPESA_SHORTCODE=<the shortcode named in Safaricom's passkey email>
    MPESA_TILL_NUMBER=<till number>
+   CHECKIN_FEE_AMOUNT_KES=100
    MPESA_PASSKEY=<live passkey>
    MPESA_CALLBACK_URL=https://acisi.co.ke/api/mpesa/callback
    ```
+   With `MPESA_ENV=production` the app **refuses to start** (and the log
+   says which setting) if `MPESA_TILL_NUMBER` is missing or equals
+   `MPESA_SHORTCODE`, if `MPESA_SHORTCODE` is the sandbox code, if the
+   callback is not `https://`, or if `CHECKIN_FEE_AMOUNT_KES` is below 50.
+   After a restart, `sudo journalctl -u acisi -n 30 --no-pager | grep -A8 "Invalid environment"`
+   shows the reason.
    There is no base-URL setting: `MPESA_ENV=production` selects
    `https://api.safaricom.co.ke`. Clinic checkout prompts switch off by
    themselves on a production server.

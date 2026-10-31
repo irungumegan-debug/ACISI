@@ -94,13 +94,52 @@ const envSchema = z.object({
 
 export type Env = z.infer<typeof envSchema>;
 
-function loadEnv(): Env {
-  const parsed = envSchema.safeParse(process.env);
-  if (!parsed.success) {
-    const issues = parsed.error.issues.map((i) => `  - ${i.path.join('.')}: ${i.message}`).join('\n');
-    throw new Error(`Invalid environment configuration:\n${issues}`);
+/** Safaricom's public sandbox shortcode: never valid on a live server. */
+const DARAJA_SANDBOX_SHORTCODE = '174379';
+/** The lowest check-in fee a live server will start with (catches a leftover test value such as 1). */
+export const MIN_LIVE_CHECKIN_FEE_KES = 50;
+
+/**
+ * Extra rules for a live server (MPESA_ENV=production). ACISI's check-in
+ * fee is taken by Buy Goods only, so a live server must have a till and can
+ * never fall back to Paybill. Returns one message per problem; the app
+ * refuses to start if there are any. Messages name settings, never values.
+ */
+export function productionMpesaProblems(e: Env): string[] {
+  if (e.MPESA_ENV !== 'production') return [];
+  const problems: string[] = [];
+  if (!e.MPESA_TILL_NUMBER) {
+    problems.push('MPESA_TILL_NUMBER: required when MPESA_ENV=production (check-in fees are paid by Buy Goods to the till)');
+  } else if (e.MPESA_TILL_NUMBER === e.MPESA_SHORTCODE.trim()) {
+    problems.push(
+      'MPESA_TILL_NUMBER: must not be the same as MPESA_SHORTCODE (MPESA_SHORTCODE is the shortcode the passkey was issued for; the till goes in MPESA_TILL_NUMBER)',
+    );
   }
-  return parsed.data;
+  if (e.MPESA_SHORTCODE.trim() === DARAJA_SANDBOX_SHORTCODE) {
+    problems.push("MPESA_SHORTCODE: is Safaricom's sandbox test shortcode; set the live shortcode the production passkey was issued for");
+  }
+  if (!e.MPESA_CALLBACK_URL.startsWith('https://')) {
+    problems.push('MPESA_CALLBACK_URL: must start with https:// when MPESA_ENV=production');
+  }
+  if (e.CHECKIN_FEE_AMOUNT_KES < MIN_LIVE_CHECKIN_FEE_KES) {
+    problems.push(`CHECKIN_FEE_AMOUNT_KES: must be at least ${MIN_LIVE_CHECKIN_FEE_KES} when MPESA_ENV=production (is a test value still set?)`);
+  }
+  return problems;
+}
+
+export function parseEnv(source: NodeJS.ProcessEnv): Env {
+  const parsed = envSchema.safeParse(source);
+  const issues = parsed.success
+    ? productionMpesaProblems(parsed.data)
+    : parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`);
+  if (issues.length > 0) {
+    throw new Error(`Invalid environment configuration:\n${issues.map((i) => `  - ${i}`).join('\n')}`);
+  }
+  return (parsed as { data: Env }).data;
+}
+
+function loadEnv(): Env {
+  return parseEnv(process.env);
 }
 
 export const env = loadEnv();

@@ -12,3 +12,4 @@ export function legalBoxSatisfied(required: boolean | null, ticked: boolean): bo
 
 export const PRIVACY_PATH = '/privacy';
 export const TERMS_PATH = '/terms';
+export const CONFIDENTIALITY_UNDERTAKING_PATH = '/confidentiality-undertaking';

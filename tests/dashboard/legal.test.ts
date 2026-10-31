@@ -91,7 +91,7 @@ describe('confidentiality undertaking for staff who joined before it existed (C1
     mockFindAcceptance.mockImplementation(termsDone);
     const res = await withCookie(request(buildApp()).get('/legal'));
     expect(res.body).toMatchObject({ termsAcceptanceRequired: true, termsRequired: false, confidentialityRequired: true });
-    expect(res.body.confidentialityText).toEqual(expect.any(String));
+    expect(res.body.confidentialityUrl).toBe('/confidentiality-undertaking');
   });
 
   it('cannot continue without ticking it', async () => {

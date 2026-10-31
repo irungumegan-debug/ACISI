@@ -60,6 +60,11 @@ const OTHER_PAGES: Readonly<Record<string, PageSeo>> = {
     description: 'Log in to ACISI as a patient, doctor or clinic staff member.',
     index: true,
   },
+  '/confidentiality-undertaking': {
+    title: 'Confidentiality Undertaking – ACISI',
+    description: 'The confidentiality undertaking signed by everyone given access to ACISI: ACISI staff, doctors, clinicians, receptionists and clinic administrators.',
+    index: true,
+  },
   '/signup': {
     title: 'Sign up – ACISI',
     description: 'Create an ACISI account as a patient, or register your clinic.',

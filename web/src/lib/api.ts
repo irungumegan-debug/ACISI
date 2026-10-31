@@ -98,9 +98,6 @@ export interface SharingOverview {
 
 export const api = {
   // ---- Clinics ----
-  confidentialityUndertaking() {
-    return request<{ text: string; version: string }>('/clinics/confidentiality-undertaking');
-  },
 
   listClinics() {
     return request<{ clinics: ClinicListItem[] }>('/clinics');

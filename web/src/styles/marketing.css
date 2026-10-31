@@ -2317,7 +2317,7 @@ a.contact-card:hover {
 .legal-doc a:hover {
   color: var(--navy-900);
 }
-.legal-doc p:last-child {
+.legal-doc--dated p:last-child {
   margin-top: 40px;
   padding-top: 20px;
   border-top: 1px solid var(--cream-200);

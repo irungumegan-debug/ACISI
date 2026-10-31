@@ -4,7 +4,7 @@ import type { LucideIcon } from 'lucide-react';
 import { BarChart3, CalendarDays, ClipboardList, LogOut, Menu, ScrollText, Settings, UserRound, UsersRound, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api, ApiError, LegalStatus } from '../lib/api';
-import { legalBoxSatisfied, PRIVACY_PATH, TERMS_PATH } from '../lib/legal';
+import { CONFIDENTIALITY_UNDERTAKING_PATH, legalBoxSatisfied, PRIVACY_PATH, TERMS_PATH } from '../lib/legal';
 import { Avatar, btn, LogoMark, Skeleton } from './ui';
 
 interface NavItem {
@@ -177,7 +177,18 @@ function AcceptTermsCard({ onAccepted, legal }: { onAccepted: () => void; legal:
       {confidentialityRequired && (
         <div className="mt-5 rounded-xl bg-cream-100 p-3.5 text-[15px] text-ink-700 ring-1 ring-slate-200">
           <p className="font-semibold text-navy-900">ACISI Confidentiality Undertaking</p>
-          <p className="mt-2 whitespace-pre-wrap">{legal?.confidentialityText}</p>
+          <p className="mt-2">
+            Everyone with access to ACISI signs this undertaking.{' '}
+            <a
+              href={CONFIDENTIALITY_UNDERTAKING_PATH}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-semibold text-navy-900 underline underline-offset-2"
+            >
+              Read the full undertaking
+            </a>{' '}
+            (opens in a new tab).
+          </p>
           <label className="mt-3 flex items-start gap-3">
             <input
               type="checkbox"
@@ -186,7 +197,13 @@ function AcceptTermsCard({ onAccepted, legal }: { onAccepted: () => void; legal:
               onChange={(e) => setConfidentialityTicked(e.target.checked)}
               className="mt-0.5 h-5 w-5 shrink-0 accent-navy-900"
             />
-            <span>I have read and agree to the ACISI Confidentiality Undertaking.</span>
+            <span>
+              I have read and agree to the{' '}
+              <a href={CONFIDENTIALITY_UNDERTAKING_PATH} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">
+                ACISI Confidentiality Undertaking
+              </a>
+              .
+            </span>
           </label>
         </div>
       )}

@@ -24,6 +24,7 @@ export function App() {
               <Route path="/contact" element={<ContactPage />} />
               <Route path="/privacy" element={<LegalPage document="privacy" />} />
               <Route path="/terms" element={<LegalPage document="terms" />} />
+              <Route path="/confidentiality-undertaking" element={<LegalPage document="confidentiality" />} />
             </Route>
             <Route path="/signup" element={<SignupPage />} />
             <Route path="/login" element={<LoginPage />} />
