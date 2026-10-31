@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, ApiError, PatientIdentity, PatientSession } from '../lib/api';
 import { EMPTY_IDENTITY, IdentityFields } from '../components/IdentityFields';
@@ -6,7 +6,7 @@ import { usePatientAuth } from '../context/PatientAuthContext';
 import { AuthShell, RoleCard } from '../components/AuthShell';
 import { Check, Plus, X } from 'lucide-react';
 import { CODE_PATTERN, cleanName, nameKey, SUGGESTED_DEPARTMENTS, suggestCode } from '../lib/departments';
-import { legalBoxSatisfied, PRIVACY_PATH, TERMS_PATH } from '../lib/legal';
+import { CONFIDENTIALITY_UNDERTAKING_PATH, legalBoxSatisfied, PRIVACY_PATH, TERMS_PATH } from '../lib/legal';
 
 /** Required "accept the Terms and Privacy Notice" box for patient and clinic signup. Links open in a new tab so the form isn't lost. */
 function AcceptLegalCheckbox({ checked, onChange }: { checked: boolean; onChange: (checked: boolean) => void }) {
@@ -28,24 +28,24 @@ function AcceptLegalCheckbox({ checked, onChange }: { checked: boolean; onChange
   );
 }
 
-/** Required confidentiality undertaking for everyone who will have access to patient data (staff, doctors, the clinic admin). */
+/**
+ * Required confidentiality undertaking for everyone who will have access to
+ * patient data (staff, doctors, the clinic admin). The full text opens in a
+ * new tab, so nothing typed into the form is lost. Accepting it is recorded
+ * with the version, date and time.
+ */
 function ConfidentialityCheckbox({ checked, onChange }: { checked: boolean; onChange: (checked: boolean) => void }) {
-  const [text, setText] = useState<string | null>(null);
-  useEffect(() => {
-    api
-      .confidentialityUndertaking()
-      .then((res) => setText(res.text))
-      .catch(() => setText(null));
-  }, []);
   return (
-    <div className="legal-check" style={{ display: 'block' }}>
-      <p style={{ fontWeight: 600, marginBottom: 6 }}>ACISI Confidentiality Undertaking</p>
-      <p style={{ fontSize: 13, whiteSpace: 'pre-wrap', marginBottom: 8 }}>{text ?? 'Loading…'}</p>
-      <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-        <input type="checkbox" required checked={checked} onChange={(e) => onChange(e.target.checked)} disabled={!text} />
-        <span>I have read and agree to the ACISI Confidentiality Undertaking.</span>
-      </label>
-    </div>
+    <label className="legal-check">
+      <input type="checkbox" required checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      <span>
+        I have read and agree to the{' '}
+        <a href={CONFIDENTIALITY_UNDERTAKING_PATH} target="_blank" rel="noopener noreferrer">
+          ACISI Confidentiality Undertaking
+        </a>
+        .
+      </span>
+    </label>
   );
 }
 

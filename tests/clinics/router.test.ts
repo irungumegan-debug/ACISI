@@ -199,9 +199,9 @@ describe('confidentiality undertaking and admin email at clinic registration (C1
     expect(registerClinic).toHaveBeenCalledWith(expect.objectContaining({ acceptedConfidentialityUndertaking: true, adminEmail: 'lisa@sunrise.co.ke' }));
   });
 
-  it('serves the undertaking text publicly for the signup forms', async () => {
+  it('tells the signup forms where the full undertaking is published, and its version', async () => {
     const res = await request(buildApp()).get('/clinics/confidentiality-undertaking');
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ text: expect.any(String), version: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) });
+    expect(res.body).toEqual({ url: '/confidentiality-undertaking', version: '2026-10-31' });
   });
 });

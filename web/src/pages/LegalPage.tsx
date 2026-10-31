@@ -1,16 +1,18 @@
 import privacyMarkdown from '../content/privacy.md?raw';
 import termsMarkdown from '../content/terms.md?raw';
-import { inlineText, parseLegalMarkdown } from '../lib/legalMarkdown';
+import confidentialityMarkdown from '../content/confidentiality.md?raw';
+import { inlineText, parseLegalMarkdown, toPlainText } from '../lib/legalMarkdown';
 import { LegalText } from '../components/LegalText';
 import { Watermark } from '../components/Watermark';
 
 const DOCUMENTS = {
   privacy: parseLegalMarkdown(privacyMarkdown),
   terms: parseLegalMarkdown(termsMarkdown),
+  confidentiality: parseLegalMarkdown(confidentialityMarkdown),
 };
 
 /**
- * /privacy and /terms: the approved documents in web/src/content/, word for
+ * /privacy, /terms and /confidentiality-undertaking: the approved documents in web/src/content/, word for
  * word (tests/web/legal.test.ts checks the rendered text against the files).
  * The document's own "# " title becomes the page title; everything after it,
  * including the closing "Last updated" line, follows in order.
@@ -18,6 +20,8 @@ const DOCUMENTS = {
 export function LegalPage({ document }: { document: keyof typeof DOCUMENTS }) {
   const [title, ...body] = DOCUMENTS[document];
   const titleId = `${document}-title`;
+  // Privacy and Terms end with a "Last updated" line, set apart as a footnote; the undertaking ends with its contact section.
+  const dated = /^Last updated:/.test(toPlainText(body.slice(-1)));
 
   return (
     <div>
@@ -32,7 +36,7 @@ export function LegalPage({ document }: { document: keyof typeof DOCUMENTS }) {
       </section>
 
       <section className="band band-light legal-band">
-        <article className="container legal-doc">
+        <article className={`container legal-doc${dated ? ' legal-doc--dated' : ''}`}>
           <LegalText blocks={body} />
         </article>
       </section>

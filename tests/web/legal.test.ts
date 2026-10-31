@@ -4,7 +4,13 @@ import path from 'path';
 import { autolink, lastUpdatedVersion, parseLegalMarkdown, toMarkdown, toPlainText } from '../../web/src/lib/legalMarkdown';
 import { legalBoxSatisfied } from '../../web/src/lib/legal';
 import { legalBoxSatisfied as consoleLegalBoxSatisfied } from '../../dashboard/src/lib/legal';
-import { PRIVACY_NOTICE_VERSION, TERMS_OF_SERVICE_VERSION } from '../../src/config/legal';
+import {
+  CONFIDENTIALITY_UNDERTAKING_CHECKBOX,
+  CONFIDENTIALITY_UNDERTAKING_PATH,
+  CONFIDENTIALITY_UNDERTAKING_VERSION,
+  PRIVACY_NOTICE_VERSION,
+  TERMS_OF_SERVICE_VERSION,
+} from '../../src/config/legal';
 import { SITE_URL, SITEMAP_PAGES, seoForPath } from '../../web/src/lib/seo';
 
 const root = path.join(__dirname, '../..');
@@ -112,4 +118,52 @@ describe.each([
     expect(satisfied(null, false)).toBe(false);
     expect(satisfied(null, true)).toBe(false);
   });
+});
+
+describe('Confidentiality Undertaking (C19)', () => {
+  const file = 'web/src/content/confidentiality.md';
+  const markdown = read(file);
+  const blocks = parseLegalMarkdown(markdown);
+
+  /** The text as supplied by ACISI, word for word (line breaks aside). */
+  const SUPPLIED =
+    "Confidentiality Undertaking Who signs this undertaking: Everyone who is given access to ACISI signs this undertaking. This includes the founder of ACISI Healthcare; any staff member of ACISI Healthcare; and clinic users of ACISI: doctors, clinicians, receptionists and clinic administrators. " +
+    "1. What is confidential: All personal data held in ACISI is confidential. This includes patients' names, phone numbers and identity details; visit records, diagnoses and prescriptions; payment details; staff account details; and login details, including staff codes and PINs. " +
+    '2. My undertaking: I undertake that I will: (a) access patient information only when I need it for my role; (b) keep my staff code and PIN private, and never let anyone else use my account; (c) log out, or lock the screen, whenever I leave a device; ' +
+    "(d) not copy, photograph, screenshot, print, download or send patient information, except where this is needed for the patient's care or the clinic's administration and is allowed by my clinic or by ACISI; " +
+    "(e) not discuss patient information with anyone who does not need it for the patient's care, including family, friends and on social media; and (f) report any suspected loss, misuse or unauthorised access immediately to my clinic administrator (if I work at a clinic) and to ACISI's Data Protection Officer. " +
+    '3. Monitoring: Access to patient records in ACISI is recorded in an audit log, which may be reviewed to investigate misuse. ' +
+    '4. Duration: This undertaking continues to apply after I leave the clinic or ACISI, or after my ACISI account is closed. ' +
+    '5. Consequences of a breach: Breaking this undertaking may lead to removal of my access to ACISI, action by my employer, and liability under the Data Protection Act, 2019 and other laws of Kenya. ' +
+    '6. Contact: Data Protection Officer: Megan Irungu, ACISI Healthcare. Email: acisi.help@gmail.com';
+
+  it('is the approved text, byte for byte (change the file, the version and this hash together)', () => {
+    expect(crypto.createHash('sha256').update(fs.readFileSync(path.join(root, file))).digest('hex')).toBe(
+      '66142004a56ddb398a2a9f89831efb4c7f6e9554544626743bb54273b915f049',
+    );
+    expect(CONFIDENTIALITY_UNDERTAKING_VERSION).toBe('2026-10-31');
+  });
+
+  it('the page shows the supplied wording, word for word, and no placeholder', () => {
+    const shown = toPlainText(blocks).split(/\s+/).join(' ');
+    expect(shown).toBe(SUPPLIED);
+    expect(markdown).not.toMatch(/placeholder/i);
+    expect(toMarkdown(blocks)).toBe(markdown);
+  });
+
+  it('is published at /confidentiality-undertaking, linked from the footer, and indexable', () => {
+    expect(CONFIDENTIALITY_UNDERTAKING_PATH).toBe('/confidentiality-undertaking');
+    expect(read('web/src/App.tsx')).toContain('<Route path="/confidentiality-undertaking" element={<LegalPage document="confidentiality" />} />');
+    expect(read('web/src/layouts/MarketingLayout.tsx')).toContain('<Link to="/confidentiality-undertaking">Confidentiality Undertaking</Link>');
+    expect(seoForPath('/confidentiality-undertaking')).toMatchObject({ index: true, title: 'Confidentiality Undertaking – ACISI' });
+  });
+
+  it.each(['web/src/pages/SignupPage.tsx', 'dashboard/src/components/ProtectedLayout.tsx'])(
+    'the tick-box in %s reads "I have read and agree to the ACISI Confidentiality Undertaking." and links to the full text',
+    (component) => {
+      const source = read(component);
+      expect(CONFIDENTIALITY_UNDERTAKING_CHECKBOX).toBe('I have read and agree to the ACISI Confidentiality Undertaking.');
+      expect(source).toMatch(/I have read and agree to the\{' '\}\s*<a href=\{CONFIDENTIALITY_UNDERTAKING_PATH\}[^>]*target="_blank"[^>]*>\s*ACISI Confidentiality Undertaking\s*<\/a>\s*\./);
+    },
+  );
 });

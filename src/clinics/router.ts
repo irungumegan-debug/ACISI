@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { CONFIDENTIALITY_UNDERTAKING_TEXT, CONFIDENTIALITY_UNDERTAKING_VERSION } from '../config/legal';
+import { CONFIDENTIALITY_UNDERTAKING_PATH, CONFIDENTIALITY_UNDERTAKING_VERSION } from '../config/legal';
 import { z } from 'zod';
 import { InvalidPhoneNumberError, toE164 } from '../utils/phone';
 import { pinPolicyError } from '../utils/pinPolicy';
@@ -62,9 +62,9 @@ const registerSchema = z.object({
   acceptLegal: z.boolean().optional(),
 });
 
-/** The staff confidentiality undertaking, shown on the staff and clinic signup forms. Public: no patient data. */
+/** Where the staff confidentiality undertaking is published, and its version. Public: no patient data. */
 clinicsRouter.get('/confidentiality-undertaking', (_req, res) => {
-  res.json({ text: CONFIDENTIALITY_UNDERTAKING_TEXT, version: CONFIDENTIALITY_UNDERTAKING_VERSION });
+  res.json({ url: CONFIDENTIALITY_UNDERTAKING_PATH, version: CONFIDENTIALITY_UNDERTAKING_VERSION });
 });
 
 /**

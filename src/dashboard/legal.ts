@@ -8,7 +8,7 @@ import {
   staffNeedsTermsAcceptance,
 } from '../services/legalService';
 import { recordAuditEvent } from '../services/auditService';
-import { CONFIDENTIALITY_UNDERTAKING_TEXT } from '../config/legal';
+import { CONFIDENTIALITY_UNDERTAKING_PATH } from '../config/legal';
 
 export const legalRouter = Router();
 
@@ -24,7 +24,7 @@ async function status(staffId: string) {
     termsAcceptanceRequired: termsRequired || confidentialityRequired,
     termsRequired,
     confidentialityRequired,
-    confidentialityText: CONFIDENTIALITY_UNDERTAKING_TEXT,
+    confidentialityUrl: CONFIDENTIALITY_UNDERTAKING_PATH,
     versions: CURRENT_LEGAL_VERSIONS,
   };
 }

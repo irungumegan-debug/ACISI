@@ -10,7 +10,13 @@ describe('confidentiality undertaking tick box', () => {
 
   it.each(['web/src/pages/SignupPage.tsx', 'dashboard/src/components/ProtectedLayout.tsx'])('%s shows exactly that wording', (file) => {
     const source = fs.readFileSync(path.join(__dirname, '../..', file), 'utf8');
-    expect(source).toContain(CONFIDENTIALITY_UNDERTAKING_CHECKBOX);
+    // What the reader sees: the tags of the link to the full text removed.
+    const visible = source
+      .replace(/\{' '\}/g, ' ')
+      .replace(/<\/?a\b[^>]*>/g, '')
+      .replace(/\s+/g, ' ')
+      .replace(/ \./g, '.');
+    expect(visible).toContain(CONFIDENTIALITY_UNDERTAKING_CHECKBOX);
     expect(source).not.toContain('accept this confidentiality undertaking');
   });
 });

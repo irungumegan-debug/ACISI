@@ -16,16 +16,15 @@ export const TERMS_OF_SERVICE_VERSION = '2026-10-08';
 
 /**
  * Staff confidentiality undertaking, accepted at staff signup and clinic
- * registration, and once at the next console login by staff who joined
- * before it existed. PLACEHOLDER wording until the final text is supplied:
- * when it changes, update both the text and the version date (everyone is
- * asked again).
+ * registration, and once at the next console login by staff who have not
+ * accepted this version. The approved text is web/src/content/confidentiality.md,
+ * shown at CONFIDENTIALITY_UNDERTAKING_PATH. When the text changes, update
+ * the file, this version date and the hash in tests/web/legal.test.ts
+ * together (everyone is then asked again).
  */
-export const CONFIDENTIALITY_UNDERTAKING_VERSION = '2026-10-30';
-export const CONFIDENTIALITY_UNDERTAKING_TEXT =
-  '[PLACEHOLDER: final wording to be supplied by ACISI] I will keep confidential all patient information I see in ' +
-  'ACISI, use it only for my work at this clinic, and not share it with anyone who is not entitled to it, during ' +
-  'and after my time at the clinic.';
+export const CONFIDENTIALITY_UNDERTAKING_VERSION = '2026-10-31';
+/** The public page with the full undertaking, linked from every tick-box. */
+export const CONFIDENTIALITY_UNDERTAKING_PATH = '/confidentiality-undertaking';
 
 /** The tick-box wording for the undertaking, shown at staff signup, clinic registration and the console screen. */
 export const CONFIDENTIALITY_UNDERTAKING_CHECKBOX = 'I have read and agree to the ACISI Confidentiality Undertaking.';

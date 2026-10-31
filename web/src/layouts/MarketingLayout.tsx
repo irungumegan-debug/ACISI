@@ -187,6 +187,7 @@ export function ContentLayout() {
               <p className="footer-heading">Legal</p>
               <Link to="/privacy">Privacy Notice</Link>
               <Link to="/terms">Terms of Service</Link>
+              <Link to="/confidentiality-undertaking">Confidentiality Undertaking</Link>
             </div>
           </div>
         </div>
