@@ -34,6 +34,8 @@ changed by the migration. Undo script: `prisma/rollback/20261030090000_odpc_alig
 
 | M-Pesa | **Buy Goods till:** with `MPESA_TILL_NUMBER` set, ACISI's check-in prompts go as Buy Goods (`CustomerBuyGoodsOnline`): the store number (`MPESA_SHORTCODE`) in BusinessShortCode, the password and the status check; the till in PartyB. Unset, prompts stay Paybill. The till is never shown to patients. **Callbacks are confirmed:** a "paid" callback marks a check-in fee PAID only once Safaricom's status query says the same; a contradicted callback is logged (`CHECK_IN_CALLBACK_NOT_CONFIRMED`) and not paid; one Safaricom can't confirm yet is settled by the next status check (receipt kept). **Clinic checkout prompts** (sandbox only) are switched off whenever `MPESA_ENV=production`. | Check-in payments | — |
 
+| M-Pesa (live checks) | With `MPESA_ENV=production` the app will not start unless `MPESA_TILL_NUMBER` is set (Buy Goods only, never Paybill), differs from `MPESA_SHORTCODE`, `MPESA_SHORTCODE` is not Safaricom's sandbox code, `MPESA_CALLBACK_URL` is https, and `CHECKIN_FEE_AMOUNT_KES` is at least 50. Sandbox is unchanged. | Settings only | — |
+
 SMS changes: the visit summary SMS is no longer sent, and the check-in fee
 SMS is shortened to two lines (one SMS).
 
