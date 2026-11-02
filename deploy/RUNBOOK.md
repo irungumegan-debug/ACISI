@@ -122,6 +122,31 @@ sudo -u postgres psql acisi -c "DELETE FROM _prisma_migrations WHERE migration_n
 Data written into the new columns since the release is lost (including SMS
 counts and plan changes); nothing older is touched.
 
+## Release 2026-11-03: ODPC statements, part 2 (one-time steps)
+
+See `CHANGELOG.md` (D1–D5). No settings change.
+
+1. **Backup first:** `sudo systemctl start acisi-backup && sudo journalctl -u acisi-backup -n 5 --no-pager`
+2. **Update the app** (runs migration `20261103090000_signup_verify_phone_first` on start):
+   ```
+   sudo -u acisi -H bash -c 'cd /opt/acisi/app && git pull && npm ci && npm run build'
+   sudo systemctl restart acisi
+   sleep 15; curl -s https://acisi.co.ke/healthz; echo
+   sudo journalctl -u acisi -n 30 --no-pager | grep -i -E "migration|error" || true
+   ```
+3. **Check:** sign up as a patient (code first, then PIN); as clinic admin,
+   see "Deactivate" in Settings → staff; check out a visit and confirm the
+   one SMS (Africa's Talking simulator while on sandbox).
+
+**Undo (only if something goes badly wrong):** deploy the previous version,
+then:
+```
+sudo -u postgres psql acisi -f /opt/acisi/app/prisma/rollback/20261103090000_signup_verify_phone_first.down.sql
+sudo -u postgres psql acisi -c "DELETE FROM _prisma_migrations WHERE migration_name = '20261103090000_signup_verify_phone_first'"
+```
+Signups still waiting for their PIN at that moment are deleted (the patient
+signs up again). Nothing else is touched.
+
 ## Switching ACISI's M-Pesa to production (Buy Goods till)
 
 Do this only after the release that adds `MPESA_TILL_NUMBER` is deployed.
@@ -274,8 +299,9 @@ root only). Check: `sudo certbot certificates` and `sudo certbot renew --dry-run
   ("network is experiencing technical problems"). The callback is
   `https://acisi.co.ke/api/ussd`. Fix before USSD goes live (Dec 2026 / early 2027).
   First check: `sudo grep "/api/ussd" /var/log/nginx/access.log | tail`.
-- **Dependency security updates:** `npm audit` reports issues in `qs`, `express`,
-  `proxy-addr`, `axios` and others. Update in a pull request, before real patient data.
+- **Dependency security updates:** critical and high warnings cleared in the
+  2026-11-03 release. Left: moderate warnings in `react-router` (needs v7) and in
+  development-only tools. Re-run `npm audit` monthly.
 - **Railway clean-up (after a week of stable running):** delete the Railway app
   service, **both** Postgres services and Redis, then the two `_railway-verify`
   TXT records in Cloudflare. Then delete `/var/lib/acisi-migration` on the server.

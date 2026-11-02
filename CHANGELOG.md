@@ -3,6 +3,21 @@
 Plain-language record of what changed in ACISI, which data each change
 touches, and who can use it. Newest first.
 
+## 2026-11-03: ODPC statements, part 2
+
+Brings four more statements in the ODPC applications in line with the
+system, and clears the critical and high library warnings. One database
+change, additive only (`20261103090000_signup_verify_phone_first`); undo
+script: `prisma/rollback/20261103090000_signup_verify_phone_first.down.sql`.
+
+| # | What changed | Data it touches | Who |
+|---|---|---|---|
+| D1 | **One SMS at checkout: receipt and visit summary together.** Clinic, visit date, amount paid and method (and any balance), and the prescription. Never the diagnosis or the department. Always one SMS of at most 160 characters: if it doesn't fit, the prescription becomes "Prescription: see your ACISI profile" (then payment codes are dropped, then the clinic name is shortened). Respects "does not want SMS". Sent exactly once (checkout is now a conditional update). A bill paid before checkout no longer sends its own receipt; a bill paid off after checkout still gets a receipt. Counted against the clinic's SMS allowance (`CHECKOUT_SUMMARY`). Logged: `CHECKOUT_SMS_SENT` / `CHECKOUT_SMS_SKIPPED_OPT_OUT`. | Encounters, bills (read); SMS count | Patients, front desk |
+| D2 | **Clinic admins can deactivate staff** from Settings → staff list (e.g. someone left). Logs them out everywhere; their name stays on every visit and payment they handled. Not yourself, and not the clinic's last active admin. Audit-logged (`STAFF_DEACTIVATED_BY_ADMIN`). Reactivation is still done by ACISI. | Staff (active flag) | Clinic admins |
+| D3 | **Sex at portal signup** (optional; Female / Male / Other / Prefer not to say, as at walk-in). | Patients (sex) | Patients |
+| D4 | **Signup: the phone is verified first, then the PIN is chosen.** Step 1 details (no PIN), step 2 the SMS code, step 3 choose the 6-digit PIN; only then is the account created. A one-time token links steps 2 and 3 (stored hashed, 30 minutes). At the clinic, "Finish setup" verifies the phone in person, creates the account without a PIN, and shows a one-time setup code for choosing it (as for walk-ins). | Pending signups (PIN now optional; verified date; token hash and expiry) | Patients, front desk |
+| D5 | **Libraries:** express 4.22.3, axios 1.21, bcrypt 6, zod 4, patched axios/joi/lodash under africastalking (npm `overrides`), vite 6.4.5. `npm audit`: 0 critical and 0 high in all four packages; the server's production libraries have no warnings at all. | — | — |
+
 ## 2026-10-30: Data-protection alignment (ODPC statements)
 
 Makes the statements in ACISI's ODPC Data Controller and Data Processor
