@@ -180,8 +180,9 @@ const checkoutSchema = z.object({ deliveryMethod: z.enum(['sms', 'sms_and_email'
  * Completes the visit — only once the doctor's consultation has moved the
  * encounter to READY_FOR_CHECKOUT. Keyed by checkInId (front desk's natural
  * unit) even though the state lives on Encounter, since CheckIn:Encounter
- * is 1:1. No SMS summary is sent; deliveryMethod only controls whether the
- * visit PDF is emailed — see encounterService.checkoutEncounter.
+ * is 1:1. Sends the patient one SMS (receipt + visit summary, see
+ * checkoutSmsService); deliveryMethod only controls whether the visit PDF is
+ * also emailed — see encounterService.checkoutEncounter.
  */
 checkinsRouter.post('/:id/checkout', async (req, res) => {
   const parsed = checkoutSchema.safeParse(req.body);

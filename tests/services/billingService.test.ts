@@ -36,8 +36,8 @@ let keySeq = 0;
 const key = () => `idem-key-${++keySeq}`;
 const base = { clinicId: 'clinic-A', staffId: 'staff-1' };
 
-async function billFor(totalItems: number[], opts: { smsOptOut?: boolean; discountKes?: number } = {}) {
-  const visit = mockDb.addVisit({ smsOptOut: opts.smsOptOut });
+async function billFor(totalItems: number[], opts: { smsOptOut?: boolean; discountKes?: number; status?: string } = {}) {
+  const visit = mockDb.addVisit({ smsOptOut: opts.smsOptOut, status: opts.status });
   const bill = await saveBill({
     ...base,
     encounterId: visit.id,
@@ -217,8 +217,8 @@ describe('STK push into the clinic till/paybill', () => {
     expect(billNow(bill.id).status).toBe('UNPAID'); // nothing paid until M-Pesa confirms
   });
 
-  it('success callback marks the payment and bill paid and sends one receipt', async () => {
-    const { bill } = await billFor([1500]);
+  it('success callback marks the payment and bill paid and sends one receipt (paid after checkout)', async () => {
+    const { bill } = await billFor([1500], { status: 'DONE' });
     const { payment } = await requestFor(1500, bill.id);
     const ok = { checkoutRequestId: payment.mpesaCheckoutRequestId!, resultCode: 0, resultDesc: 'Success', mpesaReceiptNumber: 'qkl98mn76p' };
     await expect(applyClinicStkResult(ok)).resolves.toBe(true);
@@ -319,7 +319,7 @@ describe('buildAccountReference', () => {
 
 describe('voidPayment', () => {
   it('voids with a reason, keeps the row, and recalculates the bill', async () => {
-    const { bill } = await billFor([1000]);
+    const { bill } = await billFor([1000], { status: 'DONE' });
     const { payment } = await recordPayment({ ...base, billId: bill.id, idempotencyKey: key(), method: 'CASH', tenderedKes: 1000 });
     expect(billNow(bill.id).status).toBe('PAID');
 
@@ -331,14 +331,14 @@ describe('voidPayment', () => {
   });
 
   it('requires a reason', async () => {
-    const { bill } = await billFor([1000]);
+    const { bill } = await billFor([1000], { status: 'DONE' });
     const { payment } = await recordPayment({ ...base, billId: bill.id, idempotencyKey: key(), method: 'CASH', tenderedKes: 1000 });
     await expect(voidPayment({ ...base, paymentId: payment.id, reason: ' ' })).rejects.toThrow('reason');
     expect(mockDb.payments[0]!.status).toBe('SUCCEEDED');
   });
 
   it('won’t void twice, a waiting prompt, or another clinic’s payment', async () => {
-    const { bill } = await billFor([1000]);
+    const { bill } = await billFor([1000], { status: 'DONE' });
     const { payment } = await recordPayment({ ...base, billId: bill.id, idempotencyKey: key(), method: 'CASH', tenderedKes: 500 });
     await expect(voidPayment({ ...base, clinicId: 'clinic-B', paymentId: payment.id, reason: 'Mistake' })).rejects.toMatchObject({ status: 404 });
     await voidPayment({ ...base, paymentId: payment.id, reason: 'Mistake' });
@@ -357,8 +357,17 @@ describe('voidPayment', () => {
 });
 
 describe('receipt SMS', () => {
-  it('sends one receipt when the bill becomes fully paid, not on part payments', async () => {
-    const { bill } = await billFor([1500]);
+  it('sends nothing when the bill is paid BEFORE checkout: the receipt goes in the one checkout SMS', async () => {
+    const { bill } = await billFor([1500]); // visit still READY_FOR_CHECKOUT
+    await recordPayment({ ...base, billId: bill.id, idempotencyKey: key(), method: 'CASH', tenderedKes: 1500 });
+    expect(billNow(bill.id).status).toBe('PAID');
+    expect(mockSend).not.toHaveBeenCalled();
+    await expect(sendPaidReceiptSms(bill.id)).resolves.toBe('before_checkout');
+    expect(billNow(bill.id).receiptSmsSentAt).toBeNull();
+  });
+
+  it('after checkout: sends one receipt when the bill becomes fully paid, not on part payments', async () => {
+    const { bill } = await billFor([1500], { status: 'DONE' });
     await recordPayment({ ...base, billId: bill.id, idempotencyKey: key(), method: 'CASH', tenderedKes: 500 });
     expect(mockSend).not.toHaveBeenCalled();
     await recordPayment({ ...base, billId: bill.id, idempotencyKey: key(), method: 'MPESA_MANUAL', amountKes: 1000, mpesaCode: 'QAB12CD34E' });
@@ -374,7 +383,7 @@ describe('receipt SMS', () => {
   });
 
   it('respects the patient’s "Don’t send SMS" choice', async () => {
-    const { bill } = await billFor([1500], { smsOptOut: true });
+    const { bill } = await billFor([1500], { smsOptOut: true, status: 'DONE' });
     await recordPayment({ ...base, billId: bill.id, idempotencyKey: key(), method: 'CASH', tenderedKes: 1500 });
     expect(billNow(bill.id).status).toBe('PAID');
     expect(mockSend).not.toHaveBeenCalled();
@@ -382,7 +391,7 @@ describe('receipt SMS', () => {
   });
 
   it('never sends a second receipt for the same bill (even after a void and re-payment)', async () => {
-    const { bill } = await billFor([1000]);
+    const { bill } = await billFor([1000], { status: 'DONE' });
     const { payment } = await recordPayment({ ...base, billId: bill.id, idempotencyKey: key(), method: 'CASH', tenderedKes: 1000 });
     await voidPayment({ ...base, paymentId: payment.id, reason: 'Recount' });
     await recordPayment({ ...base, billId: bill.id, idempotencyKey: key(), method: 'CASH', tenderedKes: 1000 });
@@ -392,7 +401,7 @@ describe('receipt SMS', () => {
 
   it('a failed SMS doesn’t undo the payment', async () => {
     mockSend.mockRejectedValueOnce(new Error('AT down'));
-    const { bill } = await billFor([1000]);
+    const { bill } = await billFor([1000], { status: 'DONE' });
     const result = await recordPayment({ ...base, billId: bill.id, idempotencyKey: key(), method: 'CASH', tenderedKes: 1000 });
     expect(result.bill.status).toBe('PAID');
   });
