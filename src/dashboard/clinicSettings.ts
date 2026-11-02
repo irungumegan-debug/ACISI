@@ -233,7 +233,7 @@ function sendDepartmentError(res: import('express').Response, err: unknown): voi
 }
 
 const feeSchema = z
-  .number({ invalid_type_error: 'The fee must be a number' })
+  .number({ error: 'The fee must be a number' })
   .int('The fee must be a whole number of KES')
   .min(0, "The fee can't be negative")
   .max(MAX_DEPARTMENT_FEE_KES, 'That fee is too large')
