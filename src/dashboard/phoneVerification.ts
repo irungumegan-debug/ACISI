@@ -44,7 +44,11 @@ phoneVerificationRouter.get('/pending-signups', async (req, res) => {
   res.json({ phoneNumber: phone, signups: await findPendingSignupsByPhone(phone, staffId, clinicId) });
 });
 
-/** "Finish setup" for a pending web signup, after ringing the number. The patient then logs in with the PIN they chose. */
+/**
+ * "Finish setup" for a pending web signup, after ringing the number. The
+ * phone is verified in person and the account created; the response carries
+ * a one-time setup code for the patient to choose their PIN with (shown once).
+ */
 phoneVerificationRouter.post('/pending-signups/:id/complete', async (req, res) => {
   if (!confirmedSchema.safeParse(req.body).success) {
     res.status(400).json({ error: NOT_CONFIRMED });
@@ -52,8 +56,8 @@ phoneVerificationRouter.post('/pending-signups/:id/complete', async (req, res) =
   }
   const { staffId, clinicId } = (req as unknown as AuthenticatedRequest).dashboardSession;
   try {
-    const patient = await completePendingSignupInPerson(req.params.id as string, staffId, clinicId);
-    res.status(201).json({ patientCode: patient.patientCode });
+    const { patient, setupCode } = await completePendingSignupInPerson(req.params.id as string, staffId, clinicId);
+    res.status(201).json({ patientCode: patient.patientCode, setupCode });
   } catch (err) {
     if (err instanceof PendingSignupError) {
       res.status(err.status).json({ error: err.message });

@@ -165,7 +165,6 @@ export const api = {
     dateOfBirth?: string;
     /** Optional; left out = "Prefer not to say" (stored as UNKNOWN). Same options as walk-in. */
     sex?: 'FEMALE' | 'MALE' | 'OTHER';
-    pin: string;
     crossClinicConsent: boolean;
     email?: string;
     /** "I accept the Terms of Service and have read the Privacy Notice" — required by the server. */
@@ -180,8 +179,17 @@ export const api = {
     });
   },
 
+  /** Step 2: confirms the phone. Returns a one-time token for step 3; no account yet. */
   verifySignup(pendingId: string, code: string) {
-    return request<PatientSession>('/patients/register/verify', { method: 'POST', body: JSON.stringify({ pendingId, code }) });
+    return request<{ phoneVerified: true; pinSetupToken: string }>('/patients/register/verify', {
+      method: 'POST',
+      body: JSON.stringify({ pendingId, code }),
+    });
+  },
+
+  /** Step 3, after the phone is verified: choose the PIN. Creates the account and logs in. */
+  setSignupPin(pendingId: string, pinSetupToken: string, pin: string) {
+    return request<PatientSession>('/patients/register/pin', { method: 'POST', body: JSON.stringify({ pendingId, pinSetupToken, pin }) });
   },
 
   resendSignupCode(pendingId: string) {

@@ -113,7 +113,6 @@ function PatientSignupForm({ onBack }: { onBack: () => void }) {
   const [dateOfBirth, setDateOfBirth] = useState('');
   const [sex, setSex] = useState<'' | 'FEMALE' | 'MALE' | 'OTHER'>('');
   const [email, setEmail] = useState('');
-  const [pin, setPin] = useState('');
   const [crossClinicConsent, setCrossClinicConsent] = useState(false);
   const [acceptLegal, setAcceptLegal] = useState(false);
   const [identity, setIdentity] = useState<PatientIdentity>(EMPTY_IDENTITY);
@@ -145,7 +144,6 @@ function PatientSignupForm({ onBack }: { onBack: () => void }) {
           dateOfBirth: dateOfBirth || undefined,
           sex: sex || undefined,
           email: email || undefined,
-          pin,
           crossClinicConsent,
           acceptLegal,
           identity,
@@ -180,7 +178,7 @@ function PatientSignupForm({ onBack }: { onBack: () => void }) {
         &larr; Back
       </button>
       <h1 className="auth-h1">Patient sign up</h1>
-      <p className="auth-sub">Takes a minute. You&apos;ll get a patient ID once you&apos;re done.</p>
+      <p className="auth-sub">Takes a minute. We&apos;ll text you a code to confirm your phone, then you choose your PIN.</p>
 
       <div className="field">
         <label>Full name</label>
@@ -212,11 +210,6 @@ function PatientSignupForm({ onBack }: { onBack: () => void }) {
           onChange={(e) => setEmail(e.target.value)}
         />
       </div>
-      <div className="field">
-        <label>Create a PIN</label>
-        <input type="password" inputMode="numeric" required minLength={6} maxLength={6} pattern="\d{6}" placeholder="6-digit PIN" value={pin} onChange={(e) => setPin(e.target.value)} />
-        <p className="field-hint">6 digits. Avoid birthdays, your phone number, and easy patterns like 123456 or 111111.</p>
-      </div>
       <details style={{ marginBottom: 16 }}>
         <summary style={{ cursor: 'pointer', fontSize: 14 }}>ID document and next of kin (optional)</summary>
         <IdentityFields value={identity} onChange={setIdentity} />
@@ -229,15 +222,17 @@ function PatientSignupForm({ onBack }: { onBack: () => void }) {
 
       {error && <p className="auth-error">{error}</p>}
       <button className="auth-submit" type="submit" disabled={submitting || !acceptLegal}>
-        {submitting ? 'Creating account…' : 'Create account'}
+        {submitting ? 'Sending code…' : 'Continue'}
       </button>
     </form>
   );
 }
 
 /**
- * Step 2 of patient signup: the code sent by SMS. If it couldn't be sent,
- * the signup is kept and the clinic's front desk can finish it.
+ * Steps 2 and 3 of patient signup: first the code sent by SMS (the phone is
+ * verified), THEN the patient chooses their 6-digit PIN and the account is
+ * created. If the code couldn't be sent, the signup is kept and the clinic's
+ * front desk can finish it (they give the patient a setup code for the PIN).
  */
 function VerifySignupPhone({
   pending,
@@ -251,6 +246,7 @@ function VerifySignupPhone({
   onVerified: (session: PatientSession) => void;
 }) {
   const [code, setCode] = useState('');
+  const [pinSetupToken, setPinSetupToken] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(pending.smsSent ? null : (pending.message ?? null));
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -260,7 +256,8 @@ function VerifySignupPhone({
     setBusy(true);
     setError(null);
     try {
-      onVerified(await api.verifySignup(pending.pendingId, code.trim()));
+      const res = await api.verifySignup(pending.pendingId, code.trim());
+      setPinSetupToken(res.pinSetupToken);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.');
     } finally {
@@ -281,6 +278,10 @@ function VerifySignupPhone({
     }
   }
 
+  if (pinSetupToken) {
+    return <ChooseSignupPin pendingId={pending.pendingId} pinSetupToken={pinSetupToken} onDone={onVerified} />;
+  }
+
   return (
     <form className="auth-form" onSubmit={(e) => void verify(e)}>
       <button type="button" className="auth-back" onClick={onBack}>
@@ -288,7 +289,7 @@ function VerifySignupPhone({
       </button>
       <h1 className="auth-h1">Confirm your phone number</h1>
       <p className="auth-sub">
-        {pending.smsSent ? `We sent a 6-digit code to ${phoneNumber}. Enter it to finish creating your account.` : 'Your details are saved.'}
+        {pending.smsSent ? `We sent a 6-digit code to ${phoneNumber}. Enter it to confirm your phone. Next, you'll choose your PIN.` : 'Your details are saved.'}
       </p>
       {notice && <p className="auth-notice" role="status">{notice}</p>}
       <div className="field">
@@ -304,10 +305,66 @@ function VerifySignupPhone({
       </div>
       {error && <p className="auth-error">{error}</p>}
       <button className="auth-submit" type="submit" disabled={busy || code.length !== 6}>
-        {busy ? 'Checking…' : 'Confirm and create account'}
+        {busy ? 'Checking…' : 'Confirm phone number'}
       </button>
       <button type="button" className="auth-back" style={{ marginTop: 12 }} disabled={busy} onClick={() => void resend()}>
         Send the code again
+      </button>
+    </form>
+  );
+}
+
+/** Step 3: the phone is verified; now the patient chooses their PIN and the account is created. */
+function ChooseSignupPin({
+  pendingId,
+  pinSetupToken,
+  onDone,
+}: {
+  pendingId: string;
+  pinSetupToken: string;
+  onDone: (session: PatientSession) => void;
+}) {
+  const [pin, setPin] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e: FormEvent): Promise<void> {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      onDone(await api.setSignupPin(pendingId, pinSetupToken, pin));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="auth-form" onSubmit={(e) => void submit(e)}>
+      <h1 className="auth-h1">Phone confirmed. Now choose your PIN</h1>
+      <p className="auth-sub">You&apos;ll use it with your phone number or patient ID to log in.</p>
+      <div className="field">
+        <label htmlFor="signup-pin">Create a PIN</label>
+        <input
+          id="signup-pin"
+          type="password"
+          inputMode="numeric"
+          autoComplete="new-password"
+          required
+          minLength={6}
+          maxLength={6}
+          pattern="\d{6}"
+          placeholder="6-digit PIN"
+          value={pin}
+          onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+        />
+        <p className="field-hint">6 digits. Avoid birthdays, your phone number, and easy patterns like 123456 or 111111.</p>
+      </div>
+      {error && <p className="auth-error">{error}</p>}
+      <button className="auth-submit" type="submit" disabled={busy || pin.length !== 6}>
+        {busy ? 'Creating account…' : 'Create account'}
       </button>
     </form>
   );

@@ -10,9 +10,15 @@ import {
 import { clearLockout, isLockedOut, lockoutMessage, LockoutSubject, recordWrongPin } from '../services/pinLockout';
 import { InvalidPhoneNumberError, toE164 } from '../utils/phone';
 import { pinPolicyError } from '../utils/pinPolicy';
-import { findPatientByPhoneOrCode, hashPatientPin, setPatientPin, verifyPatientPin } from '../services/patientService';
+import { findPatientByPhoneOrCode, setPatientPin, verifyPatientPin } from '../services/patientService';
 import { PatientIdentityError, patientIdentityInputSchema, preparePatientIdentity } from '../services/patientIdentity';
-import { PendingSignupError, resendSignupCode, startPendingSignup, verifyPendingSignup } from '../services/pendingSignupService';
+import {
+  PendingSignupError,
+  resendSignupCode,
+  setPendingSignupPin,
+  startPendingSignup,
+  verifyPendingSignup,
+} from '../services/pendingSignupService';
 import { requestPinResetOtp, verifyPinResetOtp } from '../services/otpService';
 import { deletePatientAccount, PatientNotFoundError } from '../services/patientDeletionService';
 import { prisma } from '../db/prisma';
@@ -64,7 +70,6 @@ const registerSchema = z.object({
   phoneNumber: z.string().min(1),
   dateOfBirth: z.string().optional(),
   sex: z.enum(['MALE', 'FEMALE', 'OTHER', 'UNKNOWN']).optional(),
-  pin: z.string().min(1),
   crossClinicConsent: z.boolean().optional(),
   /** "I accept the Terms of Service and have read the Privacy Notice" — required. */
   acceptLegal: z.boolean().optional(),
@@ -94,12 +99,6 @@ portalAuthRouter.post('/register', async (req, res) => {
     throw err;
   }
 
-  const pinError = pinPolicyError(parsed.data.pin, { phoneNumber: phoneE164 });
-  if (pinError) {
-    res.status(400).json({ error: pinError });
-    return;
-  }
-
   if (parsed.data.acceptLegal !== true) {
     res.status(400).json({ error: 'Please accept the Terms of Service and Privacy Notice to create your account' });
     return;
@@ -116,8 +115,9 @@ portalAuthRouter.post('/register', async (req, res) => {
     throw err;
   }
 
-  // C3: no account yet. The signup waits until the phone is verified, by
-  // the SMS code or at the clinic, and is kept so nothing is retyped.
+  // C3: no account yet, and no PIN yet. The phone is verified first (SMS
+  // code, or at the clinic); only then does the patient choose their PIN.
+  // The signup is kept so nothing is retyped.
   try {
     const { pendingId, smsSent } = await startPendingSignup({
       phoneNumberE164: phoneE164,
@@ -127,7 +127,6 @@ portalAuthRouter.post('/register', async (req, res) => {
       sex: parsed.data.sex ?? 'UNKNOWN',
       email: parsed.data.email || undefined,
       identity,
-      pinHash: await hashPatientPin(parsed.data.pin),
       crossClinicConsent: parsed.data.crossClinicConsent ?? false,
     });
     res.status(202).json({ pendingId, smsSent, ...(smsSent ? {} : { message: CODE_NOT_SENT_MESSAGE }) });
@@ -153,7 +152,10 @@ function startPatientSession(res: Response, req: Request, token: string): void {
 
 const verifySignupSchema = z.object({ pendingId: z.string().min(1), code: z.string().trim().regex(/^\d{6}$/, 'The code is 6 digits') });
 
-/** The SMS code from signup: creates the account (phone verified) and logs the patient in. */
+/**
+ * Step 2: the SMS code from signup. Marks the phone verified and returns a
+ * one-time token for step 3 (choosing the PIN). No account or session yet.
+ */
 portalAuthRouter.post('/register/verify', async (req, res) => {
   const parsed = verifySignupSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -161,7 +163,32 @@ portalAuthRouter.post('/register/verify', async (req, res) => {
     return;
   }
   try {
-    const patient = await verifyPendingSignup(parsed.data.pendingId, parsed.data.code);
+    const { pinSetupToken } = await verifyPendingSignup(parsed.data.pendingId, parsed.data.code);
+    res.json({ phoneVerified: true, pinSetupToken });
+  } catch (err) {
+    if (err instanceof PendingSignupError) {
+      res.status(err.status).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
+});
+
+const setSignupPinSchema = z.object({
+  pendingId: z.string().min(1),
+  pinSetupToken: z.string().min(1),
+  pin: z.string().regex(/^\d{6}$/, 'Your PIN must be 6 digits'),
+});
+
+/** Step 3, only after the phone is verified: choose the 6-digit PIN. Creates the account and logs the patient in. */
+portalAuthRouter.post('/register/pin', async (req, res) => {
+  const parsed = setSignupPinSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Choose a 6-digit PIN' });
+    return;
+  }
+  try {
+    const patient = await setPendingSignupPin(parsed.data.pendingId, parsed.data.pinSetupToken, parsed.data.pin);
     const token = await createPatientSession({ patientId: patient.id, patientCode: patient.patientCode, firstName: patient.firstName });
     startPatientSession(res, req, token);
     res.status(201).json({ patientCode: patient.patientCode, firstName: patient.firstName });

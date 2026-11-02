@@ -1,4 +1,5 @@
 import bcrypt from 'bcrypt';
+import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 import { PendingPatientSignup, Patient } from '@prisma/client';
 import { prisma } from '../db/prisma';
 import { redis } from '../config/redis';
@@ -8,25 +9,33 @@ import {
   OTP_REQUEST_RATE_LIMIT_MAX_ATTEMPTS,
   OTP_REQUEST_RATE_LIMIT_WINDOW_SECONDS,
   PENDING_SIGNUP_KEEP_DAYS,
+  PIN_SETUP_TOKEN_TTL_SECONDS,
 } from '../config/constants';
 import { generateOtpCode } from '../utils/idCodes';
-import { findPatientByPhone, registerPatient } from './patientService';
+import { findPatientByPhone, hashPatientPin, registerPatient } from './patientService';
+import { createInPersonSetupCode } from './otpService';
+import { pinPolicyError } from '../utils/pinPolicy';
 import { sendSms } from './smsService';
 import { recordAuditEvent } from './auditService';
 import type { PatientIdentityUpdate } from './patientIdentity';
 
 /**
- * Phone verification at portal signup (C3). The signup is kept as a
- * PendingPatientSignup until the patient proves they hold the phone:
+ * Phone verification at portal signup (C3): the phone is verified FIRST,
+ * and only then does the patient choose their 6-digit PIN. The signup is
+ * kept as a PendingPatientSignup (no PIN) until then:
  *
- * - by the SMS code (verifyPendingSignup), or
+ * - by SMS: the patient enters the code (verifyPendingSignup), which gives
+ *   them a short-lived one-time token; with it they choose their PIN
+ *   (setPendingSignupPin), and only then is the account created;
  * - at the clinic, when SMS can't be sent: front desk finds the pending
  *   signup by phone number, rings the number in front of the patient and
- *   taps "Finish setup" (completePendingSignupInPerson).
+ *   taps "Finish setup" (completePendingSignupInPerson). The account is
+ *   created with the phone verified in person, and the patient is shown a
+ *   one-time setup code to choose their PIN (Log in -> Forgot PIN).
  *
  * Only then does a Patient exist, so nobody can claim someone else's number.
- * Nothing has to be retyped: everything the patient entered (including the
- * hashed PIN) is kept for PENDING_SIGNUP_KEEP_DAYS, then deleted.
+ * Nothing has to be retyped: everything the patient entered is kept for
+ * PENDING_SIGNUP_KEEP_DAYS, then deleted.
  */
 
 export class PendingSignupError extends Error {
@@ -47,7 +56,6 @@ export interface PendingSignupInput {
   sex: PendingPatientSignup['sex'];
   email?: string;
   identity: PatientIdentityUpdate;
-  pinHash: string;
   crossClinicConsent: boolean;
 }
 
@@ -93,7 +101,6 @@ export async function startPendingSignup(input: PendingSignupInput): Promise<{ p
         idNumber: input.identity.idNumber ?? null,
         nextOfKinName: input.identity.nextOfKinName ?? null,
         nextOfKinPhone: input.identity.nextOfKinPhone ?? null,
-        pinHash: input.pinHash,
         crossClinicConsent: input.crossClinicConsent,
         codeHash,
         codeExpiresAt: new Date(now.getTime() + ONE_TIME_CODE_TTL_SECONDS * 1000),
@@ -123,7 +130,7 @@ export async function resendSignupCode(pendingId: string): Promise<{ smsSent: bo
 }
 
 /** Turns a verified pending signup into a real patient account and deletes the pending row. */
-async function createPatientFrom(pending: PendingPatientSignup, via: 'SMS' | 'IN_PERSON'): Promise<Patient> {
+async function createPatientFrom(pending: PendingPatientSignup, via: 'SMS' | 'IN_PERSON', pinHash: string | null): Promise<Patient> {
   if (await findPatientByPhone(pending.phoneNumber)) {
     await prisma.pendingPatientSignup.delete({ where: { id: pending.id } }).catch(() => undefined);
     throw new PendingSignupError('An account with that phone number already exists', 409);
@@ -141,7 +148,7 @@ async function createPatientFrom(pending: PendingPatientSignup, via: 'SMS' | 'IN
       nextOfKinName: pending.nextOfKinName,
       nextOfKinPhone: pending.nextOfKinPhone,
     },
-    pinHash: pending.pinHash,
+    pinHash: pinHash ?? undefined,
     consentChannel: 'PORTAL',
     crossClinicConsent: pending.crossClinicConsent,
     acceptedTermsAndPrivacyNotice: true,
@@ -151,8 +158,15 @@ async function createPatientFrom(pending: PendingPatientSignup, via: 'SMS' | 'IN
   return patient;
 }
 
-/** The patient typing the SMS code. Wrong codes are counted; after ONE_TIME_CODE_MAX_ATTEMPTS the code stops working. */
-export async function verifyPendingSignup(pendingId: string, code: string): Promise<Patient> {
+const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
+
+/**
+ * Step 2: the patient typing the SMS code. Wrong codes are counted; after
+ * ONE_TIME_CODE_MAX_ATTEMPTS the code stops working. A right code marks the
+ * phone verified (the code can't be used again) and returns a one-time
+ * token for step 3, choosing the PIN. No account exists yet.
+ */
+export async function verifyPendingSignup(pendingId: string, code: string): Promise<{ pinSetupToken: string }> {
   const now = new Date();
   const pending = await prisma.pendingPatientSignup.findFirst({ where: { id: pendingId, expiresAt: { gt: now } } });
   if (!pending) throw new PendingSignupError('This signup has expired. Please sign up again.', 404);
@@ -163,7 +177,47 @@ export async function verifyPendingSignup(pendingId: string, code: string): Prom
     await prisma.pendingPatientSignup.update({ where: { id: pending.id }, data: { codeAttempts: { increment: 1 } } });
     throw new PendingSignupError('That code is not right. Check the SMS and try again.', 400);
   }
-  return createPatientFrom(pending, 'SMS');
+  const pinSetupToken = randomBytes(32).toString('base64url');
+  await prisma.pendingPatientSignup.update({
+    where: { id: pending.id },
+    data: {
+      phoneVerifiedAt: now,
+      codeHash: null,
+      codeExpiresAt: null,
+      pinSetupTokenHash: hashToken(pinSetupToken),
+      pinSetupExpiresAt: new Date(now.getTime() + PIN_SETUP_TOKEN_TTL_SECONDS * 1000),
+    },
+  });
+  return { pinSetupToken };
+}
+
+/**
+ * Step 3, only after the phone is verified: the patient chooses their
+ * 6-digit PIN (same rules as everywhere: no dates, repeats, sequences or
+ * their own number) and the account is created. The token works once.
+ */
+export async function setPendingSignupPin(pendingId: string, pinSetupToken: string, pin: string): Promise<Patient> {
+  const now = new Date();
+  const pending = await prisma.pendingPatientSignup.findFirst({ where: { id: pendingId, expiresAt: { gt: now } } });
+  if (!pending) throw new PendingSignupError('This signup has expired. Please sign up again.', 404);
+
+  const expected = pending.pinSetupTokenHash ? Buffer.from(pending.pinSetupTokenHash, 'hex') : null;
+  const given = Buffer.from(hashToken(pinSetupToken), 'hex');
+  const tokenOk =
+    !!pending.phoneVerifiedAt &&
+    !!expected &&
+    expected.length === given.length &&
+    timingSafeEqual(expected, given) &&
+    !!pending.pinSetupExpiresAt &&
+    pending.pinSetupExpiresAt > now;
+  if (!tokenOk) {
+    throw new PendingSignupError('Confirm your phone number first. If it has been a while, ask for a new code.', 400);
+  }
+
+  const problem = pinPolicyError(pin, { phoneNumber: pending.phoneNumber });
+  if (problem) throw new PendingSignupError(problem, 400);
+
+  return createPatientFrom(pending, 'SMS', await hashPatientPin(pin));
 }
 
 /** Front desk: pending signups for a phone number, name only (to confirm it's the right person). */
@@ -187,13 +241,21 @@ export async function findPendingSignupsByPhone(phoneNumberE164: string, staffId
 
 /**
  * Front desk "Finish setup", after ringing the patient's number in front of
- * them (the phone rang: they hold it). Creates the account with the PIN the
- * patient chose at signup; they log in with it straight away.
+ * them (the phone rang: they hold it). The phone is now verified, so the
+ * account is created, without a PIN, and a one-time setup code is returned
+ * to show the patient: they choose their PIN with it (Log in -> Forgot PIN).
+ * (A signup started before "verify first" already carries the PIN the
+ * patient chose; then no setup code is needed.)
  */
-export async function completePendingSignupInPerson(pendingId: string, staffId: string, clinicId: string): Promise<Patient> {
+export async function completePendingSignupInPerson(
+  pendingId: string,
+  staffId: string,
+  clinicId: string,
+): Promise<{ patient: Patient; setupCode: { code: string; expiresAt: Date } | null }> {
   const pending = await prisma.pendingPatientSignup.findFirst({ where: { id: pendingId, expiresAt: { gt: new Date() } } });
   if (!pending) throw new PendingSignupError('This signup has expired. The patient can sign up again.', 404);
-  const patient = await createPatientFrom(pending, 'IN_PERSON');
+  const patient = await createPatientFrom(pending, 'IN_PERSON', pending.pinHash);
+  const setupCode = pending.pinHash ? null : await createInPersonSetupCode(patient.id);
   await recordAuditEvent({
     actorType: 'STAFF',
     actorId: staffId,
@@ -202,9 +264,9 @@ export async function completePendingSignupInPerson(pendingId: string, staffId: 
     action: 'PATIENT_PHONE_VERIFIED_IN_PERSON',
     entityType: 'Patient',
     entityId: patient.id,
-    metadata: { flow: 'PENDING_SIGNUP' },
+    metadata: { flow: 'PENDING_SIGNUP', setupCodeIssued: !!setupCode },
   });
-  return patient;
+  return { patient, setupCode };
 }
 
 /** Hourly housekeeping: pending signups past PENDING_SIGNUP_KEEP_DAYS are deleted. */

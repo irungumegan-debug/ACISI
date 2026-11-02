@@ -513,7 +513,7 @@ export const api = {
   },
 
   completePendingSignup(pendingId: string) {
-    return request<{ patientCode: string }>(`/phone-verification/pending-signups/${encodeURIComponent(pendingId)}/complete`, {
+    return request<{ patientCode: string; setupCode: { code: string; expiresAt: string } | null }>(`/phone-verification/pending-signups/${encodeURIComponent(pendingId)}/complete`, {
       method: 'POST',
       body: JSON.stringify({ phoneConfirmedInPerson: true }),
     });

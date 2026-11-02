@@ -88,10 +88,16 @@ export async function verifyPinResetOtp(patientId: string, code: string): Promis
  * to choose their PIN. Never sent by SMS. Same rules as an SMS code: hashed,
  * 10 minutes, single use, limited tries.
  */
-export async function issueInPersonSetupCode(patientId: string, staffId: string, clinicId: string): Promise<{ code: string; expiresAt: Date }> {
+/** Creates (but doesn't log) an in-person setup code; callers write their own audit row. */
+export async function createInPersonSetupCode(patientId: string): Promise<{ code: string; expiresAt: Date }> {
   const code = generateOtpCode();
   const expiresAt = new Date(Date.now() + OTP_TTL_SECONDS * 1000);
   await prisma.otp.create({ data: { patientId, purpose: 'IN_PERSON_SETUP', codeHash: await bcrypt.hash(code, 10), expiresAt } });
+  return { code, expiresAt };
+}
+
+export async function issueInPersonSetupCode(patientId: string, staffId: string, clinicId: string): Promise<{ code: string; expiresAt: Date }> {
+  const { code, expiresAt } = await createInPersonSetupCode(patientId);
   await recordAuditEvent({
     actorType: 'STAFF',
     actorId: staffId,

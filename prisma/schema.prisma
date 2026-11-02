@@ -881,12 +881,19 @@ model PendingPatientSignup {
   idNumber           String?
   nextOfKinName      String?
   nextOfKinPhone     String?
-  pinHash            String
+  /// Null until the phone is verified: the patient chooses the PIN only
+  /// after proving they hold the number (verify first, then PIN).
+  pinHash            String?
   crossClinicConsent Boolean        @default(false)
   /// bcrypt hash of the SMS code, its expiry and wrong guesses.
   codeHash           String?
   codeExpiresAt      DateTime?
   codeAttempts       Int            @default(0)
+  /// When the SMS code was confirmed. From then on the patient may set
+  /// their PIN, using the one-time token below (sha256-hashed, short-lived).
+  phoneVerifiedAt    DateTime?
+  pinSetupTokenHash  String?
+  pinSetupExpiresAt  DateTime?
   expiresAt          DateTime
   createdAt          DateTime       @default(now())
 

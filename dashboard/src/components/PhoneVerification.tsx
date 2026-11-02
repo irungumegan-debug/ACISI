@@ -31,7 +31,7 @@ export function FinishWebSignup() {
   const [phone, setPhone] = useState('');
   const [found, setFound] = useState<{ phoneNumber: string; signups: { pendingId: string; name: string; signedUpAt: string }[] } | null>(null);
   const [confirmed, setConfirmed] = useState(false);
-  const [done, setDone] = useState<string | null>(null);
+  const [done, setDone] = useState<{ patientCode: string; setupCode: { code: string; expiresAt: string } | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -55,7 +55,7 @@ export function FinishWebSignup() {
     setError(null);
     try {
       const res = await api.completePendingSignup(pendingId);
-      setDone(res.patientCode);
+      setDone(res);
       setFound(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not finish the signup.');
@@ -88,9 +88,19 @@ export function FinishWebSignup() {
             </button>
           </div>
         ))}
-      {done && (
+      {done && done.setupCode && (
+        <div role="status" className="mt-3 rounded-xl bg-emerald-50 p-3 text-emerald-900 ring-1 ring-emerald-200">
+          <p className="text-sm">
+            Phone confirmed and account created ({done.patientCode}). Give the patient this code to choose their PIN: on acisi.co.ke they
+            choose Log in → Forgot PIN, enter their phone number, then this code and their new PIN.
+          </p>
+          <p className="mt-2 font-mono text-3xl font-bold tracking-widest text-navy-900">{done.setupCode.code}</p>
+          <p className="text-xs text-ink-500">Valid until {new Date(done.setupCode.expiresAt).toLocaleTimeString()}. Works once.</p>
+        </div>
+      )}
+      {done && !done.setupCode && (
         <p role="status" className="mt-3 text-sm text-emerald-800">
-          Account created ({done}). The patient can now log in at acisi.co.ke with their phone number and the PIN they chose.
+          Account created ({done.patientCode}). The patient can now log in at acisi.co.ke with their phone number and the PIN they chose.
         </p>
       )}
       {error && (
