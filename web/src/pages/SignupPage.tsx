@@ -111,6 +111,7 @@ function PatientSignupForm({ onBack }: { onBack: () => void }) {
   const [fullName, setFullName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState('');
+  const [sex, setSex] = useState<'' | 'FEMALE' | 'MALE' | 'OTHER'>('');
   const [email, setEmail] = useState('');
   const [pin, setPin] = useState('');
   const [crossClinicConsent, setCrossClinicConsent] = useState(false);
@@ -142,6 +143,7 @@ function PatientSignupForm({ onBack }: { onBack: () => void }) {
           lastName: parts.slice(1).join(' '),
           phoneNumber,
           dateOfBirth: dateOfBirth || undefined,
+          sex: sex || undefined,
           email: email || undefined,
           pin,
           crossClinicConsent,
@@ -191,6 +193,15 @@ function PatientSignupForm({ onBack }: { onBack: () => void }) {
       <div className="field">
         <label>Date of birth</label>
         <input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} />
+      </div>
+      <div className="field">
+        <label htmlFor="signup-sex">Sex (optional)</label>
+        <select id="signup-sex" value={sex} onChange={(e) => setSex(e.target.value as '' | 'FEMALE' | 'MALE' | 'OTHER')}>
+          <option value="">Prefer not to say</option>
+          <option value="FEMALE">Female</option>
+          <option value="MALE">Male</option>
+          <option value="OTHER">Other</option>
+        </select>
       </div>
       <div className="field">
         <label>Email (optional)</label>

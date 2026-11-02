@@ -163,6 +163,8 @@ export const api = {
     lastName: string;
     phoneNumber: string;
     dateOfBirth?: string;
+    /** Optional; left out = "Prefer not to say" (stored as UNKNOWN). Same options as walk-in. */
+    sex?: 'FEMALE' | 'MALE' | 'OTHER';
     pin: string;
     crossClinicConsent: boolean;
     email?: string;
