@@ -55,10 +55,14 @@ describe('front-desk phone verification (C3 fallback)', () => {
     expect(completePendingSignupInPerson).not.toHaveBeenCalled();
   });
 
-  it('finishes it once confirmed', async () => {
-    (completePendingSignupInPerson as jest.Mock).mockResolvedValue({ patientCode: 'ACI-NEW1' });
+  it('finishes it once confirmed, and returns the setup code the patient uses to choose their PIN', async () => {
+    (completePendingSignupInPerson as jest.Mock).mockResolvedValue({
+      patient: { patientCode: 'ACI-NEW1' },
+      setupCode: { code: '482913', expiresAt: new Date('2026-11-03T10:10:00Z') },
+    });
     const res = await withCookie(request(buildApp()).post('/phone-verification/pending-signups/pend-1/complete').send({ phoneConfirmedInPerson: true }));
     expect(res.status).toBe(201);
+    expect(res.body).toEqual({ patientCode: 'ACI-NEW1', setupCode: { code: '482913', expiresAt: '2026-11-03T10:10:00.000Z' } });
     expect(completePendingSignupInPerson).toHaveBeenCalledWith('pend-1', 's1', 'c1');
   });
 

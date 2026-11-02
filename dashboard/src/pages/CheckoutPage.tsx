@@ -869,7 +869,13 @@ export function CheckoutPage() {
                 <div>
                   <p className="font-display text-xl font-bold text-emerald-900">Fully paid.</p>
                   <p className="text-sm text-emerald-900">
-                    {view.patient.smsOptOut ? 'No SMS receipt (patient opted out).' : bill.receiptSmsSentAt ? 'SMS receipt sent.' : 'SMS receipt is being sent.'}
+                    {view.patient.smsOptOut
+                      ? 'No SMS (patient does not want SMS).'
+                      : bill.receiptSmsSentAt
+                        ? 'SMS receipt sent.'
+                        : view.visitStatus === 'DONE'
+                          ? 'SMS receipt is being sent.'
+                          : 'The receipt goes in one SMS at checkout, with the prescription.'}
                   </p>
                 </div>
               </div>
@@ -901,7 +907,11 @@ export function CheckoutPage() {
 
           {view.visitStatus === 'READY_FOR_CHECKOUT' && (
             <section className="flex flex-col gap-3 rounded-2xl bg-navy-900 p-5 text-white shadow-raised print:hidden sm:flex-row sm:items-center sm:justify-between sm:p-6">
-              <p className="text-[15px] text-slate-200">Finish the visit. The patient can read it in their ACISI records.</p>
+              <p className="text-[15px] text-slate-200">
+                {view.patient.smsOptOut
+                  ? 'Finish the visit. No SMS (patient does not want SMS); they can read it in their ACISI records.'
+                  : 'Finish the visit. The patient gets one SMS: what they paid and their prescription (never the diagnosis).'}
+              </p>
               <button type="button" onClick={() => void finishCheckout()} disabled={finishing} className={btn.gold}>
                 {finishing ? 'Checking out…' : 'Complete checkout'}
               </button>

@@ -513,7 +513,7 @@ export const api = {
   },
 
   completePendingSignup(pendingId: string) {
-    return request<{ patientCode: string }>(`/phone-verification/pending-signups/${encodeURIComponent(pendingId)}/complete`, {
+    return request<{ patientCode: string; setupCode: { code: string; expiresAt: string } | null }>(`/phone-verification/pending-signups/${encodeURIComponent(pendingId)}/complete`, {
       method: 'POST',
       body: JSON.stringify({ phoneConfirmedInPerson: true }),
     });
@@ -563,6 +563,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ newPin }),
     });
+  },
+
+  deactivateStaff(staffId: string) {
+    return request<{ id: string; isActive: false }>(`/clinic/staff/${encodeURIComponent(staffId)}/deactivate`, { method: 'POST' });
   },
 
   setStaffPresence(staffId: string, status: 'IN' | 'OUT') {

@@ -8,6 +8,7 @@ import { comparePin, findActiveStaffById } from './staffService';
 import { emailConfigured } from '../config/email';
 import { enqueueVisitSummaryEmail } from '../jobs/queue';
 import { logger } from '../utils/logger';
+import { sendCheckoutSms } from './checkoutSmsService';
 
 export type CheckoutDeliveryMethod = 'sms' | 'sms_and_email';
 
@@ -243,11 +244,11 @@ export class EncounterNotReadyForCheckoutError extends Error {
  * the doctor's consultation submission — a doctor finishing a consult never
  * checks a patient out or sends anything by itself.
  *
- * No visit summary is sent by SMS (discontinued 2026-10-30: patients read
- * the visit in their portal records). 'sms' therefore means "nothing
- * extra"; 'sms_and_email' (the value is kept for compatibility) emails the
- * PDF, only when the patient has an email on file (re-checked here) AND
- * email delivery is configured at all.
+ * Sends the patient ONE SMS (checkoutSmsService): the receipt and a visit
+ * summary together (clinic, date, amount and method, prescription; never
+ * the diagnosis or department), unless they don't want SMS.
+ * 'sms_and_email' also emails the PDF, only when the patient has an email
+ * on file (re-checked here) AND email delivery is configured at all.
  */
 export async function checkoutEncounter(
   encounterId: string,
@@ -266,10 +267,16 @@ export async function checkoutEncounter(
     throw new EncounterNotReadyForCheckoutError();
   }
 
-  const updated = await prisma.encounter.update({
-    where: { id: encounter.id },
+  // Conditional, so two clicks (or two front-desk screens) can't both check
+  // the visit out, and the checkout SMS below goes exactly once.
+  const moved = await prisma.encounter.updateMany({
+    where: { id: encounter.id, status: 'READY_FOR_CHECKOUT' },
     data: { status: 'DONE', checkedOutByStaffId: staffId, checkedOutAt: new Date() },
   });
+  if (moved.count === 0) {
+    throw new EncounterNotReadyForCheckoutError();
+  }
+  const updated = await prisma.encounter.findUniqueOrThrow({ where: { id: encounter.id } });
 
   await recordAuditEvent({
     actorType: 'STAFF',
@@ -280,6 +287,9 @@ export async function checkoutEncounter(
     entityId: encounter.id,
     metadata: { deliveryMethod },
   });
+
+  // One SMS: receipt + visit summary (never the diagnosis or department).
+  await sendCheckoutSms(encounter.id);
 
   if (deliveryMethod === 'sms_and_email') {
     if (encounter.patient.email && emailConfigured) {

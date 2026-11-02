@@ -4,6 +4,7 @@ import { PaymentSettingsSection } from '../components/PaymentSettingsSection';
 import { DepartmentsSection } from '../components/DepartmentsSection';
 import { Building2, KeyRound, RefreshCw, UsersRound, Wallet } from 'lucide-react';
 import { Avatar, Badge, Card, EmptyState, SkeletonList, Tone } from '../components/ui';
+import { useAuth } from '../context/AuthContext';
 
 const PIN_PATTERN = /^\d{6}$/;
 
@@ -31,6 +32,8 @@ export function SettingsPage() {
   const [staff, setStaff] = useState<ClinicStaffListItem[] | null>(null);
   const [staffError, setStaffError] = useState<string | null>(null);
   const [resettingId, setResettingId] = useState<string | null>(null);
+  const [deactivatingId, setDeactivatingId] = useState<string | null>(null);
+  const { session } = useAuth();
   const [resetResult, setResetResult] = useState<{ staffCode: string; name: string; newPin: string } | null>(null);
   const [togglingPresenceId, setTogglingPresenceId] = useState<string | null>(null);
   const [departments, setDepartments] = useState<AdminDepartment[] | null>(null);
@@ -95,6 +98,25 @@ export function SettingsPage() {
       setStaffError(err instanceof ApiError ? err.message : 'Failed to reset PIN');
     } finally {
       setResettingId(null);
+    }
+  }
+
+  async function handleDeactivate(member: ClinicStaffListItem): Promise<void> {
+    if (
+      !confirm(
+        `Deactivate ${member.name} (${member.staffCode})?\n\nThey are logged out now and can't log in again. Their name stays on the visits and payments they handled. Patients already waiting for them can be moved with "Change doctor". To undo this, contact ACISI.`,
+      )
+    )
+      return;
+    setDeactivatingId(member.id);
+    setStaffError(null);
+    try {
+      await api.deactivateStaff(member.id);
+      setStaff((prev) => prev && prev.map((s) => (s.id === member.id ? { ...s, isActive: false, presence: null } : s)));
+    } catch (err) {
+      setStaffError(err instanceof ApiError ? err.message : 'Failed to deactivate');
+    } finally {
+      setDeactivatingId(null);
     }
   }
 
@@ -227,6 +249,11 @@ export function SettingsPage() {
                     <button onClick={() => void handleResetPin(member)} disabled={resettingId === member.id} className={smallBtn}>
                       {resettingId === member.id ? 'Resetting…' : 'Reset PIN'}
                     </button>
+                    {member.isActive && member.id !== session?.staffId && (
+                      <button onClick={() => void handleDeactivate(member)} disabled={deactivatingId === member.id} className={smallBtn}>
+                        {deactivatingId === member.id ? 'Deactivating…' : 'Deactivate'}
+                      </button>
+                    )}
                   </div>
                   {editingDeptsFor === member.id && (
                     <DoctorDepartmentsEditor

@@ -682,12 +682,16 @@ export async function voidPayment(input: { paymentId: string; clinicId: string; 
 
 // --- Receipt ------------------------------------------------------------------
 
-export type ReceiptSmsOutcome = 'sent' | 'opted_out' | 'already_sent' | 'failed';
+export type ReceiptSmsOutcome = 'sent' | 'opted_out' | 'already_sent' | 'before_checkout' | 'failed';
 
 /**
  * Sends the "paid" receipt SMS, once per bill (claimed atomically via
  * receiptSmsSentAt), unless the patient has opted out of SMS. Never throws —
  * a failed SMS must not affect the payment that triggered it.
+ *
+ * Only for a bill paid off AFTER the visit was checked out. Before checkout
+ * nothing is sent here: the receipt goes in the one checkout SMS instead
+ * (checkoutSmsService), so the patient gets a single message.
  */
 export async function sendPaidReceiptSms(billId: string): Promise<ReceiptSmsOutcome> {
   try {
@@ -695,12 +699,13 @@ export async function sendPaidReceiptSms(billId: string): Promise<ReceiptSmsOutc
       where: { id: billId },
       include: {
         clinic: { select: { name: true } },
-        encounter: { include: { patient: { select: { id: true, phoneNumber: true, smsOptOut: true, deletedAt: true } } } },
+        encounter: { select: { status: true, patient: { select: { id: true, phoneNumber: true, smsOptOut: true, deletedAt: true } } } },
         payments: { where: { status: 'SUCCEEDED' }, orderBy: { completedAt: 'asc' } },
       },
     });
     const patient = bill.encounter.patient;
     if (bill.paidKes <= 0) return 'already_sent'; // nothing was paid (KES 0 bill): no receipt to send
+    if (bill.encounter.status !== 'DONE') return 'before_checkout'; // the checkout SMS will carry it
     if (patient.smsOptOut || patient.deletedAt) {
       await recordAuditEvent({ actorType: 'SYSTEM', action: 'RECEIPT_SMS_SKIPPED_OPT_OUT', entityType: 'Bill', entityId: bill.id });
       return 'opted_out';

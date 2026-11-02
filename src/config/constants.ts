@@ -88,6 +88,14 @@ export const APPOINTMENT_REMINDER_HOUR = 9;
 /** A portal signup waiting for phone verification is kept this long, then deleted automatically. */
 export const PENDING_SIGNUP_KEEP_DAYS = 14;
 
+/**
+ * Signup is "verify the phone first, then choose the PIN": after the SMS
+ * code is confirmed, the patient has this long to choose their PIN (a
+ * one-time token links the two steps). If it runs out, they ask for a new
+ * code and verify again.
+ */
+export const PIN_SETUP_TOKEN_TTL_SECONDS = 30 * 60;
+
 /** Shown when a signup or first-PIN code could not be sent (wording agreed with the owner). */
 export const CODE_NOT_SENT_MESSAGE =
   "We couldn't send your code. You can still visit your clinic as normal – the front desk will verify your phone and finish setting up your account.";
@@ -112,4 +120,4 @@ export const SMS_OVERAGE_KES = 2;
  * allowance. Anything else (PIN, phone-verification and sharing codes, the
  * ACISI check-in fee SMS, the account-deleted notice) is never counted.
  */
-export const CLINIC_COUNTED_SMS_PURPOSES: readonly string[] = ['PAYMENT_RECEIPT', 'APPOINTMENT_REMINDER', 'WALK_IN_INVITE'];
+export const CLINIC_COUNTED_SMS_PURPOSES: readonly string[] = ['PAYMENT_RECEIPT', 'CHECKOUT_SUMMARY', 'APPOINTMENT_REMINDER', 'WALK_IN_INVITE'];

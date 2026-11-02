@@ -142,6 +142,67 @@ export function buildPaymentReceiptSms(input: {
   return appendIfNoExtraPart(build(name, methodText), ' ', PRIVACY_NOTICE_SMS_LINE);
 }
 
+/** Used in the checkout SMS when the prescription itself doesn't fit in one SMS. */
+export const PRESCRIPTION_SEE_PROFILE = 'Prescription: see your ACISI profile';
+
+/** True if `message` goes as exactly one SMS of at most 160 characters. */
+export function fitsOneSms(message: string): boolean {
+  return message.length <= SINGLE_SMS_MAX_CHARS && smsPartCount(message) === 1;
+}
+
+/**
+ * The one SMS a patient gets at checkout: the receipt and the visit summary
+ * together, e.g.
+ * "Sunrise Family Clinic: Visit 03/10/2026. Paid KES 1,500 by M-Pesa
+ * QAB12CD34E. Prescription: Amoxicillin 500mg 3x daily 5 days"
+ *
+ * Clinic, date, amount and method, prescription: never the diagnosis or the
+ * department. Always ONE SMS of at most 160 characters. If it doesn't fit,
+ * in this order: the prescription becomes "Prescription: see your ACISI
+ * profile", payment references (M-Pesa codes, card references) are
+ * dropped, and the clinic name is shortened. The privacy line is added only
+ * when it still fits.
+ */
+export function buildCheckoutSms(input: {
+  clinicName: string;
+  /** Already formatted DD/MM/YYYY. */
+  date: string;
+  /** Null when no bill was made for the visit. */
+  bill: { totalKes: number; paidKes: number; payments: ReceiptPaymentLine[] } | null;
+  prescription: string | null;
+}): string {
+  const paymentText = (withRefs: boolean): string => {
+    const b = input.bill;
+    if (!b) return 'No payment recorded.';
+    if (b.totalKes <= 0) return 'No charge.';
+    const balance = b.totalKes - b.paidKes;
+    const parts: string[] = [];
+    if (b.paidKes > 0) {
+      const methods = [...new Set(b.payments.map((p) => describePayment(withRefs ? p : { ...p, reference: null })))];
+      parts.push(`Paid KES ${formatKes(b.paidKes)}${methods.length ? ` by ${methods.join(', ')}` : ''}.`);
+    }
+    if (balance > 0) parts.push(`Balance KES ${formatKes(balance)}.`);
+    return parts.join(' ');
+  };
+  // Line breaks become spaces first (toSmsSafe alone would drop them and join words).
+  const rx = toSmsSafe((input.prescription ?? '').replace(/\s+/g, ' '));
+  const fullRx = rx ? `Prescription: ${rx}` : 'Prescription: none';
+  const build = (name: string, payments: string, prescription: string) => `${name}: Visit ${input.date}. ${payments} ${prescription}`;
+
+  let name = toSmsSafe(input.clinicName) || 'Clinic';
+  let prescription = fullRx;
+  let payments = paymentText(true);
+  if (!fitsOneSms(build(name, payments, prescription))) prescription = PRESCRIPTION_SEE_PROFILE;
+  if (!fitsOneSms(build(name, payments, prescription))) payments = paymentText(false);
+  const overflow = build(name, payments, prescription).length - SINGLE_SMS_MAX_CHARS;
+  if (overflow > 0) name = name.slice(0, Math.max(name.length - overflow - 3, 8)).trimEnd() + '...';
+
+  const message = build(name, payments, prescription);
+  // On its own line, so it can't be read as part of the prescription.
+  const withPrivacy = `${message}\n${PRIVACY_NOTICE_SMS_LINE}`;
+  return fitsOneSms(withPrivacy) ? withPrivacy : message;
+}
+
 const KENYA_OFFSET_MS = 3 * 60 * 60 * 1000;
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

@@ -55,7 +55,7 @@ function badRequest(res: Response, error: z.ZodError): void {
 /** Whole KES only: rejects decimals, negatives, strings and anything absurd. */
 const kes = (label: string) =>
   z
-    .number({ invalid_type_error: `${label} must be a number` })
+    .number({ error: `${label} must be a number` })
     .int(`${label} must be a whole number of KES`)
     .min(0, `${label} can't be negative`)
     .max(MAX_AMOUNT_KES, `${label} is too large`);

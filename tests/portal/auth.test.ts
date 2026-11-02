@@ -55,7 +55,7 @@ jest.mock('../../src/services/pendingSignupService', () => {
       super(message);
     }
   }
-  return { startPendingSignup: jest.fn(), verifyPendingSignup: jest.fn(), resendSignupCode: jest.fn(), PendingSignupError };
+  return { startPendingSignup: jest.fn(), verifyPendingSignup: jest.fn(), setPendingSignupPin: jest.fn(), resendSignupCode: jest.fn(), PendingSignupError };
 });
 
 jest.mock('../../src/services/otpService', () => ({
@@ -69,7 +69,13 @@ import {
   setPatientPin,
 } from '../../src/services/patientService';
 import { requestPinResetOtp, verifyPinResetOtp } from '../../src/services/otpService';
-import { PendingSignupError, resendSignupCode, startPendingSignup, verifyPendingSignup } from '../../src/services/pendingSignupService';
+import {
+  PendingSignupError,
+  resendSignupCode,
+  setPendingSignupPin,
+  startPendingSignup,
+  verifyPendingSignup,
+} from '../../src/services/pendingSignupService';
 import { portalAuthRouter } from '../../src/portal/auth';
 import { PIN_LOCKOUT } from '../../src/config/constants';
 import { clearLockout } from '../../src/services/pinLockout';
@@ -77,6 +83,7 @@ import { clearLockout } from '../../src/services/pinLockout';
 const mockFindPatient = findPatientByPhoneOrCode as jest.Mock;
 const mockStartPending = startPendingSignup as jest.Mock;
 const mockVerifyPending = verifyPendingSignup as jest.Mock;
+const mockSetSignupPin = setPendingSignupPin as jest.Mock;
 const mockResendCode = resendSignupCode as jest.Mock;
 const mockVerifyPin = verifyPatientPin as jest.Mock;
 const mockSetPin = setPatientPin as jest.Mock;
@@ -99,12 +106,27 @@ beforeEach(() => {
 });
 
 describe('POST /patients/register (C3: phone verified before the account exists)', () => {
-  const BODY = { firstName: 'Jane', lastName: 'Wanjiru', phoneNumber: '0712345678', pin: '730194', acceptLegal: true };
+  const BODY = { firstName: 'Jane', lastName: 'Wanjiru', phoneNumber: '0712345678', acceptLegal: true };
 
-  it('rejects a PIN that is not 6 digits', async () => {
-    const res = await request(buildApp()).post('/patients/register').send({ ...BODY, pin: '12' });
-    expect(res.status).toBe(400);
-    expect(mockStartPending).not.toHaveBeenCalled();
+  it('asks for NO PIN: the PIN is chosen only after the phone is verified', async () => {
+    mockStartPending.mockResolvedValue({ pendingId: 'pend-1', smsSent: true });
+    const res = await request(buildApp()).post('/patients/register').send(BODY);
+    expect(res.status).toBe(202);
+    expect(mockStartPending.mock.calls[0][0]).not.toHaveProperty('pinHash');
+    // A PIN sent anyway by an old page is ignored, never stored at this step.
+    await request(buildApp()).post('/patients/register').send({ ...BODY, pin: '730194' });
+    expect(JSON.stringify(mockStartPending.mock.calls[1][0])).not.toContain('730194');
+    expect(mockStartPending.mock.calls[1][0]).not.toHaveProperty('pinHash');
+  });
+
+  it('takes the optional Sex (same options as walk-in); left out it is UNKNOWN', async () => {
+    mockStartPending.mockResolvedValue({ pendingId: 'pend-1', smsSent: true });
+    await request(buildApp()).post('/patients/register').send({ ...BODY, sex: 'FEMALE' });
+    expect(mockStartPending.mock.calls[0][0].sex).toBe('FEMALE');
+    await request(buildApp()).post('/patients/register').send(BODY);
+    expect(mockStartPending.mock.calls[1][0].sex).toBe('UNKNOWN');
+    const bad = await request(buildApp()).post('/patients/register').send({ ...BODY, sex: 'ALIEN' });
+    expect(bad.status).toBe(400);
   });
 
   it('creates NO account and NO session yet: it saves a pending signup and texts a code', async () => {
@@ -114,8 +136,7 @@ describe('POST /patients/register (C3: phone verified before the account exists)
     expect(res.body).toEqual({ pendingId: 'pend-1', smsSent: true });
     expect(res.headers['set-cookie']).toBeUndefined();
     const saved = mockStartPending.mock.calls[0][0];
-    expect(saved).toMatchObject({ phoneNumberE164: '+254712345678', crossClinicConsent: false, email: 'jane@example.com', pinHash: 'hashed-pin' });
-    expect(JSON.stringify(saved)).not.toContain('730194');
+    expect(saved).toMatchObject({ phoneNumberE164: '+254712345678', crossClinicConsent: false, email: 'jane@example.com' });
   });
 
   it('when the SMS cannot be sent, says so in the agreed words and keeps the signup', async () => {
@@ -158,13 +179,13 @@ describe('POST /patients/register (C3: phone verified before the account exists)
   });
 });
 
-describe('POST /patients/register/verify', () => {
-  it('a correct code creates the account and logs the patient in', async () => {
-    mockVerifyPending.mockResolvedValue(PATIENT);
+describe('POST /patients/register/verify (step 2: the phone first)', () => {
+  it('a correct code verifies the phone and returns a PIN-setup token, but NO account or session yet', async () => {
+    mockVerifyPending.mockResolvedValue({ pinSetupToken: 'tok-1' });
     const res = await request(buildApp()).post('/patients/register/verify').send({ pendingId: 'pend-1', code: '123456' });
-    expect(res.status).toBe(201);
-    expect(res.body.patientCode).toBe('ACI-7F2K');
-    expect(res.headers['set-cookie']?.[0]).toContain('acisi_patient_session=');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ phoneVerified: true, pinSetupToken: 'tok-1' });
+    expect(res.headers['set-cookie']).toBeUndefined();
   });
 
   it('a wrong code gets a clear message and no session', async () => {
@@ -178,6 +199,31 @@ describe('POST /patients/register/verify', () => {
     const res = await request(buildApp()).post('/patients/register/verify').send({ pendingId: 'pend-1', code: '12' });
     expect(res.status).toBe(400);
     expect(mockVerifyPending).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /patients/register/pin (step 3: then the PIN)', () => {
+  it('sets the PIN, creates the account and logs the patient in', async () => {
+    mockSetSignupPin.mockResolvedValue(PATIENT);
+    const res = await request(buildApp()).post('/patients/register/pin').send({ pendingId: 'pend-1', pinSetupToken: 'tok-1', pin: '730194' });
+    expect(res.status).toBe(201);
+    expect(res.body).toEqual({ patientCode: 'ACI-7F2K', firstName: 'Jane' });
+    expect(res.headers['set-cookie']?.[0]).toContain('acisi_patient_session=');
+    expect(mockSetSignupPin).toHaveBeenCalledWith('pend-1', 'tok-1', '730194');
+  });
+
+  it('rejects a PIN that is not 6 digits before calling the service', async () => {
+    const res = await request(buildApp()).post('/patients/register/pin').send({ pendingId: 'pend-1', pinSetupToken: 'tok-1', pin: '12' });
+    expect(res.status).toBe(400);
+    expect(mockSetSignupPin).not.toHaveBeenCalled();
+  });
+
+  it('refused (phone not verified, bad token, weak PIN): clear message, no session', async () => {
+    mockSetSignupPin.mockRejectedValue(new PendingSignupError('Confirm your phone number first. If it has been a while, ask for a new code.', 400));
+    const res = await request(buildApp()).post('/patients/register/pin').send({ pendingId: 'pend-1', pinSetupToken: 'nope', pin: '730194' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Confirm your phone number first/);
+    expect(res.headers['set-cookie']).toBeUndefined();
   });
 });
 

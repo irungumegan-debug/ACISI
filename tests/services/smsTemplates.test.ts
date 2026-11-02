@@ -1,5 +1,7 @@
 import {
   buildCheckInFeeSms,
+  buildCheckoutSms,
+  PRESCRIPTION_SEE_PROFILE,
   appendIfNoExtraPart,
   buildPaymentReceiptSms,
   buildWalkInInviteSms,
@@ -136,5 +138,93 @@ describe('buildCheckInFeeSms (shortened 2026-10-30)', () => {
       expect(smsPartCount(sms)).toBe(1);
       expect(sms.split('\n')).toHaveLength(2);
     }
+  });
+});
+
+describe('buildCheckoutSms (one SMS at checkout: receipt + visit summary)', () => {
+  const paid = { totalKes: 1500, paidKes: 1500, payments: [{ method: 'MPESA_MANUAL' as const, reference: 'QAB12CD34E' }] };
+
+  it('names the clinic, visit date, amount and method, and the prescription', () => {
+    expect(
+      buildCheckoutSms({ clinicName: 'Sunrise Family Clinic', date: '03/10/2026', bill: paid, prescription: 'Amoxicillin 500mg 3x daily 5 days' }),
+    ).toBe(
+      'Sunrise Family Clinic: Visit 03/10/2026. Paid KES 1,500 by M-Pesa QAB12CD34E. Prescription: Amoxicillin 500mg 3x daily 5 days\nPrivacy: acisi.co.ke/privacy',
+    );
+  });
+
+  it('adds the privacy line only when it still fits', () => {
+    const sms = buildCheckoutSms({ clinicName: 'Afya Clinic', date: '03/10/2026', bill: paid, prescription: 'Paracetamol' });
+    expect(sms).toBe('Afya Clinic: Visit 03/10/2026. Paid KES 1,500 by M-Pesa QAB12CD34E. Prescription: Paracetamol\nPrivacy: acisi.co.ke/privacy');
+  });
+
+  it('replaces a long prescription with "Prescription: see your ACISI profile"', () => {
+    const sms = buildCheckoutSms({
+      clinicName: 'Sunrise Family Clinic',
+      date: '03/10/2026',
+      bill: paid,
+      prescription: 'Amoxicillin 500mg three times daily for 7 days; Paracetamol 1g every 8 hours when needed; ORS sachets after each loose stool; review in 1 week',
+    });
+    expect(sms).toContain(PRESCRIPTION_SEE_PROFILE);
+    expect(sms).not.toContain('Amoxicillin');
+    expect(sms).toContain('Paid KES 1,500');
+  });
+
+  it('shows a balance still owed, and handles no bill and a waived bill', () => {
+    expect(
+      buildCheckoutSms({ clinicName: 'Afya', date: '03/10/2026', bill: { totalKes: 2000, paidKes: 500, payments: [{ method: 'CASH', reference: null }] }, prescription: 'ORS' }),
+    ).toContain('Paid KES 500 by Cash. Balance KES 1,500.');
+    expect(buildCheckoutSms({ clinicName: 'Afya', date: '03/10/2026', bill: null, prescription: 'ORS' })).toContain('No payment recorded.');
+    expect(buildCheckoutSms({ clinicName: 'Afya', date: '03/10/2026', bill: { totalKes: 0, paidKes: 0, payments: [] }, prescription: 'ORS' })).toContain(
+      'No charge.',
+    );
+  });
+
+  it('turns line breaks and curly quotes in the prescription into plain text', () => {
+    const sms = buildCheckoutSms({ clinicName: 'Afya', date: '03/10/2026', bill: null, prescription: 'Amoxicillin 500mg\n“3x daily” – 5 days' });
+    expect(sms).toMatch(/^[\x20-\x7E\n]+$/); // plain characters; the only line break is before the privacy line
+    expect(sms).toContain('Prescription: Amoxicillin 500mg "3x daily" - 5 days\nPrivacy:');
+  });
+
+  // The guard the clinic relies on: this test FAILS if any checkout SMS is
+  // ever longer than 160 characters (or would be split into two SMS).
+  describe('is never over 160 characters', () => {
+    const longName = 'St. Bartholomew Community Health and Maternity Centre of Greater Nairobi and Surrounding Counties';
+    const longRx = 'x'.repeat(400);
+    const manyPayments = {
+      totalKes: 1234567,
+      paidKes: 1000000,
+      payments: [
+        { method: 'MPESA_STK' as const, reference: 'QAB12CD34E' },
+        { method: 'MPESA_MANUAL' as const, reference: 'QZZ98YX76W' },
+        { method: 'CARD' as const, reference: 'TERMINAL-REF-123456789012' },
+        { method: 'CASH' as const, reference: null },
+      ],
+    };
+    const cases: [string, Parameters<typeof buildCheckoutSms>[0]][] = [
+      ['short everything', { clinicName: 'Afya', date: '03/10/2026', bill: paid, prescription: 'ORS' }],
+      ['long prescription', { clinicName: 'Sunrise Family Clinic', date: '03/10/2026', bill: paid, prescription: longRx }],
+      ['long clinic name', { clinicName: longName, date: '03/10/2026', bill: paid, prescription: 'ORS' }],
+      ['everything long', { clinicName: longName, date: '03/10/2026', bill: manyPayments, prescription: longRx }],
+      ['GSM extension characters', { clinicName: '[Clinic]{~}^|', date: '03/10/2026', bill: paid, prescription: '{[~]}^|\\'.repeat(30) }],
+      ['emoji and accents', { clinicName: 'Kliniki ya Afya 🏥 Nyéri', date: '03/10/2026', bill: manyPayments, prescription: 'Dawa 💊 '.repeat(30) }],
+      ['no bill, no prescription', { clinicName: longName, date: '03/10/2026', bill: null, prescription: null }],
+    ];
+    it.each(cases)('%s', (_label, input) => {
+      const sms = buildCheckoutSms(input);
+      expect(sms.length).toBeLessThanOrEqual(160);
+      expect(smsPartCount(sms)).toBe(1);
+    });
+
+    it('fails when a message is over 160 characters (the check itself works)', () => {
+      expect('x'.repeat(161).length).toBeGreaterThan(160);
+      expect(smsPartCount('x'.repeat(161))).toBe(2);
+    });
+  });
+
+  it('never contains the diagnosis or the department (they are not even inputs)', () => {
+    // The function takes no diagnosis or department, so it cannot leak them.
+    const keys = Object.keys({ clinicName: '', date: '', bill: null, prescription: '' } satisfies Parameters<typeof buildCheckoutSms>[0]);
+    expect(keys).not.toContain('diagnosis');
+    expect(keys).not.toContain('department');
   });
 });

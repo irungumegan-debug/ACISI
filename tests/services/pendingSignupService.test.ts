@@ -1,4 +1,5 @@
 import bcrypt from 'bcrypt';
+import { createHash } from 'crypto';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 jest.mock('../../src/config/redis', () => require('../helpers/fakeRedis').fakeRedisModule());
@@ -10,7 +11,14 @@ jest.mock('../../src/db/prisma', () => {
   prisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(prisma));
   return { prisma };
 });
-jest.mock('../../src/services/patientService', () => ({ findPatientByPhone: jest.fn(async () => null), registerPatient: jest.fn() }));
+jest.mock('../../src/services/patientService', () => ({
+  findPatientByPhone: jest.fn(async () => null),
+  registerPatient: jest.fn(),
+  hashPatientPin: jest.fn(async (pin: string) => `hashed:${pin}`),
+}));
+jest.mock('../../src/services/otpService', () => ({
+  createInPersonSetupCode: jest.fn(async () => ({ code: '482913', expiresAt: new Date('2026-11-03T10:10:00Z') })),
+}));
 jest.mock('../../src/services/smsService', () => ({ sendSms: jest.fn(async () => 'sent') }));
 jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
 
@@ -18,11 +26,13 @@ import { prisma } from '../../src/db/prisma';
 import { findPatientByPhone, registerPatient } from '../../src/services/patientService';
 import { sendSms } from '../../src/services/smsService';
 import { recordAuditEvent } from '../../src/services/auditService';
+import { createInPersonSetupCode } from '../../src/services/otpService';
 import {
   completePendingSignupInPerson,
   deleteExpiredPendingSignups,
   findPendingSignupsByPhone,
   resendSignupCode,
+  setPendingSignupPin,
   startPendingSignup,
   verifyPendingSignup,
 } from '../../src/services/pendingSignupService';
@@ -35,7 +45,6 @@ const INPUT = {
   lastName: 'Wanjiru',
   sex: 'FEMALE' as const,
   identity: {},
-  pinHash: 'pin-hash',
   crossClinicConsent: true,
 };
 const ROW = {
@@ -50,7 +59,7 @@ const ROW = {
   idNumber: null,
   nextOfKinName: null,
   nextOfKinPhone: null,
-  pinHash: 'pin-hash',
+  pinHash: null,
   crossClinicConsent: true,
   codeAttempts: 0,
   codeExpiresAt: new Date(Date.now() + 60_000),
@@ -65,13 +74,13 @@ beforeEach(() => {
 });
 
 describe('signup waits for phone verification (C3)', () => {
-  it('saves the details (hashed PIN, code hashed) for 14 days, and texts the code', async () => {
+  it('saves the details (NO PIN yet, code hashed) for 14 days, and texts the code', async () => {
     const res = await startPendingSignup(INPUT);
     expect(res).toEqual({ pendingId: 'pend-1', smsSent: true });
     const data = pending.create!.mock.calls[0][0].data;
     const code = /code is (\d{6})/.exec((sendSms as jest.Mock).mock.calls[0][1])![1]!;
     await expect(bcrypt.compare(code, data.codeHash)).resolves.toBe(true);
-    expect(data.pinHash).toBe('pin-hash');
+    expect(data.pinHash).toBeUndefined(); // the PIN comes only after the phone is verified
     const days = (data.expiresAt.getTime() - Date.now()) / 86_400_000;
     expect(days).toBeGreaterThan(13.9);
     expect(days).toBeLessThanOrEqual(14);
@@ -89,13 +98,19 @@ describe('signup waits for phone verification (C3)', () => {
     await expect(startPendingSignup(INPUT)).rejects.toMatchObject({ status: 409 });
   });
 
-  it('the right code creates the account, phone verified by SMS, with the choices made at signup', async () => {
+  it('the right code verifies the phone but creates NO account yet: it returns a one-time token for choosing the PIN', async () => {
     pending.findFirst!.mockResolvedValue({ ...ROW, codeHash: await bcrypt.hash('123456', 4) });
-    await verifyPendingSignup('pend-1', '123456');
-    expect(registerPatient).toHaveBeenCalledWith(
-      expect.objectContaining({ phoneNumberE164: '+254712345678', pinHash: 'pin-hash', crossClinicConsent: true, phoneVerifiedVia: 'SMS', acceptedTermsAndPrivacyNotice: true }),
-    );
-    expect(pending.delete).toHaveBeenCalledWith({ where: { id: 'pend-1' } });
+    const { pinSetupToken } = await verifyPendingSignup('pend-1', '123456');
+    expect(pinSetupToken).toMatch(/^[A-Za-z0-9_-]{40,}$/);
+    expect(registerPatient).not.toHaveBeenCalled();
+    const { data } = pending.update!.mock.calls[0][0];
+    expect(data.phoneVerifiedAt).toBeInstanceOf(Date);
+    expect(data.codeHash).toBeNull(); // the SMS code can't be used twice
+    expect(data.pinSetupTokenHash).toBe(createHash('sha256').update(pinSetupToken).digest('hex')); // only a hash is stored
+    expect(data.pinSetupTokenHash).not.toContain(pinSetupToken);
+    const minutes = (data.pinSetupExpiresAt.getTime() - Date.now()) / 60_000;
+    expect(minutes).toBeGreaterThan(29);
+    expect(minutes).toBeLessThanOrEqual(30);
   });
 
   it('a wrong code is counted and creates nothing', async () => {
@@ -120,6 +135,54 @@ describe('signup waits for phone verification (C3)', () => {
   });
 });
 
+describe('choosing the PIN, only after the phone is verified', () => {
+  const TOKEN = 'tok-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG';
+  const verifiedRow = (overrides: object = {}) => ({
+    ...ROW,
+    phoneVerifiedAt: new Date(),
+    pinSetupTokenHash: createHash('sha256').update(TOKEN).digest('hex'),
+    pinSetupExpiresAt: new Date(Date.now() + 60_000),
+    ...overrides,
+  });
+
+  it('creates the account with the chosen PIN (hashed), phone verified by SMS, with the choices made at signup', async () => {
+    pending.findFirst!.mockResolvedValue(verifiedRow());
+    await setPendingSignupPin('pend-1', TOKEN, '730194');
+    expect(registerPatient).toHaveBeenCalledWith(
+      expect.objectContaining({
+        phoneNumberE164: '+254712345678',
+        pinHash: 'hashed:730194',
+        sex: 'FEMALE',
+        crossClinicConsent: true,
+        phoneVerifiedVia: 'SMS',
+        acceptedTermsAndPrivacyNotice: true,
+      }),
+    );
+    expect(pending.delete).toHaveBeenCalledWith({ where: { id: 'pend-1' } }); // the token can't be used again
+  });
+
+  it('refuses before the phone is verified, with a wrong token, or after the token expires', async () => {
+    pending.findFirst!.mockResolvedValue(verifiedRow({ phoneVerifiedAt: null }));
+    await expect(setPendingSignupPin('pend-1', TOKEN, '730194')).rejects.toThrow(/Confirm your phone number first/);
+    pending.findFirst!.mockResolvedValue(verifiedRow());
+    await expect(setPendingSignupPin('pend-1', 'wrong-token', '730194')).rejects.toThrow(/Confirm your phone number first/);
+    pending.findFirst!.mockResolvedValue(verifiedRow({ pinSetupExpiresAt: new Date(Date.now() - 1) }));
+    await expect(setPendingSignupPin('pend-1', TOKEN, '730194')).rejects.toThrow(/Confirm your phone number first/);
+    pending.findFirst!.mockResolvedValue(verifiedRow({ pinSetupTokenHash: null }));
+    await expect(setPendingSignupPin('pend-1', TOKEN, '730194')).rejects.toThrow(/Confirm your phone number first/);
+    expect(registerPatient).not.toHaveBeenCalled();
+  });
+
+  it('applies the PIN rules (no dates, repeats, sequences or own number) and keeps the token usable', async () => {
+    pending.findFirst!.mockResolvedValue(verifiedRow());
+    for (const weak of ['123456', '111111', '150390', '345678']) {
+      await expect(setPendingSignupPin('pend-1', TOKEN, weak)).rejects.toMatchObject({ status: 400 });
+    }
+    expect(registerPatient).not.toHaveBeenCalled();
+    expect(pending.delete).not.toHaveBeenCalled();
+  });
+});
+
 describe('finishing at the clinic when SMS failed (C3 fallback)', () => {
   it('front desk sees only the name, and the lookup is logged without the number', async () => {
     pending.findMany!.mockResolvedValue([{ id: 'pend-1', firstName: 'Jane', lastName: 'Wanjiru', createdAt: new Date() }]);
@@ -128,13 +191,27 @@ describe('finishing at the clinic when SMS failed (C3 fallback)', () => {
     expect(JSON.stringify((recordAuditEvent as jest.Mock).mock.calls[0][0])).not.toContain('254712345678');
   });
 
-  it('"Finish setup" creates the account with the PIN the patient chose, marked verified in person, and logs it', async () => {
+  it('"Finish setup" verifies the phone in person, creates the account WITHOUT a PIN, and returns a setup code for choosing it', async () => {
     pending.findFirst!.mockResolvedValue(ROW);
-    await completePendingSignupInPerson('pend-1', 's1', 'c1');
-    expect(registerPatient).toHaveBeenCalledWith(expect.objectContaining({ pinHash: 'pin-hash', phoneVerifiedVia: 'IN_PERSON' }));
+    const res = await completePendingSignupInPerson('pend-1', 's1', 'c1');
+    expect(registerPatient).toHaveBeenCalledWith(expect.objectContaining({ pinHash: undefined, phoneVerifiedVia: 'IN_PERSON' }));
+    expect(createInPersonSetupCode).toHaveBeenCalledWith('p-new');
+    expect(res.setupCode).toEqual({ code: '482913', expiresAt: expect.any(Date) });
+    expect(recordAuditEvent).toHaveBeenCalledTimes(1); // one row, not two
+    expect(recordAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'PATIENT_PHONE_VERIFIED_IN_PERSON', metadata: { flow: 'PENDING_SIGNUP', setupCodeIssued: true } }),
+    );
     expect(recordAuditEvent).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'PATIENT_PHONE_VERIFIED_IN_PERSON', entityId: 'p-new', staffId: 's1', clinicId: 'c1' }),
     );
+  });
+
+  it('a signup started before this change (PIN already chosen) is finished with that PIN, no setup code', async () => {
+    pending.findFirst!.mockResolvedValue({ ...ROW, pinHash: 'old-pin-hash' });
+    const res = await completePendingSignupInPerson('pend-1', 's1', 'c1');
+    expect(registerPatient).toHaveBeenCalledWith(expect.objectContaining({ pinHash: 'old-pin-hash', phoneVerifiedVia: 'IN_PERSON' }));
+    expect(res.setupCode).toBeNull();
+    expect(createInPersonSetupCode).not.toHaveBeenCalled();
   });
 
   it('expired pending signups are deleted by the hourly clean-up', async () => {

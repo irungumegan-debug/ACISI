@@ -2,7 +2,7 @@
 jest.mock('../../src/config/redis', () => require('../helpers/fakeRedis').fakeRedisModule());
 jest.mock('../../src/db/prisma', () => ({
   prisma: {
-    encounter: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
+    encounter: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
     patient: { findUniqueOrThrow: jest.fn() },
   },
 }));
@@ -11,6 +11,7 @@ jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn(
 jest.mock('../../src/services/patientService', () => ({ getScopedHistory: jest.fn() }));
 jest.mock('../../src/services/staffService', () => ({ findActiveStaffById: jest.fn(), comparePin: jest.fn() }));
 jest.mock('../../src/jobs/queue', () => ({ enqueueVisitSummaryEmail: jest.fn() }));
+jest.mock('../../src/services/checkoutSmsService', () => ({ sendCheckoutSms: jest.fn() }));
 
 let mockEmailConfigured = true;
 jest.mock('../../src/config/email', () => ({
@@ -24,6 +25,7 @@ import { recordAuditEvent } from '../../src/services/auditService';
 import { getScopedHistory } from '../../src/services/patientService';
 import { findActiveStaffById, comparePin } from '../../src/services/staffService';
 import { enqueueVisitSummaryEmail } from '../../src/jobs/queue';
+import { sendCheckoutSms } from '../../src/services/checkoutSmsService';
 import {
   EncounterNotAccessibleError,
   EncounterNotConsultableError,
@@ -44,6 +46,9 @@ const mockGetScopedHistory = getScopedHistory as jest.Mock;
 const mockFindActiveStaffById = findActiveStaffById as jest.Mock;
 const mockComparePin = comparePin as jest.Mock;
 const mockEnqueueVisitEmail = enqueueVisitSummaryEmail as jest.Mock;
+const mockSendCheckoutSms = sendCheckoutSms as jest.Mock;
+const mockUpdateMany = (prisma.encounter as unknown as { updateMany: jest.Mock }).updateMany;
+const mockFindUniqueOrThrow = (prisma.encounter as unknown as { findUniqueOrThrow: jest.Mock }).findUniqueOrThrow;
 
 const DOCTOR_STAFF = { id: 'staff-1', name: 'Dr. Amani Wambui', pinHash: 'hashed' };
 
@@ -228,16 +233,42 @@ describe('submitConsultation', () => {
 });
 
 describe('checkoutEncounter', () => {
+  beforeEach(() => {
+    mockUpdateMany.mockResolvedValue({ count: 1 });
+    mockFindUniqueOrThrow.mockResolvedValue({ id: 'enc-1', status: 'DONE' });
+  });
+
   it('rejects an encounter not yet ready for checkout', async () => {
     mockFindFirst.mockResolvedValue({ id: 'enc-1', status: 'IN_CONSULTATION', patient: { email: null } });
 
     await expect(checkoutEncounter('enc-1', 'clinic-A', 'staff-1')).rejects.toThrow(EncounterNotReadyForCheckoutError);
     expect(mockEnqueueVisitEmail).not.toHaveBeenCalled();
+    expect(mockSendCheckoutSms).not.toHaveBeenCalled();
   });
 
-  it('marks DONE and sends the visit-summary SMS unconditionally, defaulting to sms-only (no email)', async () => {
+  it('only moves READY_FOR_CHECKOUT to DONE, and sends the one checkout SMS', async () => {
+    mockFindFirst.mockResolvedValue({ id: 'enc-1', status: 'READY_FOR_CHECKOUT', patient: { email: null } });
+
+    await checkoutEncounter('enc-1', 'clinic-A', 'staff-1');
+
+    expect(mockUpdateMany).toHaveBeenCalledWith({
+      where: { id: 'enc-1', status: 'READY_FOR_CHECKOUT' },
+      data: expect.objectContaining({ status: 'DONE', checkedOutByStaffId: 'staff-1' }),
+    });
+    expect(mockSendCheckoutSms).toHaveBeenCalledTimes(1);
+    expect(mockSendCheckoutSms).toHaveBeenCalledWith('enc-1');
+  });
+
+  it('a second, simultaneous checkout is refused and sends no second SMS', async () => {
+    mockFindFirst.mockResolvedValue({ id: 'enc-1', status: 'READY_FOR_CHECKOUT', patient: { email: null } });
+    mockUpdateMany.mockResolvedValue({ count: 0 }); // the other click won
+
+    await expect(checkoutEncounter('enc-1', 'clinic-A', 'staff-1')).rejects.toThrow(EncounterNotReadyForCheckoutError);
+    expect(mockSendCheckoutSms).not.toHaveBeenCalled();
+  });
+
+  it('marks DONE, defaulting to sms-only (no email)', async () => {
     mockFindFirst.mockResolvedValue({ id: 'enc-1', status: 'READY_FOR_CHECKOUT', patient: { email: 'jane@example.com' } });
-    mockUpdate.mockResolvedValue({ id: 'enc-1', status: 'DONE' });
 
     await checkoutEncounter('enc-1', 'clinic-A', 'staff-1');
     expect(mockEnqueueVisitEmail).not.toHaveBeenCalled();
@@ -245,7 +276,6 @@ describe('checkoutEncounter', () => {
 
   it("doesn't enqueue email for an explicit 'sms' delivery method even when the patient has an email on file", async () => {
     mockFindFirst.mockResolvedValue({ id: 'enc-1', status: 'READY_FOR_CHECKOUT', patient: { email: 'jane@example.com' } });
-    mockUpdate.mockResolvedValue({ id: 'enc-1', status: 'DONE' });
 
     await checkoutEncounter('enc-1', 'clinic-A', 'staff-1', 'sms');
     expect(mockEnqueueVisitEmail).not.toHaveBeenCalled();
@@ -253,7 +283,6 @@ describe('checkoutEncounter', () => {
 
   it("enqueues email in addition to (never instead of) SMS when 'sms_and_email' is chosen and the patient has an email", async () => {
     mockFindFirst.mockResolvedValue({ id: 'enc-1', status: 'READY_FOR_CHECKOUT', patient: { email: 'jane@example.com' } });
-    mockUpdate.mockResolvedValue({ id: 'enc-1', status: 'DONE' });
 
     await checkoutEncounter('enc-1', 'clinic-A', 'staff-1', 'sms_and_email');
     expect(mockEnqueueVisitEmail).toHaveBeenCalledWith({ encounterId: 'enc-1' });
@@ -261,7 +290,6 @@ describe('checkoutEncounter', () => {
 
   it("skips email (SMS still sent) when 'sms_and_email' is chosen but the patient has no email on file", async () => {
     mockFindFirst.mockResolvedValue({ id: 'enc-1', status: 'READY_FOR_CHECKOUT', patient: { email: null } });
-    mockUpdate.mockResolvedValue({ id: 'enc-1', status: 'DONE' });
 
     await checkoutEncounter('enc-1', 'clinic-A', 'staff-1', 'sms_and_email');
     expect(mockEnqueueVisitEmail).not.toHaveBeenCalled();
@@ -270,7 +298,6 @@ describe('checkoutEncounter', () => {
   it("skips email (SMS still sent) when 'sms_and_email' is chosen and the patient has an email, but email delivery isn't configured", async () => {
     mockEmailConfigured = false;
     mockFindFirst.mockResolvedValue({ id: 'enc-1', status: 'READY_FOR_CHECKOUT', patient: { email: 'jane@example.com' } });
-    mockUpdate.mockResolvedValue({ id: 'enc-1', status: 'DONE' });
 
     await checkoutEncounter('enc-1', 'clinic-A', 'staff-1', 'sms_and_email');
     expect(mockEnqueueVisitEmail).not.toHaveBeenCalled();
@@ -278,7 +305,6 @@ describe('checkoutEncounter', () => {
 
   it('records the chosen delivery method on the checkout audit event', async () => {
     mockFindFirst.mockResolvedValue({ id: 'enc-1', status: 'READY_FOR_CHECKOUT', patient: { email: 'jane@example.com' } });
-    mockUpdate.mockResolvedValue({ id: 'enc-1', status: 'DONE' });
 
     await checkoutEncounter('enc-1', 'clinic-A', 'staff-1', 'sms_and_email');
 
@@ -348,8 +374,8 @@ describe('doctor access is limited to the current queue (C1)', () => {
   });
 });
 
-describe('no visit summary by SMS (discontinued 2026-10-30)', () => {
-  it('the job queue no longer has a visit-summary SMS at all', () => {
+describe('checkout SMS is sent directly, not through a separate visit-summary queue', () => {
+  it('the job queue has no separate visit-summary SMS', () => {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const queue = jest.requireActual('../../src/jobs/queue');
     expect(queue.enqueueVisitSummarySms).toBeUndefined();
