@@ -198,7 +198,9 @@ export function buildCheckoutSms(input: {
   if (overflow > 0) name = name.slice(0, Math.max(name.length - overflow - 3, 8)).trimEnd() + '...';
 
   const message = build(name, payments, prescription);
-  return fitsOneSms(`${message} ${PRIVACY_NOTICE_SMS_LINE}`) ? `${message} ${PRIVACY_NOTICE_SMS_LINE}` : message;
+  // On its own line, so it can't be read as part of the prescription.
+  const withPrivacy = `${message}\n${PRIVACY_NOTICE_SMS_LINE}`;
+  return fitsOneSms(withPrivacy) ? withPrivacy : message;
 }
 
 const KENYA_OFFSET_MS = 3 * 60 * 60 * 1000;

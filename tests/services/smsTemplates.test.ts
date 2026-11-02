@@ -148,13 +148,13 @@ describe('buildCheckoutSms (one SMS at checkout: receipt + visit summary)', () =
     expect(
       buildCheckoutSms({ clinicName: 'Sunrise Family Clinic', date: '03/10/2026', bill: paid, prescription: 'Amoxicillin 500mg 3x daily 5 days' }),
     ).toBe(
-      'Sunrise Family Clinic: Visit 03/10/2026. Paid KES 1,500 by M-Pesa QAB12CD34E. Prescription: Amoxicillin 500mg 3x daily 5 days Privacy: acisi.co.ke/privacy',
+      'Sunrise Family Clinic: Visit 03/10/2026. Paid KES 1,500 by M-Pesa QAB12CD34E. Prescription: Amoxicillin 500mg 3x daily 5 days\nPrivacy: acisi.co.ke/privacy',
     );
   });
 
   it('adds the privacy line only when it still fits', () => {
     const sms = buildCheckoutSms({ clinicName: 'Afya Clinic', date: '03/10/2026', bill: paid, prescription: 'Paracetamol' });
-    expect(sms).toBe('Afya Clinic: Visit 03/10/2026. Paid KES 1,500 by M-Pesa QAB12CD34E. Prescription: Paracetamol Privacy: acisi.co.ke/privacy');
+    expect(sms).toBe('Afya Clinic: Visit 03/10/2026. Paid KES 1,500 by M-Pesa QAB12CD34E. Prescription: Paracetamol\nPrivacy: acisi.co.ke/privacy');
   });
 
   it('replaces a long prescription with "Prescription: see your ACISI profile"', () => {
@@ -181,8 +181,8 @@ describe('buildCheckoutSms (one SMS at checkout: receipt + visit summary)', () =
 
   it('turns line breaks and curly quotes in the prescription into plain text', () => {
     const sms = buildCheckoutSms({ clinicName: 'Afya', date: '03/10/2026', bill: null, prescription: 'Amoxicillin 500mg\n“3x daily” – 5 days' });
-    expect(sms).toMatch(/^[\x20-\x7E]+$/);
-    expect(sms).toContain('Prescription: Amoxicillin 500mg "3x daily" - 5 days');
+    expect(sms).toMatch(/^[\x20-\x7E\n]+$/); // plain characters; the only line break is before the privacy line
+    expect(sms).toContain('Prescription: Amoxicillin 500mg "3x daily" - 5 days\nPrivacy:');
   });
 
   // The guard the clinic relies on: this test FAILS if any checkout SMS is
