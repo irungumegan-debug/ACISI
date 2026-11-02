@@ -14,6 +14,13 @@ jest.mock('../../src/services/clinicService', () => ({
 jest.mock('../../src/services/staffService', () => ({
   listClinicStaff: jest.fn(),
   resetStaffPinByAdmin: jest.fn(),
+  deactivateStaffByAdmin: jest.fn(),
+  StaffDeactivationError: class StaffDeactivationError extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = 'StaffDeactivationError';
+    }
+  },
   StaffNotFoundError: class StaffNotFoundError extends Error {
     constructor() {
       super('Staff member not found');
@@ -34,7 +41,14 @@ jest.mock('../../src/db/prisma', () => ({
 
 import { loadDashboardSession, SESSION_COOKIE_NAME } from '../../src/dashboard/session';
 import { regenerateInviteCode } from '../../src/services/clinicService';
-import { listClinicStaff, resetStaffPinByAdmin, StaffNotFoundError, InvalidPinFormatError } from '../../src/services/staffService';
+import {
+  deactivateStaffByAdmin,
+  listClinicStaff,
+  resetStaffPinByAdmin,
+  StaffDeactivationError,
+  StaffNotFoundError,
+  InvalidPinFormatError,
+} from '../../src/services/staffService';
 import { prisma } from '../../src/db/prisma';
 import { clinicSettingsRouter } from '../../src/dashboard/clinicSettings';
 
@@ -174,5 +188,36 @@ describe('POST /clinic/staff/:id/reset-pin', () => {
     expect(mockResetPin).toHaveBeenCalledWith(
       expect.objectContaining({ newPin: '135790' }),
     );
+  });
+});
+
+describe('POST /clinic/staff/:id/deactivate', () => {
+  const mockDeactivate = deactivateStaffByAdmin as jest.Mock;
+  const post = (id: string) => request(buildApp()).post(`/clinic/staff/${id}/deactivate`).set('Cookie', `${SESSION_COOKIE_NAME}=tok`);
+
+  it('is admin-only', async () => {
+    mockLoadSession.mockResolvedValue(RECEPTIONIST_SESSION);
+    expect((await post('doc-1')).status).toBe(403);
+    expect(mockDeactivate).not.toHaveBeenCalled();
+  });
+
+  it("deactivates within the admin's own clinic, as the admin", async () => {
+    mockLoadSession.mockResolvedValue(ADMIN_SESSION);
+    mockDeactivate.mockResolvedValue({ id: 'doc-1', isActive: false });
+    const res = await post('doc-1');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ id: 'doc-1', isActive: false });
+    expect(mockDeactivate).toHaveBeenCalledWith({ clinicId: 'clinic-1', staffId: 'doc-1', requestedByStaffId: 'staff-1' });
+  });
+
+  it('answers 409 with the reason for yourself / the last admin, and 404 for someone not in the clinic', async () => {
+    mockLoadSession.mockResolvedValue(ADMIN_SESSION);
+    mockDeactivate.mockRejectedValueOnce(new StaffDeactivationError("You can't deactivate your own account."));
+    const self = await post('staff-1');
+    expect(self.status).toBe(409);
+    expect(self.body.error).toMatch(/own account/);
+
+    mockDeactivate.mockRejectedValueOnce(new StaffNotFoundError());
+    expect((await post('elsewhere')).status).toBe(404);
   });
 });

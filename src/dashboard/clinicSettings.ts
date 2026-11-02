@@ -20,8 +20,10 @@ import { clinicStkConfigured } from '../mpesa/clinicStk';
 import { env } from '../config/env';
 import {
   InvalidPinFormatError,
+  StaffDeactivationError,
   StaffIsNotADoctorError,
   StaffNotFoundError,
+  deactivateStaffByAdmin,
   listClinicStaff,
   resetStaffPinByAdmin,
   setDoctorPresenceByAdmin,
@@ -84,6 +86,27 @@ clinicSettingsRouter.post('/staff/:id/reset-pin', async (req, res) => {
     }
     if (err instanceof InvalidPinFormatError) {
       res.status(400).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
+});
+
+/**
+ * Deactivates one staff member of the admin's own clinic (e.g. they left):
+ * logs them out now, keeps their records. Not yourself, not the last admin.
+ */
+clinicSettingsRouter.post('/staff/:id/deactivate', async (req, res) => {
+  const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  try {
+    res.json(await deactivateStaffByAdmin({ clinicId, staffId: req.params.id as string, requestedByStaffId: staffId }));
+  } catch (err) {
+    if (err instanceof StaffNotFoundError) {
+      res.status(404).json({ error: err.message });
+      return;
+    }
+    if (err instanceof StaffDeactivationError) {
+      res.status(409).json({ error: err.message });
       return;
     }
     throw err;

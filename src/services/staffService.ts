@@ -447,3 +447,64 @@ export async function resetStaffPinByAdmin(input: ResetStaffPinByAdminInput): Pr
 
   return { staffCode: staff.staffCode, name: staff.name, newPin };
 }
+
+/** A staff member/admin action that the rules refuse; carries the message to show. */
+export class StaffDeactivationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'StaffDeactivationError';
+  }
+}
+
+/**
+ * A clinic admin deactivating someone in their own clinic's staff list, e.g.
+ * when they leave. Deactivated, never erased: their name stays on the visits
+ * they consulted, checked out or billed (medical and financial records are
+ * kept). They can't log in any more, aren't assigned new patients, and are
+ * logged out everywhere straight away. Audit-logged.
+ *
+ * Refused for the admin themselves, and for the clinic's last active admin
+ * (so a clinic is never left with nobody to manage it). Two admins
+ * deactivating each other at the same moment can't both succeed: the check
+ * and the change run under one per-clinic lock.
+ */
+export async function deactivateStaffByAdmin(input: {
+  clinicId: string;
+  staffId: string;
+  requestedByStaffId: string;
+}): Promise<{ id: string; isActive: false }> {
+  if (input.staffId === input.requestedByStaffId) {
+    throw new StaffDeactivationError("You can't deactivate your own account. Ask another admin of this clinic, or ACISI.");
+  }
+
+  const changed = await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`clinic-admins:${input.clinicId}`}))`;
+    const staff = await tx.staff.findFirst({ where: { id: input.staffId, clinicId: input.clinicId } });
+    if (!staff) throw new StaffNotFoundError();
+    if (!staff.isActive) return null; // already deactivated: nothing to do
+
+    if (staff.role === 'ADMIN') {
+      const activeAdmins = await tx.staff.count({ where: { clinicId: input.clinicId, role: 'ADMIN', isActive: true } });
+      if (activeAdmins <= 1) {
+        throw new StaffDeactivationError("This is the clinic's last admin, so they can't be deactivated.");
+      }
+    }
+    await tx.staff.update({ where: { id: staff.id }, data: { isActive: false } });
+    return staff;
+  });
+
+  if (changed) {
+    await revokeSessionsFor(`staff:${changed.id}`);
+    await recordAuditEvent({
+      actorType: 'STAFF',
+      actorId: input.requestedByStaffId,
+      staffId: input.requestedByStaffId,
+      clinicId: input.clinicId,
+      action: 'STAFF_DEACTIVATED_BY_ADMIN',
+      entityType: 'Staff',
+      entityId: changed.id,
+      metadata: { deactivatedStaffId: changed.id, role: changed.role },
+    });
+  }
+  return { id: input.staffId, isActive: false };
+}

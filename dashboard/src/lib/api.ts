@@ -565,6 +565,10 @@ export const api = {
     });
   },
 
+  deactivateStaff(staffId: string) {
+    return request<{ id: string; isActive: false }>(`/clinic/staff/${encodeURIComponent(staffId)}/deactivate`, { method: 'POST' });
+  },
+
   setStaffPresence(staffId: string, status: 'IN' | 'OUT') {
     return request<{ staffCode: string; name: string; presence: DoctorPresenceStatus }>(`/clinic/staff/${staffId}/presence`, {
       method: 'POST',
