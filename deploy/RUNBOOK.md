@@ -19,6 +19,7 @@ repository, in a chat, or in a support ticket.**
 | Redis | localhost only, 64 MB cap, `noeviction`, saved to disk (`appendonly`) |
 | Web front door | Nginx + Let's Encrypt for `acisi.co.ke` (reference copy: `deploy/nginx/acisi.conf`) |
 | DNS | Cloudflare: `acisi.co.ke` and `www` are **A → 102.68.86.176, DNS only (grey cloud)**. Keep the proxy off: with it on, Cloudflare would decrypt patient traffic outside Kenya. |
+| Uploaded patient files | `/var/lib/acisi/uploads` (`FILE_STORAGE_DIR`), owned by `acisi`, mode 0700, random file names. Never under the web root, never in a cloud. |
 | Backups | `/var/backups/acisi`, nightly at 02:00 EAT, encrypted, 14 days (see below) |
 
 ## Data stays in Kenya
@@ -184,6 +185,53 @@ sudo -u postgres psql acisi -c "DELETE FROM _prisma_migrations WHERE migration_n
 Signups still waiting for their PIN at that moment are deleted (the patient
 signs up again). Nothing else is touched.
 
+## Release 2026-11-14: patient file uploads (one-time steps)
+
+See `CHANGELOG.md`. Staff, doctors and patients can upload X-rays, scans, lab
+reports and photos of paper records. Files are stored on this server only.
+
+1. **Backup first:** `sudo systemctl start acisi-backup && sudo journalctl -u acisi-backup -n 5 --no-pager`
+2. **Cap the system log** so it can never fill the disk again (13 Nov outage).
+   Skip if `grep maxsize /etc/logrotate.d/rsyslog` already shows `maxsize 200M`:
+   ```
+   sudo sed -i '/\/var\/log\/syslog/,/}/ s/{/{\n\tmaxsize 200M/' /etc/logrotate.d/rsyslog
+   sudo mkdir -p /etc/systemd/system/logrotate.timer.d
+   printf '[Timer]\nOnCalendar=\nOnCalendar=hourly\n' | sudo tee /etc/systemd/system/logrotate.timer.d/hourly.conf
+   sudo systemctl daemon-reload && sudo systemctl restart logrotate.timer
+   ```
+3. **Update the app** (runs migration `20261114090000_patient_files` on start):
+   ```
+   sudo -u acisi -H bash -c 'cd /opt/acisi/app && git pull && npm ci && npm run build'
+   sudo install -m 644 /opt/acisi/app/deploy/systemd/acisi.service /etc/systemd/system/acisi.service
+   sudo systemctl daemon-reload
+   sudo systemctl restart acisi
+   sleep 15; curl -s https://acisi.co.ke/healthz; echo
+   sudo ls -ld /var/lib/acisi
+   ```
+   The last line should show `drwx------ acisi acisi`. No settings change is
+   needed: `FILE_STORAGE_DIR` defaults to `/var/lib/acisi/uploads`.
+4. **Nginx** (bigger uploads allowed only on the upload routes):
+   ```
+   sudo cp /etc/nginx/sites-available/acisi /root/acisi.nginx.before-2026-11-14
+   sudo install -m 644 /opt/acisi/app/deploy/nginx/acisi.conf /etc/nginx/sites-available/acisi
+   sudo nginx -t && sudo systemctl reload nginx
+   ```
+   If `nginx -t` reports an error, put the old file back:
+   `sudo cp /root/acisi.nginx.before-2026-11-14 /etc/nginx/sites-available/acisi`.
+5. **Backup job** (now includes the files): run the commands under "Install or
+   update the backup job" below, then `sudo systemctl start acisi-backup`.
+6. **Check:** on a test patient's page in the console, upload a PDF and open it;
+   photograph two pages and save them as one PDF. The owner Overview shows
+   "Uploaded files" with the disk use.
+
+**Undo:** deploy the previous version, then
+```
+sudo -u postgres psql acisi -f /opt/acisi/app/prisma/rollback/20261114090000_patient_files.down.sql
+sudo -u postgres psql acisi -c "DELETE FROM _prisma_migrations WHERE migration_name = '20261114090000_patient_files'"
+```
+The file records are removed; the files themselves stay in `/var/lib/acisi/uploads`
+until deleted by hand.
+
 ## Switching ACISI's M-Pesa to production (Buy Goods till)
 
 Do this only after the release that adds `MPESA_TILL_NUMBER` is deployed.
@@ -238,12 +286,16 @@ and repeat steps 5–6.
 
 ## Backups
 
-**What:** every night at about 02:00 EAT, `acisi-backup` writes two encrypted files to
+**What:** every night at about 02:00 EAT, `acisi-backup` writes encrypted files to
 `/var/backups/acisi`:
 - `acisi-db-<date>.dump.age`: the whole database
 - `acisi-config-<date>.tar.age`: `acisi.env`, the Nginx site and the systemd unit
+- `acisi-files-<date>.tar.age`: the uploaded patient files (once any exist)
 
-Files older than 14 days are deleted, but only after a successful backup.
+Database and config backups older than 14 days are deleted, but only after a
+successful backup. Only the newest 3 file archives are kept (uploaded files never
+change, and each archive is as big as the whole uploads folder). The backup
+refuses to run when the disk can't hold it with 1 GB to spare.
 
 **Encryption:** `age`, to the public key in `/etc/acisi/backup-recipients.txt`.
 The **private key is not on the server**. It lives in your password manager and
@@ -278,6 +330,14 @@ age -d -i "$KEY" /var/backups/acisi/acisi-db-<date>.dump.age | runuser -u postgr
 rm -f "$KEY"
 systemctl start acisi
 exit
+```
+
+**Restore the uploaded files** (after a database restore, in the same root shell,
+before `rm -f "$KEY"`):
+```
+install -d -o acisi -g acisi -m 700 /var/lib/acisi/uploads
+age -d -i "$KEY" /var/backups/acisi/acisi-files-<date>.tar.age | tar -C /var/lib/acisi/uploads -xf -
+chown -R acisi:acisi /var/lib/acisi/uploads
 ```
 
 **Off-server copy (prepared, NOT enabled):** HostAfrica's backup add-on will be

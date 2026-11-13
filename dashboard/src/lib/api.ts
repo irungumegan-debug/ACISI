@@ -383,7 +383,56 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+/** For multipart uploads: no JSON Content-Type, the browser sets the boundary. */
+async function upload<T>(path: string, form: FormData): Promise<T> {
+  const res = await fetch(`/api/staff${path}`, { method: 'POST', credentials: 'include', body: form });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new ApiError(body.error ?? 'Request failed', res.status);
+  }
+  return res.json() as Promise<T>;
+}
+
+export type FileCategory = 'XRAY' | 'CT_SCAN' | 'MRI' | 'ULTRASOUND' | 'LAB_REPORT' | 'PREVIOUS_RECORDS' | 'OTHER';
+
+export interface PatientFileItem {
+  id: string;
+  category: FileCategory;
+  categoryLabel: string;
+  documentDate: string;
+  note: string | null;
+  mimeType: string;
+  sizeBytes: number;
+  pageCount: number | null;
+  patientUploaded: boolean;
+  fromThisClinic: boolean;
+  uploadedAt: string;
+}
+
 export const api = {
+  listPatientFiles(patientId: string) {
+    return request<{ files: PatientFileItem[]; hiddenCount: number }>(`/files/patient/${encodeURIComponent(patientId)}`);
+  },
+  uploadPatientFile(patientId: string, file: File, meta: { category: FileCategory; documentDate: string; note: string }) {
+    const form = new FormData();
+    form.append('category', meta.category);
+    form.append('documentDate', meta.documentDate);
+    if (meta.note.trim()) form.append('note', meta.note.trim());
+    form.append('file', file);
+    return upload<PatientFileItem>(`/files/patient/${encodeURIComponent(patientId)}`, form);
+  },
+  /** Photos of a paper file, combined by the server into one PDF under "Previous records". */
+  uploadPatientPhotos(patientId: string, photos: File[], meta: { documentDate: string; note: string }) {
+    const form = new FormData();
+    form.append('documentDate', meta.documentDate);
+    if (meta.note.trim()) form.append('note', meta.note.trim());
+    for (const p of photos) form.append('photos', p);
+    return upload<PatientFileItem>(`/files/patient/${encodeURIComponent(patientId)}/photos`, form);
+  },
+  /** Opens through the logged-in route; the server checks access every time. */
+  patientFileUrl(fileId: string) {
+    return `/api/staff/files/${encodeURIComponent(fileId)}`;
+  },
   getCheckout(encounterId: string) {
     return request<CheckoutView>(`/billing/visits/${encodeURIComponent(encounterId)}`);
   },

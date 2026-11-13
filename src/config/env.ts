@@ -87,6 +87,14 @@ const envSchema = z.object({
   OWNER_NAME: z.string().optional(),
   OWNER_PASSWORD: z.string().optional(),
 
+  // --- Uploaded patient files ---
+  // A private directory on this server's own disk (never under the web
+  // root, never a cloud bucket). Created on first upload, mode 0700. On the
+  // server systemd creates /var/lib/acisi for the app (StateDirectory).
+  FILE_STORAGE_DIR: z.string().default('/var/lib/acisi/uploads'),
+  /** Uploads are refused when the disk has less free space than this (MB), so files can never fill it. */
+  FILE_UPLOAD_MIN_FREE_MB: z.coerce.number().int().min(0).default(2048),
+
   STAFF_PIN_SALT_ROUNDS: z.coerce.number().int().min(4).max(15).default(10),
 
   USSD_SESSION_TTL_SECONDS: z.coerce.number().int().positive().default(170),

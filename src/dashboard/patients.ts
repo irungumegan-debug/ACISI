@@ -2,8 +2,7 @@ import { Response, Router } from 'express';
 import { enterRecordAccessCode, RecordSharingError, requestRecords } from '../services/recordSharingService';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../db/prisma';
-import { doctorQueueFilter } from '../services/doctorScope';
-import { getDoctorDepartmentIds } from '../services/departmentService';
+import { staffPatientScopeWhere } from '../services/staffPatientScope';
 import { buildVisitRecordDataFromEncounter, renderVisitRecordPdf } from '../services/visitRecordDocument';
 import { requireStaffSession, AuthenticatedRequest } from './auth';
 import { getScopedHistory } from '../services/patientService';
@@ -15,19 +14,9 @@ export const patientsRouter = Router();
 
 patientsRouter.use(requireStaffSession);
 
-/**
- * Which patients a staff member may see. Front desk: anyone with a check-in
- * or visit at this clinic. A doctor: only patients currently in their own
- * queue (doctorQueueFilter) — enforced here on the server, not just by
- * hiding the menu item.
- */
-async function visibleToStaffWhere(req: AuthenticatedRequest): Promise<Prisma.PatientWhereInput> {
-  const { clinicId, role, staffId } = req.dashboardSession;
-  if (role === 'DOCTOR') {
-    const departmentIds = await getDoctorDepartmentIds(staffId);
-    return { encounters: { some: doctorQueueFilter(clinicId, departmentIds, staffId) } };
-  }
-  return { OR: [{ checkIns: { some: { clinicId } } }, { encounters: { some: { clinicId } } }] };
+/** Which patients this staff member may see (see staffPatientScopeWhere). */
+function visibleToStaffWhere(req: AuthenticatedRequest): Promise<Prisma.PatientWhereInput> {
+  return staffPatientScopeWhere(req.dashboardSession);
 }
 
 /**

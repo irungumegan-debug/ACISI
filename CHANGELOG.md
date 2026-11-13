@@ -3,6 +3,21 @@
 Plain-language record of what changed in ACISI, which data each change
 touches, and who can use it. Newest first.
 
+## 2026-11-14: Patient file uploads
+
+Brings the file-upload feature from the October branch onto the current
+system, adapted to today's record-sharing rules. One database change, additive
+only (`20261114090000_patient_files`); undo script:
+`prisma/rollback/20261114090000_patient_files.down.sql`.
+
+| # | What changed | Data it touches | Who |
+|---|---|---|---|
+| F1 | **Upload a file to a patient's record:** JPG, PNG or PDF, up to 20 MB, with a category (X-ray, CT scan, MRI, ultrasound, lab report, previous records, other), the date of the document and an optional note. The type is checked from the file's content, not its name. | New: patient files (category, date, note, type, size; bytes on the server's own disk) | Front desk, admins, doctors, patients |
+| F2 | **Photograph a paper file** page by page; the pages are saved as one PDF under "Previous records" (up to 30 photos, 100 MB). | Patient files | Front desk, admins, doctors |
+| F3 | **Who sees a file:** the clinic that uploaded it and the patient, always. Other clinics, and the patient's own uploads, only when the patient allows sharing or has given that clinic a records code today (the same rule as visit records). Doctors only for patients in their own queue. Hidden files are only counted. Every upload and view is audit-logged (IDs only). | Audit log | — |
+| F4 | **Storage:** files live in a private folder on the ACISI server in Kenya (`/var/lib/acisi/uploads`), under random names, never in a cloud. Uploads are refused when the disk has less than 2 GB free. The nightly encrypted backup includes the files (newest 3 copies). The owner Overview shows file storage and disk use. | — | Owner |
+| F5 | **Account deletion** removes the files the patient uploaded themselves; files a clinic uploaded stay with that clinic, like its visit records. | Patient files | Patients, owner |
+
 ## 2026-11-03: ODPC statements, part 2
 
 Brings four more statements in the ODPC applications in line with the

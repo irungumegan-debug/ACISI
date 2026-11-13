@@ -176,6 +176,7 @@ model Clinic {
   bills            Bill[]
   payments         Payment[]
   legalAcceptances LegalAcceptance[]
+  patientFiles     PatientFile[]
 
   @@map("clinics")
 }
@@ -280,6 +281,7 @@ model Staff {
   confirmedAppointments    Appointment[]     @relation("AppointmentConfirmedBy")
   cancelledAppointments    Appointment[]     @relation("AppointmentCancelledBy")
   legalAcceptances         LegalAcceptance[]
+  uploadedFiles            PatientFile[]
 
   @@index([clinicId])
   @@index([departmentId])
@@ -354,6 +356,7 @@ model Patient {
   otps             Otp[]
   appointments     Appointment[]
   legalAcceptances LegalAcceptance[]
+  files            PatientFile[]
 
   @@map("patients")
 }
@@ -947,4 +950,48 @@ model ClinicSmsMessage {
 
   @@index([clinicId, sentAt])
   @@map("clinic_sms_messages")
+}
+
+enum PatientFileCategory {
+  XRAY
+  CT_SCAN
+  MRI
+  ULTRASOUND
+  LAB_REPORT
+  PREVIOUS_RECORDS
+  OTHER
+}
+
+/// An uploaded file (JPG, PNG or PDF) on a patient's record. The bytes live
+/// on the server's own disk in a private directory (env FILE_STORAGE_DIR)
+/// under a random name: never a public URL, never a foreign cloud. Served
+/// only through logged-in routes that apply the same rule as visit records
+/// (see fileStorageService): the uploading clinic and the patient always,
+/// other clinics only on the patient's sharing consent or a "Request
+/// records" code (recordSharingService.crossClinicAccessBasis).
+model PatientFile {
+  id                String              @id @default(cuid())
+  patientId         String
+  patient           Patient             @relation(fields: [patientId], references: [id])
+  /// The clinic that uploaded it. Null for a patient's own upload.
+  clinicId          String?
+  clinic            Clinic?             @relation(fields: [clinicId], references: [id])
+  uploadedByType    ActorType
+  uploadedByStaffId String?
+  uploadedByStaff   Staff?              @relation(fields: [uploadedByStaffId], references: [id])
+  category          PatientFileCategory
+  /// The date the document is from (chosen by the uploader), not the upload time.
+  documentDate      DateTime            @db.Date
+  note              String?
+  /// Random file name on disk (hex). Never derived from the patient or the original name.
+  storageName       String              @unique
+  mimeType          String
+  sizeBytes         Int
+  /// For a PDF made from several photos, how many pages it has.
+  pageCount         Int?
+  createdAt         DateTime            @default(now())
+
+  @@index([patientId])
+  @@index([clinicId])
+  @@map("patient_files")
 }

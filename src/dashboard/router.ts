@@ -11,12 +11,14 @@ import { walkInRouter } from './walkIn';
 import { billingRouter } from './billing';
 import { legalRouter } from './legal';
 import { phoneVerificationRouter } from './phoneVerification';
+import { filesRouter } from './files';
 
 export const dashboardRouter = Router();
 
 dashboardRouter.use('/auth', authRouter);
 dashboardRouter.use('/register', staffRegistrationRouter);
 dashboardRouter.use('/clinic', clinicSettingsRouter);
+dashboardRouter.use('/files', filesRouter);
 dashboardRouter.use('/patients', patientsRouter);
 dashboardRouter.use('/checkins', checkinsRouter);
 dashboardRouter.use('/doctor', doctorRouter);

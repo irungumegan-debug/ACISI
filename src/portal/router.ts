@@ -6,6 +6,7 @@ import { portalLegalRouter } from './legal';
 import { portalDetailsRouter } from './details';
 import { portalSharingRouter } from './sharing';
 import { portalFeesRouter } from './fees';
+import { portalFilesRouter } from './files';
 
 export const portalRouter = Router();
 
@@ -17,3 +18,4 @@ portalRouter.use('/legal', portalLegalRouter);
 portalRouter.use('/details', portalDetailsRouter);
 portalRouter.use('/sharing', portalSharingRouter);
 portalRouter.use('/fees', portalFeesRouter);
+portalRouter.use('/files', portalFilesRouter);
