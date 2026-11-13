@@ -43,6 +43,43 @@ systemctl list-timers acisi-backup.timer certbot.timer --no-pager
 
 Restart the app: `sudo systemctl restart acisi`
 
+## Site shows "502 Bad Gateway" (Nginx)
+
+Nginx is up but the app behind it isn't answering (stopped, crashed or
+restarting). Check in this order:
+
+1. **Disk full?** `df -h /`. If `Use%` is 100%, see the next section. A full
+   disk also shows in the app logs as `MISCONF Redis ... unable to persist to disk`.
+2. **App running?** `systemctl status acisi --no-pager | head -5`. The
+   "since" time shows when it last (re)started.
+3. **App errors:** `sudo journalctl -u acisi --since "1 hour ago" --no-pager | grep -i -E "error|fail" | tail -30`
+4. **Out of memory?** `sudo journalctl -k --since "2 hours ago" --no-pager | grep -i -E "out of memory|killed process"`
+
+Then `sudo systemctl restart acisi` and check `/healthz` after 15 seconds.
+
+## Disk full
+
+Find the biggest folders, then the big files (these only look):
+```
+sudo du -xh --max-depth=1 / 2>/dev/null | sort -h | tail -8
+sudo du -xh --max-depth=1 /var/log 2>/dev/null | sort -h | tail -8
+sudo find /var/log -xdev -type f -size +100M -exec ls -lh {} \;
+```
+A huge log file (e.g. `/var/log/syslog`) can be emptied safely with
+`sudo truncate -s 0 <file>`. Use `truncate`, not `rm`: a deleted file that is
+still open keeps using space. **Never delete anything by hand in
+`/var/lib/postgresql`, `/var/lib/redis` or `/var/backups/acisi`.**
+
+Afterwards Redis has to be restarted before it accepts writes again:
+```
+sudo systemctl restart redis-server
+sudo systemctl restart acisi
+sleep 15; curl -s https://acisi.co.ke/healthz; echo
+```
+
+Incident 2026-11-13: `/var/log/syslog` reached 13 GB and filled the disk;
+Redis stopped accepting writes and the site returned 502.
+
 ## Updating the app (after a pull request is merged)
 
 ```
