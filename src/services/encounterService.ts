@@ -2,9 +2,9 @@ import { Encounter, EncounterStatus } from '@prisma/client';
 import { doctorQueueFilter } from './doctorScope';
 import { prisma } from '../db/prisma';
 import { recordAuditEvent } from './auditService';
-import { clearLockout, isLockedOut, lockoutMessage, recordWrongPin } from './pinLockout';
+import { verifySigningPin } from './signingPin';
+import { getLabOrdersForEncounter, LabOrderView } from './labService';
 import { getScopedHistory, ScopedHistoryEntry } from './patientService';
-import { comparePin, findActiveStaffById } from './staffService';
 import { emailConfigured } from '../config/email';
 import { enqueueVisitSummaryEmail } from '../jobs/queue';
 import { logger } from '../utils/logger';
@@ -20,6 +20,8 @@ export interface DoctorQueueItem {
   phoneNumber: string;
   status: EncounterStatus;
   waitingSince: Date;
+  /** True when this visit came back from the lab with signed results. */
+  backFromLab: boolean;
 }
 
 /**
@@ -42,7 +44,7 @@ export { doctorQueueFilter } from './doctorScope';
 export async function getDoctorQueue(clinicId: string, departmentIds: string[], staffId: string): Promise<DoctorQueueItem[]> {
   const encounters = await prisma.encounter.findMany({
     where: doctorQueueFilter(clinicId, departmentIds, staffId),
-    include: { patient: true },
+    include: { patient: true, labOrders: { where: { status: 'RESULTS_READY' }, select: { id: true }, take: 1 } },
     orderBy: { createdAt: 'asc' },
   });
 
@@ -54,6 +56,7 @@ export async function getDoctorQueue(clinicId: string, departmentIds: string[], 
     phoneNumber: e.patient.phoneNumber,
     status: e.status,
     waitingSince: e.createdAt,
+    backFromLab: (e.labOrders?.length ?? 0) > 0,
   }));
 }
 
@@ -75,6 +78,8 @@ export interface EncounterDetail {
   history: ScopedHistoryEntry[];
   /** True when the patient has encounters at other clinics that exist but aren't shown, because they haven't consented to cross-clinic sharing. */
   hasHiddenHistoryElsewhere: boolean;
+  /** This visit's lab requests, with results once the lab has signed them. */
+  labOrders: LabOrderView[];
 }
 
 async function assertEncounterInDoctorQueue(encounterId: string, clinicId: string, departmentIds: string[], staffId: string): Promise<Encounter> {
@@ -138,6 +143,7 @@ export async function getEncounterForDoctor(
     status: currentStatus,
     history,
     hasHiddenHistoryElsewhere,
+    labOrders: await getLabOrdersForEncounter(encounter.id),
   };
 }
 
@@ -148,19 +154,7 @@ export class EncounterNotConsultableError extends Error {
   }
 }
 
-export class PinLockedOutError extends Error {
-  constructor() {
-    super(lockoutMessage());
-    this.name = 'PinLockedOutError';
-  }
-}
-
-export class InvalidPinError extends Error {
-  constructor() {
-    super('Incorrect PIN. Please try again.');
-    this.name = 'InvalidPinError';
-  }
-}
+export { InvalidPinError, PinLockedOutError } from './signingPin';
 
 interface SubmitConsultationInput {
   encounterId: string;
@@ -194,29 +188,15 @@ export async function submitConsultation(input: SubmitConsultationInput): Promis
     throw new EncounterNotConsultableError();
   }
 
-  // Same per-account wrong-PIN counter as login: a locked account can't
-  // sign either, and wrong signing PINs count towards the lock.
-  if (await isLockedOut(`staff:${input.staffId}`)) {
-    throw new PinLockedOutError();
-  }
-
-  const staff = await findActiveStaffById(input.staffId);
-  const pinValid = staff ? await comparePin(staff, input.pin) : false;
-
-  await recordAuditEvent({
-    actorType: 'STAFF',
-    actorId: input.staffId,
+  // Same per-account wrong-PIN counter as login (see verifySigningPin).
+  await verifySigningPin({
     staffId: input.staffId,
-    action: pinValid ? 'CONSULTATION_SIGNED' : 'CONSULTATION_SIGN_FAILED',
+    pin: input.pin,
+    okAction: 'CONSULTATION_SIGNED',
+    failedAction: 'CONSULTATION_SIGN_FAILED',
     entityType: 'Encounter',
     entityId: encounter.id,
   });
-
-  if (!pinValid) {
-    if (await recordWrongPin(`staff:${input.staffId}`)) throw new PinLockedOutError();
-    throw new InvalidPinError();
-  }
-  await clearLockout(`staff:${input.staffId}`);
 
   const updated = await prisma.encounter.update({
     where: { id: encounter.id },

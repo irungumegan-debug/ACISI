@@ -217,6 +217,18 @@ export async function requireStaffSession(req: Request, res: Response, next: Nex
   }
 }
 
+/**
+ * Front-desk work (queue, walk-ins, billing, checkout, patient details,
+ * appointments, phone verification): receptionists, clinicians and clinic
+ * admins only. Written as an allow-list so any other role (doctors, lab
+ * technicians, and any role added later) is refused by default.
+ */
+export const FRONT_DESK_ROLES: readonly string[] = ['RECEPTIONIST', 'CLINICIAN', 'ADMIN'];
+
+export function isFrontDeskRole(role: string): boolean {
+  return FRONT_DESK_ROLES.includes(role);
+}
+
 export function requireAdmin(req: Request, res: Response, next: NextFunction): void {
   const { role } = (req as AuthenticatedRequest).dashboardSession;
   if (role !== 'ADMIN') {

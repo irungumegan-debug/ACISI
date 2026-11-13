@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   CircleDashed,
   Clock,
+  FlaskConical,
   Footprints,
   Hourglass,
   Stethoscope,
@@ -116,6 +117,11 @@ const STATUS: Record<string, { label: string; tone: Tone; icon: LucideIcon }> = 
   // visit (encounter)
   WAITING: { label: 'Waiting', tone: 'warning', icon: Hourglass },
   IN_CONSULTATION: { label: 'In consultation', tone: 'info', icon: Stethoscope },
+  AWAITING_LAB: { label: 'At the lab', tone: 'blue', icon: FlaskConical },
+  // lab request
+  REQUESTED: { label: 'New', tone: 'warning', icon: Hourglass },
+  IN_PROGRESS: { label: 'In progress', tone: 'info', icon: FlaskConical },
+  RESULTS_READY: { label: 'Results ready', tone: 'success', icon: CheckCircle2 },
   READY_FOR_CHECKOUT: { label: 'Ready for checkout', tone: 'blue', icon: Wallet },
   DONE: { label: 'Done', tone: 'success', icon: CheckCircle2 },
   // bill

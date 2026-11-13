@@ -30,6 +30,7 @@ const BASE_DATA = {
   diagnosis: 'Seasonal flu',
   prescription: 'Paracetamol 500mg, twice daily for 5 days',
   signature: null,
+  labResults: [] as import('../../src/services/visitRecordDocument').VisitLabResult[],
 };
 
 describe('renderVisitRecordPdf', () => {
@@ -93,5 +94,30 @@ describe('renderVisitRecordPdf', () => {
     // above) — check the font was actually embedded instead.
     const raw = pdf.toString('latin1');
     expect(raw).toContain('DancingScript');
+  });
+});
+
+describe('lab results on the visit record', () => {
+  it('adds a Lab results section with each test, value, unit, flag and who signed', async () => {
+    const pdf = await renderVisitRecordPdf({
+      ...BASE_DATA,
+      labResults: [
+        { testName: 'Malaria RDT', value: 'Negative', unit: null, flag: 'NORMAL', comment: null, signedByName: 'Lab Tech One', signedAt: new Date('2026-01-15T10:00:00Z') },
+        { testName: 'Haemoglobin', value: '9.1', unit: 'g/dL', flag: 'ABNORMAL', comment: 'Repeat in 2 weeks', signedByName: 'Lab Tech One', signedAt: new Date('2026-01-15T10:00:00Z') },
+      ],
+    });
+    const text = extractRenderedText(pdf);
+    expect(text).toContain('Lab results');
+    expect(text).toContain('Malaria RDT');
+    expect(text).toContain('Negative');
+    expect(text).toContain('g/dL');
+    expect(text).toContain('Abnormal');
+    expect(text).toContain('Repeat in 2 weeks');
+    expect(text).toContain('Lab Tech One');
+  });
+
+  it('has no lab section when there are no signed results', async () => {
+    const text = extractRenderedText(await renderVisitRecordPdf(BASE_DATA));
+    expect(text).not.toContain('Lab results');
   });
 });

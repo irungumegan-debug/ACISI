@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../db/prisma';
 import { getSmsHealth } from '../services/smsService';
 import { getMpesaHealth } from '../services/mpesaHealth';
+import { storageUsage } from '../services/fileStorageService';
 
 export const ownerOverviewRouter = Router();
 
@@ -24,6 +25,7 @@ ownerOverviewRouter.get('/', async (_req, res) => {
     upcomingAppointments,
     revenueAll,
     revenueLast30Days,
+    storage,
   ] = await Promise.all([
     prisma.clinic.count({ where: { isActive: true } }),
     prisma.clinic.count(),
@@ -37,6 +39,7 @@ ownerOverviewRouter.get('/', async (_req, res) => {
     prisma.appointment.count({ where: { status: { in: ['REQUESTED', 'CONFIRMED'] }, scheduledFor: { gte: new Date() } } }),
     prisma.checkIn.aggregate({ where: { status: 'PAID' }, _sum: { amountKes: true } }),
     prisma.checkIn.aggregate({ where: { status: 'PAID', paidAt: { gte: since30Days } }, _sum: { amountKes: true } }),
+    storageUsage(),
   ]);
 
   res.json({
@@ -50,6 +53,8 @@ ownerOverviewRouter.get('/', async (_req, res) => {
       total: Number(revenueAll._sum.amountKes ?? 0),
       last30Days: Number(revenueLast30Days._sum.amountKes ?? 0),
     },
+    /** Uploaded patient files, and the server disk they live on, so you know when to upgrade the disk. */
+    storage,
   });
 });
 

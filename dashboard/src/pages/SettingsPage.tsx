@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { AdminDepartment, api, ApiError, ClinicStaffListItem, DoctorPresenceStatus } from '../lib/api';
 import { PaymentSettingsSection } from '../components/PaymentSettingsSection';
 import { DepartmentsSection } from '../components/DepartmentsSection';
-import { Building2, KeyRound, RefreshCw, UsersRound, Wallet } from 'lucide-react';
+import { LabTestsSection } from '../components/LabTestsSection';
+import { Building2, FlaskConical, KeyRound, RefreshCw, UsersRound, Wallet } from 'lucide-react';
 import { Avatar, Badge, Card, EmptyState, SkeletonList, Tone } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 
@@ -20,7 +21,7 @@ const PRESENCE_TONE: Record<DoctorPresenceStatus, Tone> = {
   NOT_IN_YET: 'neutral',
 };
 
-const ROLE_LABEL: Record<string, string> = { ADMIN: 'Clinic admin', RECEPTIONIST: 'Front desk', CLINICIAN: 'Clinician', DOCTOR: 'Doctor' };
+const ROLE_LABEL: Record<string, string> = { ADMIN: 'Clinic admin', RECEPTIONIST: 'Front desk', CLINICIAN: 'Clinician', DOCTOR: 'Doctor', LAB_TECHNICIAN: 'Lab technician' };
 const smallBtn =
   'min-h-9 rounded-full border border-slate-300 bg-white px-3.5 py-1.5 text-xs font-semibold text-navy-900 transition hover:border-gold-500 disabled:opacity-50';
 
@@ -170,6 +171,13 @@ export function SettingsPage() {
               await loadStaff();
             }}
           />
+        </Card>
+
+        <Card title="Lab tests" icon={FlaskConical}>
+          <p className="mb-5 text-sm text-ink-500">
+            The tests your lab offers and their prices. Doctors choose from this list, and the tests are added to the patient&apos;s bill at checkout.
+          </p>
+          <LabTestsSection />
         </Card>
 
         <Card title="Payments" icon={Wallet}>

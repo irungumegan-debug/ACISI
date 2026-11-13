@@ -88,13 +88,19 @@ function startingConsultationLine(view: CheckoutView): DraftLine {
     : { kind: 'CONSULTATION', description: 'Consultation', amount: String(view.settings.defaultConsultationFeeKes || '') };
 }
 
+/** One line per lab test the doctor requested in this visit, at the price when it was requested. */
+function labLines(view: CheckoutView): DraftLine[] {
+  return (view.labCharges ?? []).map((c) => ({ kind: 'LAB', description: `Lab: ${c.testName}`, amount: String(c.priceKes) }));
+}
+
 function BillEditor({ view, onSaved, onCancel }: { view: CheckoutView; onSaved: (v: CheckoutView) => void; onCancel?: () => void }) {
-  const [lines, setLines] = useState<DraftLine[]>(() => (view.bill ? toDraft(view.bill.items) : [startingConsultationLine(view)]));
+  const [lines, setLines] = useState<DraftLine[]>(() => (view.bill ? toDraft(view.bill.items) : [startingConsultationLine(view), ...labLines(view)]));
   const feeSource = view.bill
     ? null
-    : view.department.consultationFeeKes !== null
-      ? `Consultation fee for ${view.department.name}. You can change it for this visit.`
-      : 'Clinic default consultation fee. You can change it for this visit.';
+    : (view.department.consultationFeeKes !== null
+        ? `Consultation fee for ${view.department.name}. You can change it for this visit.`
+        : 'Clinic default consultation fee. You can change it for this visit.') +
+      ((view.labCharges?.length ?? 0) > 0 ? ' Lab tests the doctor requested are added at the clinic’s prices.' : '');
   const [discount, setDiscount] = useState(view.bill?.discountKes ? String(view.bill.discountKes) : '');
   const [discountReason, setDiscountReason] = useState(view.bill?.discountReason ?? '');
   const [saving, setSaving] = useState(false);

@@ -3,6 +3,40 @@
 Plain-language record of what changed in ACISI, which data each change
 touches, and who can use it. Newest first.
 
+## 2026-11-14: Lab orders
+
+Doctors can request lab tests; the lab enters and signs the results; the
+patient is told by SMS to go back to the doctor. One database change, additive
+only (`20261114100000_lab_orders`); undo script:
+`prisma/rollback/20261114100000_lab_orders.down.sql`.
+
+| # | What changed | Data it touches | Who |
+|---|---|---|---|
+| L1 | **New role: Lab technician.** Signs up with the clinic invite code and accepts the Confidentiality Undertaking like other staff. Sees only the lab queue: the patient's name, ACISI ID, age and sex, the tests requested and the doctor's note for the lab. Never the phone number, diagnosis, prescription, history or billing. | Staff (new role) | Lab technicians |
+| L2 | **Front-desk screens now allow front-desk roles only** (receptionist, clinician, admin) instead of refusing only doctors, so any other role is refused by default. Checkout is now front-desk only (doctors could reach it before). | — | All staff |
+| L3 | **Lab tests list:** clinic admins add the tests their lab offers, with prices (Settings → Lab tests); tests can be renamed, repriced or stopped. Logged. | New: lab tests (name, price) | Clinic admins |
+| L4 | **Request lab tests:** during a consultation the doctor ticks tests, adds an optional note for the lab, and signs with their PIN. The patient leaves the doctor's queue and joins the lab queue ("At the lab" on the front-desk queue). | New: lab orders (tests, who, when, note) | Doctors |
+| L5 | **Lab results:** the lab opens a request, enters a result, unit, flag (normal, abnormal, critical) and comment per test, can attach a printout (PDF or photo, filed as a lab report), and signs with their PIN. Every test needs a result or a flag first. | Lab results; patient files | Lab technicians |
+| L6 | **Back to the doctor:** signed results send the patient back to the requesting doctor's queue ("Back from lab"); front desk can move them to another doctor with "Change doctor". The doctor sees the results on the consultation page. | Visits (status) | Doctors, front desk |
+| L7 | **"Results ready" SMS:** one SMS, "ACISI: Your lab results at <clinic> are ready. Please go back to the doctor." Never the tests or results. Respects "does not want SMS"; counted against the clinic's SMS allowance (`LAB_RESULTS_READY`). | SMS count | Patients |
+| L8 | **Billing:** the requested tests and their prices are added to the checkout bill (editable as before). Payment at checkout with everything else. | Bills | Front desk |
+| L9 | **Records:** lab results appear on the printed visit record, in the checkout email PDF, in the patient's portal records and downloads (once checked out) and in doctors' visit history. Front desk never sees results on screen. Every request, opening, save, signature and SMS is audit-logged with IDs only. | — | Patients, doctors |
+
+## 2026-11-14: Patient file uploads
+
+Brings the file-upload feature from the October branch onto the current
+system, adapted to today's record-sharing rules. One database change, additive
+only (`20261114090000_patient_files`); undo script:
+`prisma/rollback/20261114090000_patient_files.down.sql`.
+
+| # | What changed | Data it touches | Who |
+|---|---|---|---|
+| F1 | **Upload a file to a patient's record:** JPG, PNG or PDF, up to 20 MB, with a category (X-ray, CT scan, MRI, ultrasound, lab report, previous records, other), the date of the document and an optional note. The type is checked from the file's content, not its name. | New: patient files (category, date, note, type, size; bytes on the server's own disk) | Front desk, admins, doctors, patients |
+| F2 | **Photograph a paper file** page by page; the pages are saved as one PDF under "Previous records" (up to 30 photos, 100 MB). | Patient files | Front desk, admins, doctors |
+| F3 | **Who sees a file:** the clinic that uploaded it and the patient, always. Other clinics, and the patient's own uploads, only when the patient allows sharing or has given that clinic a records code today (the same rule as visit records). Doctors only for patients in their own queue. Hidden files are only counted. Every upload and view is audit-logged (IDs only). | Audit log | — |
+| F4 | **Storage:** files live in a private folder on the ACISI server in Kenya (`/var/lib/acisi/uploads`), under random names, never in a cloud. Uploads are refused when the disk has less than 2 GB free. The nightly encrypted backup includes the files (newest 3 copies). The owner Overview shows file storage and disk use. | — | Owner |
+| F5 | **Account deletion** removes the files the patient uploaded themselves; files a clinic uploaded stay with that clinic, like its visit records. | Patient files | Patients, owner |
+
 ## 2026-11-03: ODPC statements, part 2
 
 Brings four more statements in the ODPC applications in line with the

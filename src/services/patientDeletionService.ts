@@ -5,6 +5,7 @@ import { sendSms } from './smsService';
 import { CONSENT_VERSION } from '../config/constants';
 import { recordAuditEvent } from './auditService';
 import { revokeSessionsFor } from './sessionRevocation';
+import { removeStoredFile } from './fileStorageService';
 
 export class PatientNotFoundError extends Error {
   constructor() {
@@ -74,6 +75,11 @@ export async function deletePatientAccount(patientId: string, actor: PatientDele
       },
     });
 
+    // Files the patient uploaded themselves are theirs: removed. Files a
+    // clinic uploaded stay with that clinic, like its visit records.
+    const ownFiles = await tx.patientFile.findMany({ where: { patientId, uploadedByType: 'PATIENT' }, select: { storageName: true } });
+    await tx.patientFile.deleteMany({ where: { patientId, uploadedByType: 'PATIENT' } });
+
     await tx.appointment.updateMany({
       where: { patientId, status: { in: ['REQUESTED', 'CONFIRMED'] } },
       data: { status: 'CANCELLED', cancelledByType: actor.type, cancelledAt: now },
@@ -111,8 +117,10 @@ export async function deletePatientAccount(patientId: string, actor: PatientDele
       });
     }
 
-    return { phoneNumber: patient.phoneNumber };
+    return { phoneNumber: patient.phoneNumber, ownFiles };
   });
+
+  for (const f of original.ownFiles) await removeStoredFile(f.storageName);
 
   await revokeSessionsFor(`patient:${patientId}`);
 

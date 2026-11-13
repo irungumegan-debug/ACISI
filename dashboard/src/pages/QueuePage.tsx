@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   ChevronDown,
   Clock,
+  FlaskConical,
   Footprints,
   Globe,
   Hourglass,
@@ -51,12 +52,13 @@ function displayStatus(item: QueueItem): string {
   return isUnresolvedPayment(item) ? item.checkInStatus : (item.encounterStatus ?? 'WAITING');
 }
 
-type GroupKey = 'ATTENTION' | 'WAITING' | 'IN_CONSULTATION' | 'READY_FOR_CHECKOUT' | 'DONE';
+type GroupKey = 'ATTENTION' | 'WAITING' | 'IN_CONSULTATION' | 'AWAITING_LAB' | 'READY_FOR_CHECKOUT' | 'DONE';
 
 const GROUPS: { key: GroupKey; label: string; icon: LucideIcon; dot: string; empty: string }[] = [
   { key: 'ATTENTION', label: 'Check-in fee to confirm', icon: AlertTriangle, dot: 'bg-red-500', empty: '' },
   { key: 'WAITING', label: 'Waiting', icon: Hourglass, dot: 'bg-amber-500', empty: 'Nobody is waiting right now.' },
   { key: 'IN_CONSULTATION', label: 'In consultation', icon: Stethoscope, dot: 'bg-teal-500', empty: 'Nobody is with a doctor right now.' },
+  { key: 'AWAITING_LAB', label: 'At the lab', icon: FlaskConical, dot: 'bg-indigo-500', empty: '' },
   { key: 'READY_FOR_CHECKOUT', label: 'Ready for checkout', icon: Wallet, dot: 'bg-blue-500', empty: 'Nobody is waiting to check out.' },
   { key: 'DONE', label: 'Done today', icon: CheckCircle2, dot: 'bg-emerald-500', empty: '' },
 ];
@@ -418,6 +420,7 @@ const ACCENT: Record<GroupKey, string> = {
   ATTENTION: 'before:bg-red-500',
   WAITING: 'before:bg-amber-500',
   IN_CONSULTATION: 'before:bg-teal-500',
+  AWAITING_LAB: 'before:bg-indigo-500',
   READY_FOR_CHECKOUT: 'before:bg-blue-500',
   DONE: 'before:bg-emerald-500',
 };
@@ -473,6 +476,10 @@ function QueueCard({
         {CHECK_IN_STATUS_LABEL[status] ? (
           <Badge tone="danger" icon={AlertTriangle}>
             {CHECK_IN_STATUS_LABEL[status]}
+          </Badge>
+        ) : item.backFromLab && status === 'WAITING' ? (
+          <Badge tone="blue" icon={FlaskConical}>
+            Back from lab
           </Badge>
         ) : (
           <StatusBadge status={status} />

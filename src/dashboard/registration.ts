@@ -11,7 +11,7 @@ const registerSchema = z.object({
   phoneNumber: z.string().min(1),
   inviteCode: z.string().min(1),
   pin: z.string().min(1),
-  role: z.enum(['RECEPTIONIST', 'CLINICIAN', 'DOCTOR']),
+  role: z.enum(['RECEPTIONIST', 'CLINICIAN', 'DOCTOR', 'LAB_TECHNICIAN']),
   /** Required when role is DOCTOR; see GET /api/clinics/invite-code/:code/departments. */
   departmentId: z.string().optional(),
   /** Optional work email (contact only). */

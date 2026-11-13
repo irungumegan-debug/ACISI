@@ -1,6 +1,6 @@
 import { NextFunction, Request, Response, Router } from 'express';
 import { z } from 'zod';
-import { requireAdmin, requireStaffSession, AuthenticatedRequest } from './auth';
+import { requireAdmin, requireStaffSession, AuthenticatedRequest, isFrontDeskRole } from './auth';
 import {
   BillingError,
   getCheckoutView,
@@ -18,9 +18,9 @@ export const billingRouter = Router();
 
 billingRouter.use(requireStaffSession);
 
-/** Billing is front-desk work (receptionist, clinician, admin) — doctors are refused on the server. */
+/** Billing is front-desk work (receptionist, clinician, admin); every other role is refused on the server. */
 function requireFrontDesk(req: Request, res: Response, next: NextFunction): void {
-  if ((req as AuthenticatedRequest).dashboardSession.role === 'DOCTOR') {
+  if (!isFrontDeskRole((req as AuthenticatedRequest).dashboardSession.role)) {
     res.status(403).json({ error: 'Only front-desk staff can take payments' });
     return;
   }

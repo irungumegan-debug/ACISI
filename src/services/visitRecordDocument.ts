@@ -10,6 +10,7 @@ const STAFF_ROLE_LABEL: Record<StaffRole, string> = {
   CLINICIAN: 'Clinician',
   RECEPTIONIST: 'Receptionist',
   ADMIN: 'Clinic Administrator',
+  LAB_TECHNICIAN: 'Lab Technician',
 };
 
 export interface VisitRecordData {
@@ -35,7 +36,34 @@ export interface VisitRecordData {
     doctorTitle: string;
     signedAt: Date;
   } | null;
+  /** Signed lab results of this visit (empty when none, or not shown to this reader yet). */
+  labResults: VisitLabResult[];
 }
+
+export interface VisitLabResult {
+  testName: string;
+  value: string | null;
+  unit: string | null;
+  flag: 'NORMAL' | 'ABNORMAL' | 'CRITICAL' | null;
+  comment: string | null;
+  signedByName: string | null;
+  signedAt: Date | null;
+}
+
+/**
+ * Add to an encounter query to load its signed lab results for the visit
+ * record. For a patient's own copy, pass { patientView: true }: results then
+ * appear only once the visit has been checked out (DONE).
+ */
+export function visitRecordLabInclude(options: { patientView?: boolean } = {}) {
+  return {
+    where: { status: 'RESULTS_READY' as const, ...(options.patientView ? { encounter: { status: 'DONE' as const } } : {}) },
+    orderBy: { requestedAt: 'asc' as const },
+    include: { items: { orderBy: { position: 'asc' as const } }, completedByStaff: { select: { name: true } } },
+  };
+}
+
+const FLAG_LABEL: Record<'NORMAL' | 'ABNORMAL' | 'CRITICAL', string> = { NORMAL: 'Normal', ABNORMAL: 'Abnormal', CRITICAL: 'Critical' };
 
 interface EncounterForVisitRecord {
   createdAt: Date;
@@ -46,6 +74,12 @@ interface EncounterForVisitRecord {
   clinic: { name: string; county: string | null };
   checkIn: { department: { name: string } };
   consultedByStaff: { name: string; role: StaffRole } | null;
+  /** Load with visitRecordLabInclude(); left out, the record simply has no lab section. */
+  labOrders?: {
+    completedAt: Date | null;
+    completedByStaff: { name: string } | null;
+    items: { testName: string; resultValue: string | null; resultUnit: string | null; resultFlag: 'NORMAL' | 'ABNORMAL' | 'CRITICAL' | null; resultComment: string | null }[];
+  }[];
 }
 
 /**
@@ -72,6 +106,17 @@ export function buildVisitRecordDataFromEncounter(encounter: EncounterForVisitRe
       encounter.consultedByStaff && encounter.consultedAt
         ? { doctorName: encounter.consultedByStaff.name, doctorTitle: STAFF_ROLE_LABEL[encounter.consultedByStaff.role], signedAt: encounter.consultedAt }
         : null,
+    labResults: (encounter.labOrders ?? []).flatMap((o) =>
+      o.items.map((i) => ({
+        testName: i.testName,
+        value: i.resultValue,
+        unit: i.resultUnit,
+        flag: i.resultFlag,
+        comment: i.resultComment,
+        signedByName: o.completedByStaff?.name ?? null,
+        signedAt: o.completedAt,
+      })),
+    ),
   };
 }
 
@@ -117,6 +162,23 @@ function drawVisitPage(doc: PDFKit.PDFDocument, data: VisitRecordData): void {
   doc.fontSize(13).text('Prescription', { underline: true });
   doc.moveDown(0.3);
   doc.fontSize(11).text(data.prescription || 'Not recorded');
+
+  if (data.labResults.length > 0) {
+    doc.moveDown(1.5);
+    doc.fontSize(13).text('Lab results', { underline: true });
+    doc.moveDown(0.3);
+    doc.fontSize(11);
+    for (const r of data.labResults) {
+      const value = [r.value, r.unit].filter(Boolean).join(' ');
+      const flag = r.flag ? ` (${FLAG_LABEL[r.flag]})` : '';
+      doc.text(`${r.testName}: ${value || 'see comment'}${flag}`);
+      if (r.comment) doc.fontSize(10).fillColor('#555555').text(r.comment, { indent: 14 }).fillColor('#000000').fontSize(11);
+    }
+    const signer = data.labResults.find((r) => r.signedByName && r.signedAt);
+    if (signer) {
+      doc.fontSize(10).fillColor('#555555').text(`Lab results signed by ${signer.signedByName} on ${signer.signedAt!.toLocaleString()}`).fillColor('#000000');
+    }
+  }
 
   if (data.signature) {
     doc.moveDown(2);

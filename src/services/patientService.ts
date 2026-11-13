@@ -8,6 +8,24 @@ import { prisma } from '../db/prisma';
 import { recordAuditEvent } from './auditService';
 import { generatePatientCode } from '../utils/idCodes';
 import { CONSENT_VERSION, HISTORY_ENCOUNTER_LIMIT } from '../config/constants';
+import { buildVisitRecordDataFromEncounter, VisitLabResult, visitRecordLabInclude } from './visitRecordDocument';
+
+type LabOrdersForRecord = NonNullable<Parameters<typeof buildVisitRecordDataFromEncounter>[0]['labOrders']>;
+
+/** Signed lab results of a visit, flattened (same shape as the visit record PDF). */
+function labResultsOf(labOrders: LabOrdersForRecord | undefined): VisitLabResult[] {
+  return (labOrders ?? []).flatMap((o) =>
+    o.items.map((i) => ({
+      testName: i.testName,
+      value: i.resultValue,
+      unit: i.resultUnit,
+      flag: i.resultFlag,
+      comment: i.resultComment,
+      signedByName: o.completedByStaff?.name ?? null,
+      signedAt: o.completedAt,
+    })),
+  );
+}
 import { env } from '../config/env';
 import { InvalidPhoneNumberError, toE164 } from '../utils/phone';
 import { recordLegalAcceptances } from './legalService';
@@ -246,6 +264,8 @@ export interface OwnVisitHistoryEntry {
   visitedAt: Date;
   diagnosis: string | null;
   prescription: string | null;
+  /** Signed lab results, shown to the patient once the visit is checked out. */
+  labResults: VisitLabResult[];
 }
 
 /**
@@ -262,7 +282,11 @@ export async function getOwnVisitHistory(patientId: string): Promise<OwnVisitHis
   const encounters = await prisma.encounter.findMany({
     where: { patientId },
     orderBy: { createdAt: 'desc' },
-    include: { clinic: { select: { name: true } }, checkIn: { include: { department: { select: { name: true } } } } },
+    include: {
+      clinic: { select: { name: true } },
+      checkIn: { include: { department: { select: { name: true } } } },
+      labOrders: visitRecordLabInclude({ patientView: true }),
+    },
   });
 
   return encounters.map((e) => ({
@@ -272,6 +296,7 @@ export async function getOwnVisitHistory(patientId: string): Promise<OwnVisitHis
     visitedAt: e.createdAt,
     diagnosis: e.diagnosis,
     prescription: e.prescription,
+    labResults: labResultsOf(e.labOrders),
   }));
 }
 
@@ -282,6 +307,8 @@ export interface ScopedHistoryEntry {
   /** Always null for front desk (receptionists, clinicians, admins): only doctors see diagnoses. */
   diagnosis: string | null;
   prescription: string | null;
+  /** Signed lab results: doctors only (like diagnoses). Always empty for front desk. */
+  labResults: VisitLabResult[];
   /** Who handled the visit (the signing doctor, else the assigned one), so it can be traced later. */
   doctorName: string | null;
   isOwnClinic: boolean;
@@ -330,6 +357,7 @@ export async function getScopedHistory(
       clinic: { select: { name: true } },
       consultedByStaff: { select: { name: true } },
       assignedDoctor: { select: { name: true } },
+      labOrders: visitRecordLabInclude(),
     },
   });
 
@@ -362,6 +390,7 @@ export async function getScopedHistory(
       visitedAt: e.createdAt,
       diagnosis: options.includeDiagnosis ? e.diagnosis : null,
       prescription: e.prescription,
+      labResults: options.includeDiagnosis ? labResultsOf(e.labOrders) : [],
       doctorName: e.consultedByStaff?.name ?? e.assignedDoctor?.name ?? null,
       isOwnClinic: e.clinicId === viewingClinicId,
     })),

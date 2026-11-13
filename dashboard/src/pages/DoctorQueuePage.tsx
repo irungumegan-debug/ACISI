@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, ApiError, DoctorPresenceStatus, DoctorQueueItem, subscribeToQueue } from '../lib/api';
-import { ArrowRight, Clock, Coffee, Hourglass, Stethoscope, UserRoundCheck } from 'lucide-react';
-import { Avatar, Card, EmptyState, SkeletonList, StatusBadge } from '../components/ui';
+import { ArrowRight, Clock, Coffee, FlaskConical, Hourglass, Stethoscope, UserRoundCheck } from 'lucide-react';
+import { Avatar, Badge, Card, EmptyState, SkeletonList, StatusBadge } from '../components/ui';
 
 function waited(iso: string, now: number): string {
   const minutes = Math.max(0, Math.floor((now - new Date(iso).getTime()) / 60000));
@@ -163,13 +163,20 @@ export function DoctorQueuePage() {
                         <p className="truncate font-display font-semibold text-navy-900">{item.patientName}</p>
                         <p className="mt-0.5 flex flex-wrap items-center gap-x-3 text-[13px] text-ink-500">
                           {item.patientCode}
+                          {item.backFromLab && <span className="font-semibold text-blue-800 sm:hidden">Back from lab</span>}
                           <span className="inline-flex items-center gap-1">
                             <Clock size={13} aria-hidden /> Waiting <strong className="text-navy-900">{waited(item.waitingSince, now)}</strong>
                           </span>
                         </p>
                       </div>
                       <span className="hidden sm:inline-flex">
-                        <StatusBadge status={item.status} />
+                        {item.backFromLab ? (
+                          <Badge tone="blue" icon={FlaskConical}>
+                            Back from lab
+                          </Badge>
+                        ) : (
+                          <StatusBadge status={item.status} />
+                        )}
                       </span>
                       <Hourglass size={18} aria-hidden className="text-amber-600 sm:hidden" />
                     </Link>

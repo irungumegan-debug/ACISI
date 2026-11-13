@@ -3,6 +3,7 @@ jest.mock('../../src/db/prisma', () => {
     patient: { findUnique: jest.fn(), update: jest.fn() },
     otp: { deleteMany: jest.fn() },
     consent: { create: jest.fn() },
+    patientFile: { findMany: jest.fn(async () => []), deleteMany: jest.fn() },
     appointment: { updateMany: jest.fn() },
     mpesaTransaction: { findMany: jest.fn(), update: jest.fn() },
     payment: { findMany: jest.fn(async () => []), update: jest.fn() },
@@ -12,6 +13,7 @@ jest.mock('../../src/db/prisma', () => {
 jest.mock('../../src/config/africastalking', () => ({ smsClient: { send: jest.fn() } }));
 jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
 jest.mock('../../src/services/sessionRevocation', () => ({ revokeSessionsFor: jest.fn() }));
+jest.mock('../../src/services/fileStorageService', () => ({ removeStoredFile: jest.fn() }));
 
 import { prisma } from '../../src/db/prisma';
 import { smsClient } from '../../src/config/africastalking';
@@ -155,5 +157,20 @@ describe('deletePatientAccount', () => {
     expect(update.where).toEqual({ id: 'pay-1' });
     expect(update.data.phoneNumber).toBeNull();
     expect(JSON.stringify(update.data.rawCallbackPayload)).not.toMatch(/2547\d{8}/);
+  });
+});
+
+describe('deletePatientAccount: uploaded files', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { removeStoredFile } = jest.requireMock('../../src/services/fileStorageService') as { removeStoredFile: jest.Mock };
+
+  it("removes the patient's own uploads (rows and bytes); clinic uploads stay", async () => {
+    tx.patient!.findUnique!.mockResolvedValue(PATIENT);
+    tx.mpesaTransaction!.findMany!.mockResolvedValue([]);
+    tx.patientFile!.findMany!.mockResolvedValue([{ storageName: 'a'.repeat(48) }]);
+    await deletePatientAccount(PATIENT.id, { type: 'PATIENT' });
+    expect(tx.patientFile!.findMany).toHaveBeenCalledWith({ where: { patientId: PATIENT.id, uploadedByType: 'PATIENT' }, select: { storageName: true } });
+    expect(tx.patientFile!.deleteMany).toHaveBeenCalledWith({ where: { patientId: PATIENT.id, uploadedByType: 'PATIENT' } });
+    expect(removeStoredFile).toHaveBeenCalledWith('a'.repeat(48));
   });
 });

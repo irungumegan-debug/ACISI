@@ -5,6 +5,7 @@ import { legalBoxSatisfied, PRIVACY_PATH, TERMS_PATH } from '../lib/legal';
 import { EMPTY_IDENTITY, IdentityFields } from '../components/IdentityFields';
 import { RecordRequestsNotice, SharingPanel } from '../components/RecordSharing';
 import { FeeNotice } from '../components/FeeNotice';
+import { MyFiles } from '../components/MyFiles';
 import type { PatientIdentity } from '../lib/api';
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -18,6 +19,7 @@ import {
   Download,
   FileText,
   Loader2,
+  FlaskConical,
   Pill,
   Smartphone,
   Stethoscope,
@@ -728,6 +730,23 @@ function RecordsPanel({ patientCode }: { patientCode: string }) {
                       <b>Prescription:</b> {h.prescription || 'Not recorded'}
                     </span>
                   </p>
+                  {h.labResults && h.labResults.length > 0 && (
+                    <div className="t-line" style={{ display: 'block' }}>
+                      <p style={{ display: 'flex', alignItems: 'center', gap: 6, margin: 0 }}>
+                        <FlaskConical size={15} aria-hidden />
+                        <b>Lab results</b>
+                      </p>
+                      <ul style={{ margin: '4px 0 0', paddingLeft: 21 }}>
+                        {h.labResults.map((r, i) => (
+                          <li key={i}>
+                            {r.testName}: {[r.value, r.unit].filter(Boolean).join(' ') || 'see comment'}
+                            {r.flag && r.flag !== 'NORMAL' ? ` (${r.flag === 'CRITICAL' ? 'Critical' : 'Abnormal'})` : r.flag === 'NORMAL' ? ' (Normal)' : ''}
+                            {r.comment ? `. ${r.comment}` : ''}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                   <a className="btn btn-secondary" style={{ marginTop: 12 }} href={api.recordDownloadUrl(h.encounterId)} download>
                     <Download size={16} aria-hidden /> Download
                   </a>
@@ -738,6 +757,7 @@ function RecordsPanel({ patientCode }: { patientCode: string }) {
           </>
         )}
       </div>
+      <MyFiles />
     </>
   );
 }

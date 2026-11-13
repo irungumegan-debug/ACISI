@@ -9,6 +9,7 @@ jest.mock('../../src/db/prisma', () => ({
 
 jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
 jest.mock('../../src/services/patientService', () => ({ getScopedHistory: jest.fn() }));
+jest.mock('../../src/services/labService', () => ({ getLabOrdersForEncounter: jest.fn(async () => []) }));
 jest.mock('../../src/services/staffService', () => ({ findActiveStaffById: jest.fn(), comparePin: jest.fn() }));
 jest.mock('../../src/jobs/queue', () => ({ enqueueVisitSummaryEmail: jest.fn() }));
 jest.mock('../../src/services/checkoutSmsService', () => ({ sendCheckoutSms: jest.fn() }));

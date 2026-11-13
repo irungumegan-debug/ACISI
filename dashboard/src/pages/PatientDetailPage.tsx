@@ -6,6 +6,7 @@ import { ArrowLeft, Building2, CalendarDays, FileText, IdCard, Lock, MessageSqua
 import { Avatar, btn, Card, EmptyState, SkeletonList } from '../components/ui';
 import { ID_TYPE_LABEL, IdentityFields } from '../components/IdentityFields';
 import { PortalSetupCode } from '../components/PhoneVerification';
+import { PatientFiles } from '../components/PatientFiles';
 
 export function PatientDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -134,6 +135,10 @@ export function PatientDetailPage() {
         </p>
       )}
       </Card>
+
+      <div className="mt-6">
+        <PatientFiles patientId={patient.id} />
+      </div>
     </div>
   );
 }

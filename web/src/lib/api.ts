@@ -86,7 +86,7 @@ export interface FeeStatus {
 export interface StaffSessionSummary {
   staffName: string;
   clinicName: string;
-  role: 'RECEPTIONIST' | 'CLINICIAN' | 'DOCTOR' | 'ADMIN';
+  role: 'RECEPTIONIST' | 'CLINICIAN' | 'DOCTOR' | 'ADMIN' | 'LAB_TECHNICIAN';
 }
 
 export interface SharingOverview {
@@ -96,7 +96,35 @@ export interface SharingOverview {
   openRequests: { requestId: string; clinicName: string; requestedAt: string }[];
 }
 
+export interface PatientFileItem {
+  id: string;
+  categoryLabel: string;
+  documentDate: string;
+  note: string | null;
+  mimeType: string;
+  patientUploaded: boolean;
+}
+
 export const api = {
+  getMyFiles() {
+    return request<{ files: PatientFileItem[] }>('/patients/files');
+  },
+  async uploadMyFile(file: File, meta: { category: string; documentDate: string; note: string }) {
+    const form = new FormData();
+    form.append('category', meta.category);
+    form.append('documentDate', meta.documentDate);
+    if (meta.note.trim()) form.append('note', meta.note.trim());
+    form.append('file', file);
+    const res = await fetch('/api/patients/files', { method: 'POST', credentials: 'include', body: form });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ error: res.statusText }));
+      throw new ApiError(body.error ?? 'Upload failed. Please try again.', res.status);
+    }
+    return (await res.json()) as PatientFileItem;
+  },
+  myFileUrl(fileId: string) {
+    return `/api/patients/files/${encodeURIComponent(fileId)}`;
+  },
   // ---- Clinics ----
 
   listClinics() {
@@ -138,7 +166,7 @@ export const api = {
     phoneNumber: string;
     inviteCode: string;
     pin: string;
-    role: 'RECEPTIONIST' | 'DOCTOR';
+    role: 'RECEPTIONIST' | 'DOCTOR' | 'LAB_TECHNICIAN';
     departmentId?: string;
     email?: string;
     /** Required by the server. */
@@ -349,4 +377,12 @@ export interface VisitHistoryEntry {
   visitedAt: string;
   diagnosis: string | null;
   prescription: string | null;
+  /** Signed lab results, shown once the visit is checked out. */
+  labResults?: {
+    testName: string;
+    value: string | null;
+    unit: string | null;
+    flag: 'NORMAL' | 'ABNORMAL' | 'CRITICAL' | null;
+    comment: string | null;
+  }[];
 }
