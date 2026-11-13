@@ -3,8 +3,8 @@ import { enterRecordAccessCode, RecordSharingError, requestRecords } from '../se
 import { Prisma } from '@prisma/client';
 import { prisma } from '../db/prisma';
 import { staffPatientScopeWhere } from '../services/staffPatientScope';
-import { buildVisitRecordDataFromEncounter, renderVisitRecordPdf } from '../services/visitRecordDocument';
-import { requireStaffSession, AuthenticatedRequest } from './auth';
+import { buildVisitRecordDataFromEncounter, renderVisitRecordPdf, visitRecordLabInclude } from '../services/visitRecordDocument';
+import { requireStaffSession, AuthenticatedRequest, isFrontDeskRole } from './auth';
 import { getScopedHistory } from '../services/patientService';
 import { recordAuditEvent } from '../services/auditService';
 import { z } from 'zod';
@@ -115,7 +115,7 @@ const smsPreferenceSchema = z.object({ smsOptOut: z.boolean() });
  */
 patientsRouter.patch('/:id/sms-preference', async (req, res) => {
   const { clinicId, staffId, role } = (req as unknown as AuthenticatedRequest).dashboardSession;
-  if (role === 'DOCTOR') {
+  if (!isFrontDeskRole(role)) {
     res.status(403).json({ error: 'Only front-desk staff can change SMS preferences' });
     return;
   }
@@ -155,7 +155,7 @@ patientsRouter.patch('/:id/sms-preference', async (req, res) => {
  */
 patientsRouter.patch('/:id/details', async (req, res) => {
   const { clinicId, staffId, role } = (req as unknown as AuthenticatedRequest).dashboardSession;
-  if (role === 'DOCTOR') {
+  if (!isFrontDeskRole(role)) {
     res.status(403).json({ error: 'Only front-desk staff can change patient details' });
     return;
   }
@@ -206,14 +206,15 @@ patientsRouter.patch('/:id/details', async (req, res) => {
  */
 patientsRouter.get('/:id/visits/:encounterId/record', async (req, res) => {
   const { clinicId, staffId, role } = (req as unknown as AuthenticatedRequest).dashboardSession;
-  if (role === 'DOCTOR') {
+  if (!isFrontDeskRole(role)) {
     res.status(403).json({ error: 'Printing visit records is done at the front desk' });
     return;
   }
 
   const encounter = await prisma.encounter.findFirst({
     where: { id: req.params.encounterId, patientId: req.params.id, clinicId, patient: { deletedAt: null } },
-    include: { patient: true, clinic: true, checkIn: { include: { department: true } }, consultedByStaff: true },
+    // The printed copy a patient asked for includes diagnosis and lab results (front desk never sees them on screen).
+    include: { patient: true, clinic: true, checkIn: { include: { department: true } }, consultedByStaff: true, labOrders: visitRecordLabInclude() },
   });
   if (!encounter) {
     res.status(404).json({ error: 'Visit record not found' });
@@ -257,7 +258,7 @@ function sendSharingError(err: unknown, res: Response): boolean {
  */
 patientsRouter.post('/:id/record-requests', async (req, res) => {
   const { clinicId, staffId, role } = (req as unknown as AuthenticatedRequest).dashboardSession;
-  if (role === 'DOCTOR') {
+  if (!isFrontDeskRole(role)) {
     res.status(403).json({ error: 'Records are requested at the front desk' });
     return;
   }
@@ -274,7 +275,7 @@ const shareCodeSchema = z.object({ code: z.string().trim().regex(/^\d{6}$/, 'The
 /** Front desk entering the code the patient read out. */
 patientsRouter.post('/:id/record-requests/verify', async (req, res) => {
   const { clinicId, staffId, role } = (req as unknown as AuthenticatedRequest).dashboardSession;
-  if (role === 'DOCTOR') {
+  if (!isFrontDeskRole(role)) {
     res.status(403).json({ error: 'Records are requested at the front desk' });
     return;
   }

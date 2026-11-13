@@ -30,6 +30,10 @@ enum StaffRole {
   CLINICIAN
   DOCTOR
   ADMIN
+  /// Works the clinic's lab queue: sees only the tests requested, the
+  /// doctor's note for the lab and the patient's name, ACISI ID, age and
+  /// sex. Never diagnoses, prescriptions, history, billing or front desk.
+  LAB_TECHNICIAN
 }
 
 enum Sex {
@@ -126,6 +130,10 @@ enum OtpPurpose {
 enum EncounterStatus {
   WAITING
   IN_CONSULTATION
+  /// The doctor requested lab tests: the patient is in the lab queue and off
+  /// the doctor's queue until the lab marks the results ready, which moves
+  /// the visit back to WAITING for the same doctor (see labService).
+  AWAITING_LAB
   READY_FOR_CHECKOUT
   DONE
 }
@@ -177,6 +185,8 @@ model Clinic {
   payments         Payment[]
   legalAcceptances LegalAcceptance[]
   patientFiles     PatientFile[]
+  labTests         LabTest[]
+  labOrders        LabOrder[]
 
   @@map("clinics")
 }
@@ -282,6 +292,9 @@ model Staff {
   cancelledAppointments    Appointment[]     @relation("AppointmentCancelledBy")
   legalAcceptances         LegalAcceptance[]
   uploadedFiles            PatientFile[]
+  labOrdersRequested       LabOrder[]        @relation("LabOrderRequestedBy")
+  labOrdersStarted         LabOrder[]        @relation("LabOrderStartedBy")
+  labOrdersCompleted       LabOrder[]        @relation("LabOrderCompletedBy")
 
   @@index([clinicId])
   @@index([departmentId])
@@ -463,7 +476,8 @@ model Encounter {
   checkedOutAt        DateTime?
   createdAt           DateTime        @default(now())
 
-  bill Bill?
+  bill      Bill?
+  labOrders LabOrder[]
 
   @@index([patientId])
   @@index([clinicId])
@@ -989,9 +1003,106 @@ model PatientFile {
   sizeBytes         Int
   /// For a PDF made from several photos, how many pages it has.
   pageCount         Int?
+  /// Set when the lab attached this file to a lab order's results.
+  labOrderId        String?
+  labOrder          LabOrder?           @relation(fields: [labOrderId], references: [id])
   createdAt         DateTime            @default(now())
 
   @@index([patientId])
   @@index([clinicId])
+  @@index([labOrderId])
   @@map("patient_files")
+}
+
+/// A test the clinic's lab offers, with the clinic's own price. Set up by the
+/// clinic admin in Settings. Deactivated (never deleted) so past orders keep
+/// their test; each order item also copies the name and price at the time.
+model LabTest {
+  id        String   @id @default(cuid())
+  clinicId  String
+  clinic    Clinic   @relation(fields: [clinicId], references: [id])
+  name      String
+  /// Lower-cased, trimmed name: no duplicate names at one clinic.
+  nameKey   String
+  /// Whole KES.
+  priceKes  Int
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items LabOrderItem[]
+
+  @@unique([clinicId, nameKey])
+  @@index([clinicId])
+  @@map("lab_tests")
+}
+
+enum LabOrderStatus {
+  /// Requested by the doctor; waiting in the lab queue.
+  REQUESTED
+  /// A lab technician has opened it and is working on it.
+  IN_PROGRESS
+  /// Results entered and signed; sent back to the doctor.
+  RESULTS_READY
+}
+
+enum LabResultFlag {
+  NORMAL
+  ABNORMAL
+  CRITICAL
+}
+
+/// One round of lab tests a doctor requested during a visit. A visit can
+/// have several (more tests after the first results). Paid at checkout: the
+/// tests are added to the visit's bill.
+model LabOrder {
+  id                 String         @id @default(cuid())
+  encounterId        String
+  encounter          Encounter      @relation(fields: [encounterId], references: [id])
+  clinicId           String
+  clinic             Clinic         @relation(fields: [clinicId], references: [id])
+  status             LabOrderStatus @default(REQUESTED)
+  requestedByStaffId String
+  requestedByStaff   Staff          @relation("LabOrderRequestedBy", fields: [requestedByStaffId], references: [id])
+  requestedAt        DateTime       @default(now())
+  /// Optional note from the doctor for the lab (e.g. "fasting since 8pm").
+  /// Not the diagnosis. Shown to the lab and the doctor only.
+  noteForLab         String?
+  startedByStaffId   String?
+  startedByStaff     Staff?         @relation("LabOrderStartedBy", fields: [startedByStaffId], references: [id])
+  startedAt          DateTime?
+  /// The lab technician who signed the results (PIN re-entered).
+  completedByStaffId String?
+  completedByStaff   Staff?         @relation("LabOrderCompletedBy", fields: [completedByStaffId], references: [id])
+  completedAt        DateTime?
+  /// When the "results ready" SMS was sent (null: not sent, opted out or failed).
+  patientNotifiedAt  DateTime?
+
+  items LabOrderItem[]
+  files PatientFile[]
+
+  @@index([encounterId])
+  @@index([clinicId, status])
+  @@map("lab_orders")
+}
+
+/// One test in a lab order, and its result.
+model LabOrderItem {
+  id            String         @id @default(cuid())
+  labOrderId    String
+  labOrder      LabOrder       @relation(fields: [labOrderId], references: [id], onDelete: Cascade)
+  labTestId     String
+  labTest       LabTest        @relation(fields: [labTestId], references: [id])
+  /// Copied from the test when ordered, so a later rename or price change
+  /// never alters an existing order or bill.
+  testName      String
+  priceKes      Int
+  position      Int
+  resultValue   String?
+  resultUnit    String?
+  resultFlag    LabResultFlag?
+  resultComment String?
+
+  @@index([labOrderId])
+  @@map("lab_order_items")
 }

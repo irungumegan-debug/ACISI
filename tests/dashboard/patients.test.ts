@@ -26,6 +26,7 @@ jest.mock('../../src/services/recordSharingService', () => {
 });
 jest.mock('../../src/services/departmentService', () => ({ getDoctorDepartmentIds: jest.fn(async () => ['dept-1']) }));
 jest.mock('../../src/services/visitRecordDocument', () => ({
+  visitRecordLabInclude: jest.requireActual('../../src/services/visitRecordDocument').visitRecordLabInclude,
   buildVisitRecordDataFromEncounter: jest.fn(() => ({})),
   renderVisitRecordPdf: jest.fn(async () => Buffer.from('%PDF-1.4 test')),
 }));

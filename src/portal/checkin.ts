@@ -8,7 +8,7 @@ import { initiateCheckIn, PromptResendError, queryCheckInPayment, resendCheckInP
 import { MAX_PROMPT_RESENDS_PER_CHECK_IN, PROMPT_RESEND_WAIT_SECONDS } from '../config/constants';
 import { getOwnVisitHistory } from '../services/patientService';
 import { recordAuditEvent } from '../services/auditService';
-import { buildVisitRecordDataFromEncounter, renderVisitRecordPdf, renderVisitRecordsPdf } from '../services/visitRecordDocument';
+import { buildVisitRecordDataFromEncounter, renderVisitRecordPdf, renderVisitRecordsPdf, visitRecordLabInclude } from '../services/visitRecordDocument';
 import { patientNeedsWebCheckInPrivacyAck, recordLegalAcceptances } from '../services/legalService';
 import { PRIVACY_NOTICE_VERSION } from '../config/legal';
 import {
@@ -344,7 +344,7 @@ portalRecordsRouter.get('/download-all', async (req, res) => {
   const encounters = await prisma.encounter.findMany({
     where: { patientId },
     orderBy: { createdAt: 'desc' },
-    include: { patient: true, clinic: true, checkIn: { include: { department: true } }, consultedByStaff: true },
+    include: { patient: true, clinic: true, checkIn: { include: { department: true } }, consultedByStaff: true, labOrders: visitRecordLabInclude({ patientView: true }) },
   });
   if (encounters.length === 0) {
     res.status(404).json({ error: 'You have no visits on record yet' });
@@ -380,6 +380,7 @@ portalRecordsRouter.get('/:encounterId/download', async (req, res) => {
       clinic: true,
       checkIn: { include: { department: true } },
       consultedByStaff: true,
+      labOrders: visitRecordLabInclude({ patientView: true }),
     },
   });
 

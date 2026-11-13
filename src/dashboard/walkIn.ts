@@ -1,6 +1,6 @@
 import { NextFunction, Request, Response, Router } from 'express';
 import { z } from 'zod';
-import { requireStaffSession, AuthenticatedRequest } from './auth';
+import { requireStaffSession, AuthenticatedRequest, isFrontDeskRole } from './auth';
 import { checkInWalkIn, getTodayCheckInCounts, lookupWalkInPatient, WalkInError } from '../services/walkInService';
 import { patientIdentityInputSchema } from '../services/patientIdentity';
 
@@ -14,7 +14,7 @@ walkInRouter.use(requireStaffSession);
  * server and not just by hiding the button.
  */
 function requireFrontDesk(req: Request, res: Response, next: NextFunction): void {
-  if ((req as AuthenticatedRequest).dashboardSession.role === 'DOCTOR') {
+  if (!isFrontDeskRole((req as AuthenticatedRequest).dashboardSession.role)) {
     res.status(403).json({ error: 'Only front-desk staff can check in walk-in patients' });
     return;
   }

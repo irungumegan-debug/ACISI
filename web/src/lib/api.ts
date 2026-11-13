@@ -166,7 +166,7 @@ export const api = {
     phoneNumber: string;
     inviteCode: string;
     pin: string;
-    role: 'RECEPTIONIST' | 'DOCTOR';
+    role: 'RECEPTIONIST' | 'DOCTOR' | 'LAB_TECHNICIAN';
     departmentId?: string;
     email?: string;
     /** Required by the server. */

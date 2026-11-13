@@ -13,6 +13,8 @@ import {
 import { findActiveStaffById, getDoctorPresenceStatus, setDoctorPresenceBySelf } from '../services/staffService';
 import { listDepartmentAppointmentsToday } from '../services/appointmentService';
 import { getDoctorDepartmentIds } from '../services/departmentService';
+import { listLabTests, requestLabTests } from '../services/labService';
+import { sendLabError } from './lab';
 
 export const doctorRouter = Router();
 
@@ -133,5 +135,42 @@ doctorRouter.post('/encounters/:id/consult', async (req, res) => {
       return;
     }
     throw err;
+  }
+});
+
+/** The clinic's active lab tests, for the "Request lab tests" picker. */
+doctorRouter.get('/lab-tests', async (req, res) => {
+  const { clinicId } = (req as AuthenticatedRequest).dashboardSession;
+  res.json({ tests: await listLabTests(clinicId) });
+});
+
+const labOrderSchema = z.object({
+  labTestIds: z.array(z.string().min(1)).min(1).max(30),
+  noteForLab: z.string().nullish(),
+  // The doctor's own PIN, re-entered as the act of requesting.
+  pin: z.string().min(1),
+});
+
+/** Sends the patient to the lab: the visit leaves this doctor's queue until the results are signed. */
+doctorRouter.post('/encounters/:id/lab-orders', async (req, res) => {
+  const parsed = labOrderSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Choose at least one test and enter your PIN' });
+    return;
+  }
+  const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  try {
+    const result = await requestLabTests({
+      encounterId: req.params.id as string,
+      clinicId,
+      departmentIds: departmentsOf(res),
+      staffId,
+      labTestIds: parsed.data.labTestIds,
+      noteForLab: parsed.data.noteForLab,
+      pin: parsed.data.pin,
+    });
+    res.status(201).json(result);
+  } catch (err) {
+    if (!sendLabError(err, res)) throw err;
   }
 });

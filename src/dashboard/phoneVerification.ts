@@ -1,6 +1,6 @@
 import { NextFunction, Request, Response, Router } from 'express';
 import { z } from 'zod';
-import { requireStaffSession, AuthenticatedRequest } from './auth';
+import { requireStaffSession, AuthenticatedRequest, isFrontDeskRole } from './auth';
 import { prisma } from '../db/prisma';
 import { InvalidPhoneNumberError, toE164 } from '../utils/phone';
 import { completePendingSignupInPerson, findPendingSignupsByPhone, PendingSignupError } from '../services/pendingSignupService';
@@ -17,7 +17,7 @@ export const phoneVerificationRouter = Router();
 phoneVerificationRouter.use(requireStaffSession);
 
 function requireFrontDesk(req: Request, res: Response, next: NextFunction): void {
-  if ((req as AuthenticatedRequest).dashboardSession.role === 'DOCTOR') {
+  if (!isFrontDeskRole((req as AuthenticatedRequest).dashboardSession.role)) {
     res.status(403).json({ error: 'Phone verification is done at the front desk' });
     return;
   }

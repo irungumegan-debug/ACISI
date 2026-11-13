@@ -28,7 +28,7 @@ export async function generateUniqueStaffCode(db: Db = prisma): Promise<string> 
   throw new Error('Could not generate a unique staff code after several attempts');
 }
 
-const SIGNUP_ROLES: StaffRole[] = ['RECEPTIONIST', 'CLINICIAN', 'DOCTOR'];
+const SIGNUP_ROLES: StaffRole[] = ['RECEPTIONIST', 'CLINICIAN', 'DOCTOR', 'LAB_TECHNICIAN'];
 
 interface RegisterStaffInput {
   name: string;

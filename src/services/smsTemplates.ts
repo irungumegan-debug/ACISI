@@ -224,6 +224,18 @@ export function buildAppointmentReminderSms(input: { clinicName: string; schedul
   return `${before}${name}${after}`;
 }
 
+/**
+ * Lab results ready: "ACISI: Your lab results at Sunrise Family Clinic are
+ * ready. Please go back to the doctor." Clinic only: never the tests, the
+ * results or the department, in case someone else reads the phone. Always
+ * one SMS (the clinic name is shortened if needed).
+ */
+export function buildLabResultsReadySms(input: { clinicName: string }): string {
+  const before = 'ACISI: Your lab results at ';
+  const after = ' are ready. Please go back to the doctor.';
+  return `${before}${fitClinicName(input.clinicName, before.length + after.length)}${after}`;
+}
+
 /** Clinic name made SMS-safe and shortened so `before + name + after` fits one SMS. */
 function fitClinicName(clinicName: string, fixedLength: number): string {
   const room = SINGLE_SMS_MAX_CHARS - fixedLength;

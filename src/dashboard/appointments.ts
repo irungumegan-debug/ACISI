@@ -1,5 +1,5 @@
 import { Response, Router } from 'express';
-import { requireStaffSession, AuthenticatedRequest } from './auth';
+import { requireStaffSession, AuthenticatedRequest, isFrontDeskRole } from './auth';
 import {
   AppointmentNotActionableError,
   AppointmentNotFoundError,
@@ -22,7 +22,7 @@ appointmentsRouter.use(requireStaffSession);
  * (GET /doctor/appointments/today), and are refused here by the server.
  */
 appointmentsRouter.use((req, res, next) => {
-  if ((req as AuthenticatedRequest).dashboardSession.role === 'DOCTOR') {
+  if (!isFrontDeskRole((req as AuthenticatedRequest).dashboardSession.role)) {
     res.status(403).json({ error: 'Doctors see their own departments\' appointments under My appointments' });
     return;
   }

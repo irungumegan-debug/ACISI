@@ -1,5 +1,6 @@
 import { Bill, BillItemKind, ClinicPaymentSettings, Payment, PaymentMethod, Prisma } from '@prisma/client';
 import { prisma } from '../db/prisma';
+import { getLabChargesForEncounter } from './labService';
 import { logger } from '../utils/logger';
 import { InvalidPhoneNumberError, toE164 } from '../utils/phone';
 import { formatKenyaDate } from '../utils/kenyaTime';
@@ -98,6 +99,8 @@ export interface CheckoutView {
    * medicines. Never the diagnosis: front desk doesn't see diagnoses.
    */
   prescription: string | null;
+  /** Lab tests requested in this visit, with the price at the time: front desk adds them to the bill. Never results. */
+  labCharges: { testName: string; priceKes: number }[];
   /** The visit's department, with its own consultation fee if it has one (null: use the clinic default). */
   department: { id: string; name: string; consultationFeeKes: number | null };
   settings: {
@@ -180,6 +183,7 @@ export async function getCheckoutView(encounterId: string, clinicId: string): Pr
     },
     departmentName: encounter.checkIn.department.name,
     prescription: encounter.prescription,
+    labCharges: await getLabChargesForEncounter(encounter.id),
     department: encounter.checkIn.department,
     settings: {
       acceptsCash: settings.acceptsCash,

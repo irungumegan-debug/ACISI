@@ -26,6 +26,7 @@ jest.mock('../../src/config/email', () => ({
 }));
 
 jest.mock('../../src/services/visitRecordDocument', () => ({
+  visitRecordLabInclude: jest.requireActual('../../src/services/visitRecordDocument').visitRecordLabInclude,
   buildVisitRecordDataFromEncounter: jest.fn().mockReturnValue({ patientName: 'Jane Wanjiru' }),
   renderVisitRecordPdf: jest.fn().mockResolvedValue(Buffer.from('%PDF-fake')),
 }));

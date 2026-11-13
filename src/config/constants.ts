@@ -120,4 +120,4 @@ export const SMS_OVERAGE_KES = 2;
  * allowance. Anything else (PIN, phone-verification and sharing codes, the
  * ACISI check-in fee SMS, the account-deleted notice) is never counted.
  */
-export const CLINIC_COUNTED_SMS_PURPOSES: readonly string[] = ['PAYMENT_RECEIPT', 'CHECKOUT_SUMMARY', 'APPOINTMENT_REMINDER', 'WALK_IN_INVITE'];
+export const CLINIC_COUNTED_SMS_PURPOSES: readonly string[] = ['PAYMENT_RECEIPT', 'CHECKOUT_SUMMARY', 'APPOINTMENT_REMINDER', 'WALK_IN_INVITE', 'LAB_RESULTS_READY'];

@@ -54,6 +54,7 @@ type Step =
   | { kind: 'patient' }
   | { kind: 'doctor' }
   | { kind: 'staff' }
+  | { kind: 'lab' }
   | { kind: 'clinic' }
   | { kind: 'staff-confirm'; staffCode: string }
   | { kind: 'clinic-confirm'; inviteCode: string; staffCode: string };
@@ -71,6 +72,9 @@ export function SignupPage() {
         )}
         {step.kind === 'staff' && (
           <StaffSignupForm role="RECEPTIONIST" onBack={() => setStep({ kind: 'picker' })} onDone={(staffCode) => setStep({ kind: 'staff-confirm', staffCode })} />
+        )}
+        {step.kind === 'lab' && (
+          <StaffSignupForm role="LAB_TECHNICIAN" onBack={() => setStep({ kind: 'picker' })} onDone={(staffCode) => setStep({ kind: 'staff-confirm', staffCode })} />
         )}
         {step.kind === 'clinic' && (
           <ClinicSignupForm
@@ -90,7 +94,7 @@ export function SignupPage() {
   );
 }
 
-function RolePicker({ onPick }: { onPick: (kind: 'patient' | 'doctor' | 'staff' | 'clinic') => void }) {
+function RolePicker({ onPick }: { onPick: (kind: 'patient' | 'doctor' | 'staff' | 'lab' | 'clinic') => void }) {
   return (
     <>
       <h1 className="auth-h1">Create your account</h1>
@@ -99,6 +103,7 @@ function RolePicker({ onPick }: { onPick: (kind: 'patient' | 'doctor' | 'staff' 
         <RoleCard role="patient" title="Patient" sub="Check in and view your records" onPick={() => onPick('patient')} />
         <RoleCard role="doctor" title="Doctor" sub="Consult and manage prescriptions" onPick={() => onPick('doctor')} />
         <RoleCard role="staff" title="Front desk staff" sub="Manage the queue and checkout" onPick={() => onPick('staff')} />
+        <RoleCard role="lab" title="Lab technician" sub="Work the lab queue and enter results" onPick={() => onPick('lab')} />
         <RoleCard role="clinic" title="Register your clinic" sub="First time on ACISI? Start here as clinic admin" onPick={() => onPick('clinic')} />
       </div>
     </>
@@ -375,7 +380,7 @@ function StaffSignupForm({
   onBack,
   onDone,
 }: {
-  role: 'DOCTOR' | 'RECEPTIONIST';
+  role: 'DOCTOR' | 'RECEPTIONIST' | 'LAB_TECHNICIAN';
   onBack: () => void;
   onDone: (staffCode: string) => void;
 }) {
@@ -443,7 +448,7 @@ function StaffSignupForm({
       <button type="button" className="auth-back" onClick={onBack}>
         &larr; Back
       </button>
-      <h1 className="auth-h1">{role === 'DOCTOR' ? 'Doctor sign up' : 'Staff sign up'}</h1>
+      <h1 className="auth-h1">{role === 'DOCTOR' ? 'Doctor sign up' : role === 'LAB_TECHNICIAN' ? 'Lab technician sign up' : 'Staff sign up'}</h1>
       <p className="auth-sub">
         {role === 'DOCTOR'
           ? "Doctor accounts are set up by your clinic. If your clinic is already on ACISI, ask your admin for an invite code."

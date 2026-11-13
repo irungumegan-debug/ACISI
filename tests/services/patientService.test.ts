@@ -120,6 +120,7 @@ describe('getOwnVisitHistory', () => {
         visitedAt: new Date('2026-01-01'),
         diagnosis: 'Flu',
         prescription: 'Paracetamol',
+        labResults: [],
       },
     ]);
     expect(mockFindFirstConsent).not.toHaveBeenCalled(); // this is the patient's own data — no consent gate applies

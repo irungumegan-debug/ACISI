@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { requireStaffSession, AuthenticatedRequest } from './auth';
+import { requireStaffSession, AuthenticatedRequest, isFrontDeskRole } from './auth';
 import { subscribeCheckInPaid } from '../services/realtimeEvents';
 
 export const eventsRouter = Router();
@@ -13,10 +13,11 @@ eventsRouter.use(requireStaffSession);
  */
 eventsRouter.get('/', (req, res) => {
   const { clinicId, role } = (req as AuthenticatedRequest).dashboardSession;
-  // Doctors only see their own departments' patients, so they get a bare
-  // "something changed" ping and refetch their scoped queue — never the
-  // clinic-wide event with another department's patient in it.
-  const isDoctor = role === 'DOCTOR';
+  // Doctors only see their own departments' patients and lab technicians
+  // only the lab queue, so every role but front desk gets a bare "something
+  // changed" ping and refetches its own scoped list: never the clinic-wide
+  // event with patient details in it.
+  const isDoctor = !isFrontDeskRole(role);
 
   res.set({
     'Content-Type': 'text/event-stream',

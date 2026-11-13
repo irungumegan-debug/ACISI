@@ -17,6 +17,10 @@ export const staffEnterCode: UssdStateHandler = async (session, input) => {
   if (!staff) {
     return { response: 'END That staff ID was not recognized.', continueSession: false };
   }
+  // The USSD staff menu is patient lookup; lab technicians only work the lab queue on the console.
+  if (staff.role === 'LAB_TECHNICIAN') {
+    return { response: 'END Lab technicians use the ACISI console, not USSD.', continueSession: false };
+  }
 
   session.data.pendingStaffCode = staffCode;
   return { response: 'CON Enter your PIN:', continueSession: true, nextState: 'STAFF_ENTER_PIN' };

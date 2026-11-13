@@ -2,7 +2,7 @@ import { Request, Response, Router } from 'express';
 import { z } from 'zod';
 import dayjs from 'dayjs';
 import { prisma } from '../db/prisma';
-import { requireStaffSession, AuthenticatedRequest } from './auth';
+import { requireStaffSession, AuthenticatedRequest, isFrontDeskRole } from './auth';
 import {
   CheckInNotPendingError,
   confirmCheckInPaidManually,
@@ -36,7 +36,7 @@ checkinsRouter.get('/today', async (req, res) => {
   // The front-desk queue lists every patient in the department with phone
   // numbers. Doctors work from their own queue (GET /doctor/queue), so the
   // server refuses them here.
-  if (role === 'DOCTOR') {
+  if (!isFrontDeskRole(role)) {
     res.status(403).json({ error: 'Doctors use My queue' });
     return;
   }
@@ -62,6 +62,7 @@ checkinsRouter.get('/today', async (req, res) => {
           assignedDoctorId: true,
           assignedDoctor: { select: { name: true } },
           bill: { select: { status: true, totalKes: true, paidKes: true } },
+          labOrders: { where: { status: 'RESULTS_READY' }, select: { id: true }, take: 1 },
         },
       },
     },
@@ -117,6 +118,8 @@ checkinsRouter.get('/today', async (req, res) => {
       source: c.source,
       checkedInByName: c.staff?.name ?? null,
       encounterStatus: c.encounter?.status ?? null,
+      // Back with the doctor after the lab signed the results (shown as "Back from lab").
+      backFromLab: (c.encounter?.labOrders?.length ?? 0) > 0,
       assignedDoctorId: c.encounter?.assignedDoctorId ?? null,
       assignedDoctorName: c.encounter?.assignedDoctor?.name ?? null,
       // Clinic checkout bill (separate from the ACISI check-in fee above).
@@ -138,7 +141,7 @@ checkinsRouter.get('/today', async (req, res) => {
 const confirmPaymentSchema = z.object({ mpesaCode: z.string().trim().min(1).max(32) });
 
 checkinsRouter.post('/:id/confirm-payment', async (req, res) => {
-  if ((req as unknown as AuthenticatedRequest).dashboardSession.role === 'DOCTOR') {
+  if (!isFrontDeskRole((req as unknown as AuthenticatedRequest).dashboardSession.role)) {
     res.status(403).json({ error: 'Only front-desk staff can confirm check-in fees' });
     return;
   }
@@ -185,6 +188,10 @@ const checkoutSchema = z.object({ deliveryMethod: z.enum(['sms', 'sms_and_email'
  * also emailed — see encounterService.checkoutEncounter.
  */
 checkinsRouter.post('/:id/checkout', async (req, res) => {
+  if (!isFrontDeskRole((req as unknown as AuthenticatedRequest).dashboardSession.role)) {
+    res.status(403).json({ error: 'Checkout is done at the front desk' });
+    return;
+  }
   const parsed = checkoutSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: 'Invalid request' });
@@ -214,9 +221,9 @@ checkinsRouter.post('/:id/checkout', async (req, res) => {
   }
 });
 
-/** Moving patients between doctors is front-desk work — doctors are refused on the server. */
+/** Moving patients between doctors is front-desk work; every other role is refused on the server. */
 function refuseDoctors(req: Request, res: Response): boolean {
-  if ((req as unknown as AuthenticatedRequest).dashboardSession.role === 'DOCTOR') {
+  if (!isFrontDeskRole((req as unknown as AuthenticatedRequest).dashboardSession.role)) {
     res.status(403).json({ error: 'Only front-desk staff can change a patient’s doctor' });
     return true;
   }

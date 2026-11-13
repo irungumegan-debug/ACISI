@@ -1,6 +1,6 @@
 import { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { Building2, ChevronRight, LucideIcon, Stethoscope, UserRound, UsersRound } from 'lucide-react';
+import { Building2, ChevronRight, FlaskConical, LucideIcon, Stethoscope, UserRound, UsersRound } from 'lucide-react';
 import { Logo } from './Logo';
 import { Watermark } from './Watermark';
 
@@ -32,10 +32,11 @@ export function LegalLinks() {
 
 export type RoleTone = 'teal' | 'blue' | 'emerald' | 'gold';
 
-export const ROLE_ICONS: Record<'patient' | 'doctor' | 'staff' | 'clinic', { icon: LucideIcon; tone: RoleTone }> = {
+export const ROLE_ICONS: Record<'patient' | 'doctor' | 'staff' | 'lab' | 'clinic', { icon: LucideIcon; tone: RoleTone }> = {
   patient: { icon: UserRound, tone: 'teal' },
   doctor: { icon: Stethoscope, tone: 'blue' },
   staff: { icon: UsersRound, tone: 'emerald' },
+  lab: { icon: FlaskConical, tone: 'teal' },
   clinic: { icon: Building2, tone: 'gold' },
 };
 

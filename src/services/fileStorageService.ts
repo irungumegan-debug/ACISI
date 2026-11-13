@@ -137,6 +137,8 @@ export interface FileMeta {
   /** The date the document is from. */
   documentDate: Date;
   note: string | null;
+  /** Set when the lab attaches the file to a lab order's results. */
+  labOrderId?: string;
 }
 
 export interface Uploader {
@@ -174,6 +176,7 @@ async function storeAndRecord(
         mimeType,
         sizeBytes: size,
         pageCount,
+        labOrderId: meta.labOrderId,
       },
     });
     await recordAuditEvent({
@@ -184,7 +187,7 @@ async function storeAndRecord(
       action: 'PATIENT_FILE_UPLOADED',
       entityType: 'PatientFile',
       entityId: row.id,
-      metadata: { patientId, category: meta.category, mimeType, sizeBytes: size, pageCount },
+      metadata: { patientId, category: meta.category, mimeType, sizeBytes: size, pageCount, labOrderId: meta.labOrderId },
     });
     return row;
   } catch (err) {
@@ -327,6 +330,17 @@ export async function openPatientFile(fileId: string, viewer: FileViewer): Promi
     metadata: viewer.kind === 'staff' ? { patientId: file.patientId, ownClinicFile: file.clinicId === viewer.clinicId, basis } : { patientId: file.patientId },
   });
   return { file, stream: fs.createReadStream(full) };
+}
+
+/** Opens a stored file's bytes; "not found" if they're missing. Callers decide who may see it and audit the view. */
+export async function streamStoredFile(file: PatientFile): Promise<fs.ReadStream> {
+  const full = filePath(file.storageName);
+  try {
+    await fs.promises.access(full, fs.constants.R_OK);
+  } catch {
+    throw new PatientFileError('File not found', 404);
+  }
+  return fs.createReadStream(full);
 }
 
 /** A safe download name: "X-ray 2026-03-15.jpg". Never the uploader's original name. */
