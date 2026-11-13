@@ -39,6 +39,7 @@ systemctl status acisi --no-pager | head -5        # should say "active (running
 sudo journalctl -u acisi -n 50 --no-pager               # recent app logs
 curl -s https://acisi.co.ke/healthz; echo          # {"status":"ok"}
 free -h; df -h /                                   # memory and disk
+redis-cli info memory | grep used_memory_human     # Redis (cap 64 MB)
 systemctl list-timers acisi-backup.timer certbot.timer --no-pager
 ```
 
@@ -80,6 +81,24 @@ sleep 15; curl -s https://acisi.co.ke/healthz; echo
 
 Incident 2026-11-13: `/var/log/syslog` reached 13 GB and filled the disk;
 Redis stopped accepting writes and the site returned 502.
+
+## Redis full ("OOM command not allowed")
+
+Logins and background jobs stop working when Redis reaches its 64 MB cap.
+Check: `redis-cli info memory | grep -E "used_memory_human|maxmemory_human"`.
+See what fills it:
+```
+redis-cli --scan --pattern 'bull:*' | cut -d: -f2 | sort | uniq -c | sort -rn | head
+```
+Since 14 Nov 2026 every job queue keeps only its newest 200 finished jobs
+(`JOB_RETENTION` in `src/jobs/queue.ts`). To clear old finished jobs by hand,
+give Redis room for a moment, clean, and put the cap back:
+```
+redis-cli config set maxmemory 128mb
+sudo bash -c 'set -a; . /etc/acisi/acisi.env; set +a; cd /opt/acisi/app && node -e "const {Queue}=require(\"bullmq\");const R=require(\"ioredis\");(async()=>{for(const n of [\"stk-status-check\",\"maintenance\",\"sms-receipts\",\"visit-summary-email\",\"clinic-stk-status-check\"]){const q=new Queue(n,{connection:new R(process.env.REDIS_URL,{maxRetriesPerRequest:null})});console.log(n,(await q.clean(0,1000000,\"completed\")).length);await q.close()}process.exit(0)})()"'
+redis-cli config set maxmemory 64mb
+```
+This removes only finished jobs, never logins or jobs still waiting.
 
 ## Updating the app (after a pull request is merged)
 
