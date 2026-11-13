@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { ArrowLeft, Building2, FileText, Lock, NotebookPen, Phone, Pill, ShieldCheck, Stethoscope } from 'lucide-react';
 import { Avatar, btn, EmptyState, field, SkeletonList, StatusBadge } from '../components/ui';
 import { PatientFiles } from '../components/PatientFiles';
+import { LabOrdersForVisit, LabResultLine, RequestLabTests } from '../components/DoctorLab';
 
 const textarea = `${field.input} min-h-36 resize-y py-3 text-base leading-relaxed sm:text-[15px]`;
 
@@ -13,6 +14,7 @@ const ROLE_LABEL: Record<string, string> = {
   CLINICIAN: 'Clinician',
   RECEPTIONIST: 'Receptionist',
   ADMIN: 'Clinic Administrator',
+  LAB_TECHNICIAN: 'Lab Technician',
 };
 
 type Step = 'edit' | 'sign';
@@ -141,6 +143,16 @@ export function DoctorEncounterPage() {
                   </span>
                 </p>
               )}
+              {h.labResults && h.labResults.length > 0 && (
+                <div className="mt-2 rounded-xl bg-cream-50 px-3 py-1 ring-1 ring-slate-200">
+                  <p className="pt-1.5 text-xs font-semibold uppercase tracking-wider text-ink-500">Lab results</p>
+                  <ul className="divide-y divide-slate-100 text-sm">
+                    {h.labResults.map((r, i) => (
+                      <LabResultLine key={i} testName={r.testName} value={r.value} unit={r.unit} flag={r.flag} comment={r.comment} />
+                    ))}
+                  </ul>
+                </div>
+              )}
               {h.doctorName && <p className="mt-1.5 text-xs text-ink-500">Seen by {h.doctorName}</p>}
               </div>
             </li>
@@ -158,7 +170,14 @@ export function DoctorEncounterPage() {
         </div>
       </div>
 
-      <div className="order-1 h-fit rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card sm:p-7 lg:order-2">
+      <div className="order-1 lg:order-2">
+      <LabOrdersForVisit orders={encounter.labOrders ?? []} />
+      {step === 'edit' && (
+        <div className="mb-6">
+          <RequestLabTests encounterId={encounter.encounterId} onSent={() => navigate('/doctor/queue', { replace: true })} />
+        </div>
+      )}
+      <div className="h-fit rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card sm:p-7">
         <ol className="mb-5 flex items-center gap-2 text-sm" aria-label="Progress">
           <li className={`flex items-center gap-2 ${step === 'edit' ? 'font-semibold text-navy-900' : 'text-ink-500'}`} aria-current={step === 'edit' ? 'step' : undefined}>
             <span className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${step === 'edit' ? 'bg-foil text-navy-900' : 'bg-emerald-500 text-white'}`}>1</span>
@@ -281,6 +300,7 @@ export function DoctorEncounterPage() {
             </form>
           </>
         )}
+      </div>
       </div>
     </div>
     </div>

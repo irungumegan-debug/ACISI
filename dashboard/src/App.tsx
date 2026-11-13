@@ -13,11 +13,13 @@ import { DoctorAppointmentsPage } from './pages/DoctorAppointmentsPage';
 import { WalkInPage } from './pages/WalkInPage';
 import { CheckoutPage } from './pages/CheckoutPage';
 import { DailySummaryPage } from './pages/DailySummaryPage';
+import { LabQueuePage } from './pages/LabQueuePage';
+import { LabOrderPage } from './pages/LabOrderPage';
 
-/** A doctor's home is their own queue; everyone else lands on the front-desk queue. */
+/** A doctor's home is their own queue, a lab technician's the lab queue; everyone else lands on the front-desk queue. */
 function HomeRedirect() {
   const { session } = useAuth();
-  const target = session?.role === 'DOCTOR' ? '/doctor/queue' : '/queue';
+  const target = session?.role === 'DOCTOR' ? '/doctor/queue' : session?.role === 'LAB_TECHNICIAN' ? '/lab/queue' : '/queue';
   return <Navigate to={target} replace />;
 }
 
@@ -55,6 +57,8 @@ export function App() {
             <Route path="/doctor/queue" element={<DoctorQueuePage />} />
             <Route path="/doctor/appointments" element={<DoctorAppointmentsPage />} />
             <Route path="/doctor/encounters/:id" element={<DoctorEncounterPage />} />
+            <Route path="/lab/queue" element={<LabQueuePage />} />
+            <Route path="/lab/orders/:id" element={<LabOrderPage />} />
           </Route>
         </Routes>
       </AuthProvider>

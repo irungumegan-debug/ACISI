@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import { Navigate, NavLink, Outlet, useLocation } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
-import { BarChart3, CalendarDays, ClipboardList, LogOut, Menu, ScrollText, Settings, UserRound, UsersRound, X } from 'lucide-react';
+import { BarChart3, CalendarDays, ClipboardList, FlaskConical, LogOut, Menu, ScrollText, Settings, UserRound, UsersRound, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api, ApiError, LegalStatus } from '../lib/api';
 import { CONFIDENTIALITY_UNDERTAKING_PATH, legalBoxSatisfied, PRIVACY_PATH, TERMS_PATH } from '../lib/legal';
@@ -16,6 +16,9 @@ interface NavItem {
 }
 
 function navFor(role: string): NavItem[] {
+  if (role === 'LAB_TECHNICIAN') {
+    return [{ to: '/lab/queue', label: 'Lab queue', icon: FlaskConical, also: ['/lab/orders'] }];
+  }
   if (role === 'DOCTOR') {
     return [
       { to: '/doctor/queue', label: 'My queue', icon: ClipboardList, also: ['/doctor/encounters'] },
@@ -38,6 +41,7 @@ const ROLE_LABEL: Record<string, string> = {
   RECEPTIONIST: 'Front desk',
   CLINICIAN: 'Clinician',
   DOCTOR: 'Doctor',
+  LAB_TECHNICIAN: 'Lab technician',
 };
 
 const PAGE_TITLES: [string, string][] = [
@@ -50,6 +54,8 @@ const PAGE_TITLES: [string, string][] = [
   ['/doctor/queue', 'My queue'],
   ['/doctor/appointments', 'Appointments'],
   ['/doctor/encounters', 'Consultation'],
+  ['/lab/queue', 'Lab queue'],
+  ['/lab/orders', 'Lab request'],
   ['/queue', 'Queue'],
 ];
 

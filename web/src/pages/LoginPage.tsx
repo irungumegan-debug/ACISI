@@ -281,7 +281,7 @@ function StaffLoginForm({
       // Separate SPA bundle (dashboard/) served at /console — a full
       // navigation is correct here, not client-side routing, since the
       // session cookie set by the fetch above is all it needs to pick up.
-      window.location.href = session.role === 'DOCTOR' ? '/console/doctor/queue' : '/console/queue';
+      window.location.href = session.role === 'DOCTOR' ? '/console/doctor/queue' : session.role === 'LAB_TECHNICIAN' ? '/console/lab/queue' : '/console/queue';
     } catch (err) {
       if (err instanceof ApiError && err.status === 429) {
         setLockedOut(true);

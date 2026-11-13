@@ -352,6 +352,51 @@ USSD side already writes — `Patient`, `Clinic`, `Staff`, `CheckIn`,
 consultation form, `encounterService.submitConsultation`) — front desk's job
 is payment/checkout, not clinical notes, so it never needed its own write path.
 
+## Lab orders and patient files
+
+**Roles.** `LAB_TECHNICIAN` joins with the clinic invite code like other
+staff. Front-desk routes use an allow-list (`isFrontDeskRole` in
+`src/dashboard/auth.ts`: receptionist, clinician, admin), so doctors, lab
+technicians and any future role are refused by default; checkout is
+front-desk only. `staffPatientScopeWhere` (`src/services/staffPatientScope.ts`)
+is the one rule for which patients a staff member can read: front desk,
+patients seen at the clinic; doctors, patients in their own queue
+(`doctorQueueFilter`); everyone else, nobody. `tests/dashboard/lab.test.ts`
+checks a lab technician gets 403 on every front-desk, doctor and admin route.
+
+**Flow (`src/services/labService.ts`, `src/dashboard/lab.ts`).**
+1. A clinic admin keeps the clinic's test list with prices (`LabTest`).
+2. On a visit that is `IN_CONSULTATION` in their queue, the doctor requests
+   tests and signs with their PIN (`verifySigningPin`, shared with consultation
+   signing). A `LabOrder` with `LabOrderItem`s is created (test name and
+   price copied), and the visit moves to `AWAITING_LAB` with a conditional
+   update, so it leaves the doctor's queue.
+3. The lab queue lists open orders for the clinic with the patient's name,
+   ACISI ID, age and sex and the tests only: never phone, diagnosis,
+   prescription, history or billing. Opening an order marks it `IN_PROGRESS`.
+4. The lab enters a value, unit, flag and comment per test, can attach a
+   printout (a `PatientFile` with `labOrderId`, category Lab report), and signs
+   with their PIN. The order becomes `RESULTS_READY`; when no other order of
+   the visit is open, the visit goes back to `WAITING` with the same
+   `assignedDoctorId` (front desk can still use "Change doctor"), and the
+   patient gets one SMS, clinic name only (`buildLabResultsReadySms`, purpose
+   `LAB_RESULTS_READY`, counted, respects "does not want SMS").
+5. The doctor sees the results on the consultation page and signs the
+   consultation as before. At checkout, front desk sees the test names and
+   prices (`labCharges`), pre-filled as `LAB` bill lines; never the results.
+
+**Who sees results.** Doctor and lab on screen; the patient in the portal and
+their PDFs once the visit is `DONE` (`visitRecordLabInclude({ patientView:
+true })`); front desk only on the printed visit record the patient asks for,
+like diagnoses; other clinics under the same sharing rule as diagnoses.
+
+**Patient files (`src/services/fileStorageService.ts`).** JPG, PNG or PDF,
+checked by content, at most 20 MB, stored under random names in
+`FILE_STORAGE_DIR` on the ACISI server (never a cloud). Visible to the
+uploading clinic and the patient; other clinics only on a sharing basis
+(`crossClinicAccessBasis`). Uploads are refused below `FILE_UPLOAD_MIN_FREE_MB`
+free disk. Every upload and view is audit-logged with IDs only.
+
 ## Two frontend SPAs, one origin
 
 `web/` (marketing site, signup/login, patient portal) and `dashboard/`

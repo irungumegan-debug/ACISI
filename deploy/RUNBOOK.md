@@ -232,6 +232,36 @@ sudo -u postgres psql acisi -c "DELETE FROM _prisma_migrations WHERE migration_n
 The file records are removed; the files themselves stay in `/var/lib/acisi/uploads`
 until deleted by hand.
 
+## Release 2026-11-14: lab orders (one-time steps)
+
+Do this after "patient file uploads" above (lab printouts are stored as files).
+See `CHANGELOG.md` (L1 to L9). No settings change.
+
+1. **Backup first:** `sudo systemctl start acisi-backup && sudo journalctl -u acisi-backup -n 5 --no-pager`
+2. **Update the app** (runs migration `20261114100000_lab_orders` on start):
+   ```
+   sudo -u acisi -H bash -c 'cd /opt/acisi/app && git pull && npm ci && npm run build'
+   sudo systemctl restart acisi
+   sleep 15; curl -s https://acisi.co.ke/healthz; echo
+   sudo journalctl -u acisi -n 30 --no-pager | grep -i -E "migration|error" || true
+   ```
+3. **Nginx** (the lab's printout upload route): install `deploy/nginx/acisi.conf`
+   the same way as step 4 of the file-uploads release.
+4. **Check:** as clinic admin, add a test under Settings → Lab tests. Sign up a
+   lab technician with the invite code. As a doctor, request the test for a
+   test patient; as the lab technician, enter a result and sign; the patient is
+   back in the doctor's queue marked "Back from lab"; checkout shows the test
+   on the bill.
+
+**Undo:** deploy the previous version, then
+```
+sudo -u postgres psql acisi -f /opt/acisi/app/prisma/rollback/20261114100000_lab_orders.down.sql
+sudo -u postgres psql acisi -c "DELETE FROM _prisma_migrations WHERE migration_name = '20261114100000_lab_orders'"
+```
+Lab tests, lab requests and results are deleted; visits at the lab go back to
+"with the doctor"; lab technicians are deactivated. Printouts stay on the
+patient's record as files.
+
 ## Switching ACISI's M-Pesa to production (Buy Goods till)
 
 Do this only after the release that adds `MPESA_TILL_NUMBER` is deployed.

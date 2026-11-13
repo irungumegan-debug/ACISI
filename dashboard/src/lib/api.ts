@@ -58,6 +58,79 @@ export interface VisitHistoryEntry {
   /** Who handled the visit. */
   doctorName: string | null;
   isOwnClinic: boolean;
+  /** Signed lab results: doctors only. */
+  labResults?: LabResult[];
+}
+
+export type LabResultFlag = 'NORMAL' | 'ABNORMAL' | 'CRITICAL';
+
+export interface LabResult {
+  testName: string;
+  value: string | null;
+  unit: string | null;
+  flag: LabResultFlag | null;
+  comment: string | null;
+  signedByName: string | null;
+  signedAt: string | null;
+}
+
+export type LabOrderStatus = 'REQUESTED' | 'IN_PROGRESS' | 'RESULTS_READY';
+
+export interface LabOrderItemView {
+  id: string;
+  testName: string;
+  resultValue: string | null;
+  resultUnit: string | null;
+  resultFlag: LabResultFlag | null;
+  resultComment: string | null;
+}
+
+export interface LabOrderView {
+  id: string;
+  status: LabOrderStatus;
+  requestedAt: string;
+  requestedByName: string;
+  noteForLab: string | null;
+  completedAt: string | null;
+  completedByName: string | null;
+  patientNotifiedAt: string | null;
+  items: LabOrderItemView[];
+  files: { id: string; categoryLabel: string; mimeType: string; uploadedAt: string }[];
+}
+
+export interface LabOrderDetailForLab extends LabOrderView {
+  patientId: string;
+  patientName: string;
+  patientCode: string;
+  age: number | null;
+  sex: string;
+}
+
+export interface LabQueueItem {
+  labOrderId: string;
+  status: LabOrderStatus;
+  requestedAt: string;
+  requestedByName: string;
+  patientName: string;
+  patientCode: string;
+  age: number | null;
+  sex: string;
+  testNames: string[];
+}
+
+export interface LabTestItem {
+  id: string;
+  name: string;
+  priceKes: number;
+  isActive: boolean;
+}
+
+export interface LabResultInput {
+  itemId: string;
+  value: string | null;
+  unit: string | null;
+  flag: LabResultFlag | null;
+  comment: string | null;
 }
 
 export type PatientIdType = 'NATIONAL_ID' | 'PASSPORT' | 'BIRTH_CERTIFICATE' | 'ALIEN_ID';
@@ -94,7 +167,7 @@ export interface PatientDetail extends PatientIdentityRecord {
 
 export type CheckInStatus = 'PENDING_PAYMENT' | 'PAID' | 'FAILED' | 'CANCELLED' | 'NO_FEE' | 'NEEDS_REVIEW';
 export type CheckInSource = 'REMOTE' | 'WALK_IN';
-export type EncounterStatus = 'WAITING' | 'IN_CONSULTATION' | 'READY_FOR_CHECKOUT' | 'DONE';
+export type EncounterStatus = 'WAITING' | 'IN_CONSULTATION' | 'AWAITING_LAB' | 'READY_FOR_CHECKOUT' | 'DONE';
 
 export interface QueueItem {
   checkInId: string;
@@ -115,6 +188,8 @@ export interface QueueItem {
   /** Who checked the patient in at the front desk (walk-ins); null for remote check-ins. */
   checkedInByName: string | null;
   encounterStatus: EncounterStatus | null;
+  /** Back with the doctor after the lab signed the results. */
+  backFromLab?: boolean;
   assignedDoctorId: string | null;
   assignedDoctorName: string | null;
   /** Clinic checkout bill status (null until a bill is made). */
@@ -141,6 +216,8 @@ export interface DoctorQueueItem {
   phoneNumber: string;
   status: EncounterStatus;
   waitingSince: string;
+  /** Came back from the lab with signed results. */
+  backFromLab?: boolean;
 }
 
 export type AppointmentStatus = 'REQUESTED' | 'CONFIRMED' | 'CANCELLED' | 'COMPLETED';
@@ -172,7 +249,8 @@ export interface HistoryEntry {
   prescription: string | null;
   /** Who handled the visit. */
   doctorName: string | null;
-  isOwnClinic: boolean;
+  isOwnClinic: boolean;  /** Signed lab results: doctors only. */
+  labResults?: LabResult[];
 }
 
 export interface EncounterDetail {
@@ -186,6 +264,8 @@ export interface EncounterDetail {
   hasHiddenHistoryElsewhere: boolean;
   /** How this clinic may see other clinics' visits right now, or null (own visits only). */
   crossClinicBasis?: 'STANDING_CONSENT' | 'SHARING_CODE' | null;
+  /** This visit's lab requests (results once signed). Doctor view only. */
+  labOrders?: LabOrderView[];
 }
 
 export interface DepartmentOption {
@@ -278,6 +358,8 @@ export interface CheckoutView {
   departmentName: string;
   /** This visit's prescription, read-only, for billing medicines. */
   prescription: string | null;
+  /** Lab tests requested in this visit, with prices, for the bill. Never results. */
+  labCharges?: { testName: string; priceKes: number }[];
   /** The visit's department; its own fee (if set) pre-fills the consultation line. */
   department: { id: string; name: string; consultationFeeKes: number | null };
   settings: {
@@ -690,6 +772,58 @@ export const api = {
 
   getDoctorEncounter(encounterId: string) {
     return request<EncounterDetail>(`/doctor/encounters/${encounterId}`);
+  },
+
+  getDoctorLabTests() {
+    return request<{ tests: LabTestItem[] }>('/doctor/lab-tests');
+  },
+
+  requestLabTests(encounterId: string, body: { labTestIds: string[]; noteForLab: string; pin: string }) {
+    return request<{ labOrderId: string }>(`/doctor/encounters/${encodeURIComponent(encounterId)}/lab-orders`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
+
+  getLabQueue() {
+    return request<{ queue: LabQueueItem[] }>('/lab/queue');
+  },
+
+  openLabOrder(labOrderId: string) {
+    return request<LabOrderDetailForLab>(`/lab/orders/${encodeURIComponent(labOrderId)}`);
+  },
+
+  saveLabResults(labOrderId: string, results: LabResultInput[]) {
+    return request<void>(`/lab/orders/${encodeURIComponent(labOrderId)}/results`, { method: 'PUT', body: JSON.stringify({ results }) });
+  },
+
+  completeLabOrder(labOrderId: string, pin: string) {
+    return request<{ sms: 'sent' | 'opted_out' | 'failed' | 'not_sent_yet' }>(`/lab/orders/${encodeURIComponent(labOrderId)}/complete`, {
+      method: 'POST',
+      body: JSON.stringify({ pin }),
+    });
+  },
+
+  uploadLabFile(labOrderId: string, file: File) {
+    const form = new FormData();
+    form.append('file', file);
+    return upload<PatientFileItem>(`/lab/orders/${encodeURIComponent(labOrderId)}/files`, form);
+  },
+
+  labFileUrl(labOrderId: string, fileId: string) {
+    return `/api/staff/lab/orders/${encodeURIComponent(labOrderId)}/files/${encodeURIComponent(fileId)}`;
+  },
+
+  listLabTestsForAdmin() {
+    return request<{ tests: LabTestItem[] }>('/lab-tests');
+  },
+
+  createLabTest(body: { name: string; priceKes: number }) {
+    return request<LabTestItem>('/lab-tests', { method: 'POST', body: JSON.stringify(body) });
+  },
+
+  updateLabTest(labTestId: string, body: { name?: string; priceKes?: number; isActive?: boolean }) {
+    return request<LabTestItem>(`/lab-tests/${encodeURIComponent(labTestId)}`, { method: 'PATCH', body: JSON.stringify(body) });
   },
 
   submitConsultation(encounterId: string, diagnosis: string, prescription: string, pin: string) {

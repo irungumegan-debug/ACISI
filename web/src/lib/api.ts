@@ -86,7 +86,7 @@ export interface FeeStatus {
 export interface StaffSessionSummary {
   staffName: string;
   clinicName: string;
-  role: 'RECEPTIONIST' | 'CLINICIAN' | 'DOCTOR' | 'ADMIN';
+  role: 'RECEPTIONIST' | 'CLINICIAN' | 'DOCTOR' | 'ADMIN' | 'LAB_TECHNICIAN';
 }
 
 export interface SharingOverview {
@@ -377,4 +377,12 @@ export interface VisitHistoryEntry {
   visitedAt: string;
   diagnosis: string | null;
   prescription: string | null;
+  /** Signed lab results, shown once the visit is checked out. */
+  labResults?: {
+    testName: string;
+    value: string | null;
+    unit: string | null;
+    flag: 'NORMAL' | 'ABNORMAL' | 'CRITICAL' | null;
+    comment: string | null;
+  }[];
 }
