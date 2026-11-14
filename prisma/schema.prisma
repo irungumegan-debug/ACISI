@@ -189,6 +189,7 @@ model Clinic {
   labOrders        LabOrder[]
   allergies        PatientAllergy[]
   notifiableCases  NotifiableDiseaseCase[]
+  healthEvents     PublicHealthEvent[]
 
   @@map("clinics")
 }
@@ -301,6 +302,8 @@ model Staff {
   allergiesRemoved         PatientAllergy[]        @relation("AllergyRemovedBy")
   notifiableCasesDiagnosed NotifiableDiseaseCase[] @relation("NotifiableCaseDiagnosedBy")
   notifiableCasesReported  NotifiableDiseaseCase[] @relation("NotifiableCaseReportedBy")
+  healthEventsRecorded     PublicHealthEvent[]     @relation("HealthEventRecordedBy")
+  healthEventsReported     PublicHealthEvent[]     @relation("HealthEventReportedBy")
 
   @@index([clinicId])
   @@index([departmentId])
@@ -1253,4 +1256,55 @@ model PrescriptionItem {
 
   @@index([encounterId])
   @@map("prescription_items")
+}
+
+/// Kinds of public health event staff can record (IDSR Technical Guidelines,
+/// 3rd edition: event-based surveillance, Table 5 and the MOH 505 rows).
+enum PublicHealthEventType {
+  /// A cluster of unwell people with similar symptoms.
+  ILLNESS_CLUSTER
+  /// A cluster of deaths in the community.
+  DEATH_CLUSTER
+  /// Unwell or dead animals with similar symptoms (zoonotic risk).
+  ANIMAL_ILLNESS
+  /// Adverse event following immunization.
+  AEFI
+  /// SARI cluster (3 or more cases).
+  SARI_CLUSTER
+  MATERNAL_DEATH
+  NEONATAL_DEATH
+  MALARIA_DEATH
+  /// Food-borne, chemical, radio-nuclear or other event of international or national concern.
+  OTHER_EVENT
+}
+
+/// A public health event recorded by clinic staff (event-based surveillance).
+/// Counts only: never names a patient. Never deleted.
+model PublicHealthEvent {
+  id                String                @id @default(cuid())
+  clinicId          String
+  clinic            Clinic                @relation(fields: [clinicId], references: [id])
+  type              PublicHealthEventType
+  /// Day the event was detected (Kenya date, stored as 00:00 UTC of that day).
+  detectedOn        DateTime              @db.Date
+  casesCount        Int                   @default(0)
+  casesUnder5       Int                   @default(0)
+  deathsCount       Int                   @default(0)
+  deathsUnder5      Int                   @default(0)
+  /// What happened, in the staff member's words (no patient names). Encrypted at rest.
+  eventDescription  String
+  /// Where, e.g. "Kawangware, a primary school". Encrypted at rest.
+  eventPlace        String?
+  recordedByStaffId String
+  recordedByStaff   Staff                 @relation("HealthEventRecordedBy", fields: [recordedByStaffId], references: [id])
+  /// Set when a staff member confirms it was reported to the Sub-County.
+  reportedAt        DateTime?
+  reportedByStaffId String?
+  reportedByStaff   Staff?                @relation("HealthEventReportedBy", fields: [reportedByStaffId], references: [id])
+  /// e.g. who at the Sub-County took the report. Encrypted at rest.
+  reportNote        String?
+  createdAt         DateTime              @default(now())
+
+  @@index([clinicId, detectedOn])
+  @@map("public_health_events")
 }

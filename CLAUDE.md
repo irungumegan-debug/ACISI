@@ -47,6 +47,9 @@ USSD-first clinic management platform for small clinics in Kenya. See
   Summary 0.1.0, ePrescription 0.1.0) download from fhir.dha.go.ke/ig/...
   /package.tgz (host now allowed in the ACISI environment); HIE test
   credentials: interoperability@dha.go.ke.
+  Routine reports (monthly/quarterly/annual, IDSR monthly table) and public
+  health events (event-based surveillance, fill MOH 505 event and death rows)
+  built 14 Nov (src/services/{routineReportService,publicHealthEventService}.ts).
   Remaining, in order: (4) automatic weekly IDSR submission once DHA/MOH say
   where; (5-6) FHIR R4 interface: base built 14 Nov (src/fhir/, /fhir/r4); adapt to
   DHA's HIE spec (identifiers, profiles, auth, submission) after the owner's

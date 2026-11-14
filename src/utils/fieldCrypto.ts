@@ -31,6 +31,9 @@ export const ENCRYPTED_FIELDS: ReadonlySet<string> = new Set([
   'removedReason',
   // notifiable_disease_cases
   'reportNote',
+  // public_health_events (reportNote is listed above)
+  'eventDescription',
+  'eventPlace',
   // prescription_items
   'drugName',
   'instructions',

@@ -263,6 +263,18 @@ export function buildNearlyNextSms(input: { clinicName: string; peopleAhead: num
   return `${before}${fitClinicName(input.clinicName, before.length + after.length)}${after}`;
 }
 
+/**
+ * To a clinic's admins and doctors when staff record an immediately
+ * reportable public health event: "ACISI: A public health event was recorded
+ * at Sunrise Family Clinic. Report within 24h. See Disease surveillance in the
+ * console." Never the event, place or patients. Always one SMS.
+ */
+export function buildHealthEventAlertSms(input: { clinicName: string }): string {
+  const before = 'ACISI: A public health event was recorded at ';
+  const after = '. Report within 24h. See Disease surveillance in the console.';
+  return `${before}${fitClinicName(input.clinicName, before.length + after.length)}${after}`;
+}
+
 /** Clinic name made SMS-safe and shortened so `before + name + after` fits one SMS. */
 function fitClinicName(clinicName: string, fixedLength: number): string {
   const room = SINGLE_SMS_MAX_CHARS - fixedLength;

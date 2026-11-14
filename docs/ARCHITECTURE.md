@@ -456,9 +456,25 @@ Entries with no stems are counted by hand. `submitConsultation` saves the visit 
 `notifyNotifiableCases` audits and, for IMMEDIATE diseases, SMSes the
 clinic's active ADMIN and DOCTOR staff with no patient or disease in the text.
 `src/dashboard/surveillance.ts` (`/api/staff/surveillance`): `cases`,
-`unreported-count` and `cases/:id/reported` for doctors only (they name the
+`cases/:id/reported` for doctors only; `unreported-count` for doctors (cases + events) and admins (events) (they name the
 patient and the diagnosis); `weekly` and `weekly.csv` (counts only) for
 doctors and admins. Weeks run Monday 00:00 to Sunday 23:59 Kenya time (UTC+3).
+
+## Public health events and routine reports
+
+`publicHealthEventService.ts`: `PublicHealthEvent` rows (counts, never
+patients; `eventDescription`, `eventPlace`, `reportNote` encrypted). `EVENT_TYPES`
+says which kinds are immediate (SMS to active ADMIN and DOCTOR staff, no
+details; badge until `markEventReported`); `EVENT_FORM_ROWS` maps each kind to
+its MOH 505 row and whether the row counts cases or deaths, used by
+`weeklySummary`. Routes on the surveillance router (`/events`, doctors and
+admins). `routineReportService.ts` builds monthly / quarterly / annual reports
+from encounters (Kenya-time period bounds, `parsePeriod`): activity counts, top
+ICD-11 codes, lab, prescriptions, notifiable cases, events, and
+`MONTHLY_DISEASES` (the guidelines' monthly table: ICD-11 stems, `newCasesOnly`
+using earlier visits at the clinic, `underAgeYears`, `alsoNeeds`).
+`src/dashboard/routineReports.ts` (`/api/staff/routine-reports`, `/csv`),
+doctors and admins only.
 
 ## Two frontend SPAs, one origin
 

@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import { Navigate, NavLink, Outlet, useLocation } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
-import { BarChart3, CalendarDays, ClipboardList, FlaskConical, LogOut, Menu, ScrollText, Settings, ShieldAlert, UserRound, UsersRound, X } from 'lucide-react';
+import { BarChart3, CalendarDays, FileBarChart, ClipboardList, FlaskConical, LogOut, Menu, ScrollText, Settings, ShieldAlert, UserRound, UsersRound, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api, ApiError, LegalStatus } from '../lib/api';
 import { CONFIDENTIALITY_UNDERTAKING_PATH, legalBoxSatisfied, PRIVACY_PATH, TERMS_PATH } from '../lib/legal';
@@ -24,6 +24,7 @@ function navFor(role: string): NavItem[] {
       { to: '/doctor/queue', label: 'My queue', icon: ClipboardList, also: ['/doctor/encounters'] },
       { to: '/doctor/appointments', label: 'Appointments', icon: CalendarDays },
       { to: '/surveillance', label: 'Disease surveillance', icon: ShieldAlert },
+      { to: '/reports/routine', label: 'Routine reports', icon: FileBarChart },
     ];
   }
   const items: NavItem[] = [
@@ -34,6 +35,7 @@ function navFor(role: string): NavItem[] {
   if (role === 'ADMIN') {
     items.push(
       { to: '/reports/daily', label: 'Daily summary', icon: BarChart3 },
+      { to: '/reports/routine', label: 'Routine reports', icon: FileBarChart },
       { to: '/surveillance', label: 'Disease surveillance', icon: ShieldAlert },
       { to: '/settings', label: 'Settings', icon: Settings },
     );
@@ -53,6 +55,7 @@ const PAGE_TITLES: [string, string][] = [
   ['/walk-in', 'Walk-in check-in'],
   ['/checkout', 'Checkout'],
   ['/reports/daily', 'Daily summary'],
+  ['/reports/routine', 'Routine reports'],
   ['/patients', 'Patients'],
   ['/appointments', 'Appointments'],
   ['/settings', 'Settings'],
@@ -81,7 +84,7 @@ function isActive(item: NavItem, pathname: string): boolean {
 function useUnreportedCount(role: string | undefined, pathname: string): number {
   const [count, setCount] = useState(0);
   useEffect(() => {
-    if (role !== 'DOCTOR') return;
+    if (role !== 'DOCTOR' && role !== 'ADMIN') return;
     let cancelled = false;
     api
       .unreportedNotifiableCount()
@@ -91,7 +94,7 @@ function useUnreportedCount(role: string | undefined, pathname: string): number 
       cancelled = true;
     };
   }, [role, pathname]);
-  return role === 'DOCTOR' ? count : 0;
+  return role === 'DOCTOR' || role === 'ADMIN' ? count : 0;
 }
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {

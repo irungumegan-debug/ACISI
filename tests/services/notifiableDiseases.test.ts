@@ -99,8 +99,9 @@ describe('epidemiological week (Monday to Sunday, Nairobi time)', () => {
       weekStart: '2026-11-09',
       weekEnd: '2026-11-15',
       rows: [
-        { diseaseId: 'cholera', name: 'Cholera', reporting: 'IMMEDIATE', form505Row: 'Cholera', countedByAcisi: true, under5: 1, fiveAndOver: 2, ageUnknown: 0, total: 3 },
-        { diseaseId: 'maternal-death', name: 'Maternal death', reporting: 'IMMEDIATE', form505Row: 'Maternal deaths', countedByAcisi: false, under5: 0, fiveAndOver: 0, ageUnknown: 0, total: 0 },
+        { diseaseId: 'cholera', name: 'Cholera', reporting: 'IMMEDIATE', form505Row: 'Cholera', countedByAcisi: true, source: 'DIAGNOSES', under5: 1, fiveAndOver: 2, ageUnknown: 0, total: 3, deathsUnder5: 0, deathsFiveAndOver: 0 },
+        { diseaseId: 'neonatal-deaths', name: 'Neonatal death', reporting: 'WEEKLY', form505Row: 'Neonatal deaths', countedByAcisi: true, source: 'EVENTS', under5: 0, fiveAndOver: 0, ageUnknown: 0, total: 0, deathsUnder5: 2, deathsFiveAndOver: 0 },
+        { diseaseId: 'maternal-death', name: 'Maternal death', reporting: 'IMMEDIATE', form505Row: 'Maternal deaths', countedByAcisi: false, source: 'EVENTS', under5: 0, fiveAndOver: 0, ageUnknown: 0, total: 0, deathsUnder5: 0, deathsFiveAndOver: 0 },
       ],
       totalCases: 3,
       listConfirmed: null,
@@ -108,9 +109,10 @@ describe('epidemiological week (Monday to Sunday, Nairobi time)', () => {
     });
     expect(csv).toContain('Clinic,"Avyora, ""Westlands"""');
     expect(csv).toContain('DRAFT');
-    expect(csv).toContain('ACISI does not record deaths');
-    expect(csv).toContain('Maternal deaths,Maternal death,Immediate,count by hand,,,');
-    expect(csv).toContain('Cholera,Cholera,Immediate,1,2,0,3');
+    expect(csv).toContain('Deaths come from recorded events only');
+    expect(csv).toContain('Maternal deaths,Maternal death,Immediate,events,count by hand,,,,,');
+    expect(csv).toContain('Cholera,Cholera,Immediate,diagnoses,1,2,0,3,0,0');
+    expect(csv).toContain('Neonatal deaths,Neonatal death,Weekly,events,0,0,0,0,2,0');
   });
 });
 
@@ -128,6 +130,13 @@ describe('weekly summary on a stubbed database', () => {
             { diseaseId: 'sars-covid', diagnosedAt: new Date('2026-11-11T09:00:00Z'), patient: { dateOfBirth: null } },
           ]),
         },
+        publicHealthEvent: {
+          findMany: jest.fn(async () => [
+            { type: 'AEFI', casesCount: 3, casesUnder5: 2, deathsCount: 0, deathsUnder5: 0 },
+            { type: 'MATERNAL_DEATH', casesCount: 0, casesUnder5: 0, deathsCount: 1, deathsUnder5: 0 },
+            { type: 'ILLNESS_CLUSTER', casesCount: 6, casesUnder5: 1, deathsCount: 1, deathsUnder5: 1 },
+          ]),
+        },
       },
     }));
     const { weeklySummary } = await import('../../src/services/notifiableDiseaseService');
@@ -136,9 +145,11 @@ describe('weekly summary on a stubbed database', () => {
     expect(s.rows[0]?.form505Row).toBe('AEFI');
     expect(s.rows.find((r) => r.diseaseId === 'cholera')).toMatchObject({ under5: 1, fiveAndOver: 1, total: 2, countedByAcisi: true });
     expect(s.rows.find((r) => r.diseaseId === 'malaria')).toMatchObject({ ageUnknown: 1, total: 1 });
-    expect(s.rows.find((r) => r.diseaseId === 'maternal-death')).toMatchObject({ countedByAcisi: false });
+    expect(s.rows.find((r) => r.diseaseId === 'aefi')).toMatchObject({ source: 'EVENTS', under5: 2, fiveAndOver: 1, total: 3 });
+    expect(s.rows.find((r) => r.diseaseId === 'maternal-death')).toMatchObject({ countedByAcisi: true, total: 0, deathsFiveAndOver: 1 });
+    expect(s.rows.find((r) => r.diseaseId === 'pheic')).toMatchObject({ total: 6, under5: 1, deathsUnder5: 1, deathsFiveAndOver: 0 });
     expect(s.rows.find((r) => r.diseaseId === 'sars-covid')).toMatchObject({ form505Row: 'Others (specify)', total: 1 });
-    expect(s.totalCases).toBe(4);
+    expect(s.totalCases).toBe(13); // 4 diagnosed + 9 from events
     expect(s.listConfirmed).toBe('2026-11-14');
   });
 });
