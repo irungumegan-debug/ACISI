@@ -1,6 +1,7 @@
 import { Encounter, EncounterStatus } from '@prisma/client';
 import { doctorQueueFilter } from './doctorScope';
 import { prisma } from '../db/prisma';
+import { NotifiableAlert, notifyNotifiableCases, recordNotifiableCases } from './notifiableDiseaseService';
 import { recordAuditEvent } from './auditService';
 import { verifySigningPin } from './signingPin';
 import type { Icd11Entry } from './icd11Service';
@@ -196,7 +197,7 @@ interface SubmitConsultationInput {
  * marks the visit done or sends the SMS itself — that stays a front-desk
  * action (encounterService.checkoutEncounter).
  */
-export async function submitConsultation(input: SubmitConsultationInput): Promise<Encounter> {
+export async function submitConsultation(input: SubmitConsultationInput): Promise<Encounter & { notifiable: NotifiableAlert[] }> {
   const encounter = await assertEncounterInDoctorQueue(input.encounterId, input.clinicId, input.departmentIds, input.staffId);
 
   if (encounter.status !== 'WAITING' && encounter.status !== 'IN_CONSULTATION') {
@@ -213,19 +214,35 @@ export async function submitConsultation(input: SubmitConsultationInput): Promis
     entityId: encounter.id,
   });
 
-  const updated = await prisma.encounter.update({
-    where: { id: encounter.id },
-    data: {
-      status: 'READY_FOR_CHECKOUT',
-      diagnosis: input.diagnosis || null,
-      diagnosisCodes: JSON.stringify(input.diagnosisCodes),
-      prescription: input.prescription,
-      consultedByStaffId: input.staffId,
-      consultedAt: new Date(),
-    },
+  const consultedAt = new Date();
+  // The visit and any notifiable-disease cases are saved together.
+  const { updated, notifiable } = await prisma.$transaction(async (tx) => {
+    const updated = await tx.encounter.update({
+      where: { id: encounter.id },
+      data: {
+        status: 'READY_FOR_CHECKOUT',
+        diagnosis: input.diagnosis || null,
+        diagnosisCodes: JSON.stringify(input.diagnosisCodes),
+        prescription: input.prescription,
+        consultedByStaffId: input.staffId,
+        consultedAt,
+      },
+    });
+    const notifiable = await recordNotifiableCases(tx, {
+      encounterId: updated.id,
+      patientId: updated.patientId,
+      clinicId: input.clinicId,
+      staffId: input.staffId,
+      codes: input.diagnosisCodes.map((c) => c.code),
+      diagnosedAt: consultedAt,
+    });
+    return { updated, notifiable };
   });
 
-  return updated;
+  // Audit and the 24-hour SMS alert run after the save and never undo it.
+  void notifyNotifiableCases({ clinicId: input.clinicId, staffId: input.staffId, encounterId: updated.id, alerts: notifiable });
+
+  return Object.assign(updated, { notifiable });
 }
 
 export class EncounterNotReadyForCheckoutError extends Error {

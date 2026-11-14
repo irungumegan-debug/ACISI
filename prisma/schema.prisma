@@ -188,6 +188,7 @@ model Clinic {
   labTests         LabTest[]
   labOrders        LabOrder[]
   allergies        PatientAllergy[]
+  notifiableCases  NotifiableDiseaseCase[]
 
   @@map("clinics")
 }
@@ -280,24 +281,26 @@ model Staff {
   updatedAt          DateTime               @updatedAt
 
   checkIns                 CheckIn[]
-  checkInsPaymentConfirmed CheckIn[]         @relation("CheckInPaymentConfirmedBy")
+  checkInsPaymentConfirmed CheckIn[]               @relation("CheckInPaymentConfirmedBy")
   auditLogs                AuditLog[]
   otps                     StaffOtp[]
-  assignedEncounters       Encounter[]       @relation("EncounterAssignedDoctor")
-  consultedEncounters      Encounter[]       @relation("EncounterConsultedBy")
-  billsCreated             Bill[]            @relation("BillCreatedBy")
-  paymentsTaken            Payment[]         @relation("PaymentTakenBy")
-  paymentsVoided           Payment[]         @relation("PaymentVoidedBy")
-  checkedOutEncounters     Encounter[]       @relation("EncounterCheckedOutBy")
-  confirmedAppointments    Appointment[]     @relation("AppointmentConfirmedBy")
-  cancelledAppointments    Appointment[]     @relation("AppointmentCancelledBy")
+  assignedEncounters       Encounter[]             @relation("EncounterAssignedDoctor")
+  consultedEncounters      Encounter[]             @relation("EncounterConsultedBy")
+  billsCreated             Bill[]                  @relation("BillCreatedBy")
+  paymentsTaken            Payment[]               @relation("PaymentTakenBy")
+  paymentsVoided           Payment[]               @relation("PaymentVoidedBy")
+  checkedOutEncounters     Encounter[]             @relation("EncounterCheckedOutBy")
+  confirmedAppointments    Appointment[]           @relation("AppointmentConfirmedBy")
+  cancelledAppointments    Appointment[]           @relation("AppointmentCancelledBy")
   legalAcceptances         LegalAcceptance[]
   uploadedFiles            PatientFile[]
-  labOrdersRequested       LabOrder[]        @relation("LabOrderRequestedBy")
-  labOrdersStarted         LabOrder[]        @relation("LabOrderStartedBy")
-  labOrdersCompleted       LabOrder[]        @relation("LabOrderCompletedBy")
-  allergiesRecorded        PatientAllergy[]  @relation("AllergyRecordedBy")
-  allergiesRemoved         PatientAllergy[]  @relation("AllergyRemovedBy")
+  labOrdersRequested       LabOrder[]              @relation("LabOrderRequestedBy")
+  labOrdersStarted         LabOrder[]              @relation("LabOrderStartedBy")
+  labOrdersCompleted       LabOrder[]              @relation("LabOrderCompletedBy")
+  allergiesRecorded        PatientAllergy[]        @relation("AllergyRecordedBy")
+  allergiesRemoved         PatientAllergy[]        @relation("AllergyRemovedBy")
+  notifiableCasesDiagnosed NotifiableDiseaseCase[] @relation("NotifiableCaseDiagnosedBy")
+  notifiableCasesReported  NotifiableDiseaseCase[] @relation("NotifiableCaseReportedBy")
 
   @@index([clinicId])
   @@index([departmentId])
@@ -374,6 +377,7 @@ model Patient {
   legalAcceptances LegalAcceptance[]
   files            PatientFile[]
   allergies        PatientAllergy[]
+  notifiableCases  NotifiableDiseaseCase[]
 
   @@map("patients")
 }
@@ -484,8 +488,9 @@ model Encounter {
   checkedOutAt        DateTime?
   createdAt           DateTime        @default(now())
 
-  bill      Bill?
-  labOrders LabOrder[]
+  bill            Bill?
+  labOrders       LabOrder[]
+  notifiableCases NotifiableDiseaseCase[]
 
   @@index([patientId])
   @@index([clinicId])
@@ -546,7 +551,7 @@ model CheckIn {
   paymentRequestedAt        DateTime?
   /// "Resend prompt" presses from the patient's check-in screen (at most
   /// MAX_PROMPT_RESENDS_PER_CHECK_IN).
-  paymentPromptResends      Int       @default(0)
+  paymentPromptResends      Int           @default(0)
 
   encounter         Encounter?
   mpesaTransactions MpesaTransaction[]
@@ -1141,27 +1146,69 @@ enum AllergySeverity {
 /// full allergy history stays. Substance, reaction and reasons are encrypted
 /// at rest (utils/fieldCrypto.ts).
 model PatientAllergy {
-  id                 String          @id @default(cuid())
-  patientId          String
-  patient            Patient         @relation(fields: [patientId], references: [id])
+  id                String          @id @default(cuid())
+  patientId         String
+  patient           Patient         @relation(fields: [patientId], references: [id])
   /// The clinic where it was recorded.
-  clinicId           String
-  clinic             Clinic          @relation(fields: [clinicId], references: [id])
-  category           AllergyCategory
+  clinicId          String
+  clinic            Clinic          @relation(fields: [clinicId], references: [id])
+  category          AllergyCategory
   /// e.g. "Penicillin", "Groundnuts". Encrypted at rest.
-  substance          String
+  substance         String
   /// e.g. "Rash, swelling of the lips". Encrypted at rest.
-  reaction           String?
-  severity           AllergySeverity @default(UNKNOWN)
-  recordedByStaffId  String
-  recordedByStaff    Staff           @relation("AllergyRecordedBy", fields: [recordedByStaffId], references: [id])
-  recordedAt         DateTime        @default(now())
-  removedAt          DateTime?
-  removedByStaffId   String?
-  removedByStaff     Staff?          @relation("AllergyRemovedBy", fields: [removedByStaffId], references: [id])
+  reaction          String?
+  severity          AllergySeverity @default(UNKNOWN)
+  recordedByStaffId String
+  recordedByStaff   Staff           @relation("AllergyRecordedBy", fields: [recordedByStaffId], references: [id])
+  recordedAt        DateTime        @default(now())
+  removedAt         DateTime?
+  removedByStaffId  String?
+  removedByStaff    Staff?          @relation("AllergyRemovedBy", fields: [removedByStaffId], references: [id])
   /// Why it was removed (e.g. "Recorded in error"). Encrypted at rest.
-  removedReason      String?
+  removedReason     String?
 
   @@index([patientId])
   @@map("patient_allergies")
+}
+
+enum NotifiableReporting {
+  /// Report to the Sub-County within 24 hours of diagnosis.
+  IMMEDIATE
+  /// Counted in the weekly summary (MOH 505).
+  WEEKLY
+}
+
+/// A notifiable (IDSR) disease diagnosed at a clinic: created automatically
+/// when a doctor signs a consultation with a matching ICD-11 code
+/// (services/notifiableDiseaseService.ts). Visible to the clinic's doctors
+/// only (it names the patient and the diagnosis). Never deleted.
+model NotifiableDiseaseCase {
+  id                 String              @id @default(cuid())
+  clinicId           String
+  clinic             Clinic              @relation(fields: [clinicId], references: [id])
+  encounterId        String
+  encounter          Encounter           @relation(fields: [encounterId], references: [id])
+  patientId          String
+  patient            Patient             @relation(fields: [patientId], references: [id])
+  /// ID from the disease list in notifiableDiseases.ts, e.g. "cholera".
+  diseaseId          String
+  /// Disease name as listed when the case was created.
+  diseaseName        String
+  reporting          NotifiableReporting
+  /// The ICD-11 code the doctor chose, e.g. "1A00".
+  icd11Code          String
+  diagnosedAt        DateTime
+  diagnosedByStaffId String
+  diagnosedByStaff   Staff               @relation("NotifiableCaseDiagnosedBy", fields: [diagnosedByStaffId], references: [id])
+  /// Set when a doctor confirms it was reported to the Sub-County.
+  reportedAt         DateTime?
+  reportedByStaffId  String?
+  reportedByStaff    Staff?              @relation("NotifiableCaseReportedBy", fields: [reportedByStaffId], references: [id])
+  /// Optional reference or note, e.g. who at the Sub-County took the report. Encrypted at rest.
+  reportNote         String?
+  createdAt          DateTime            @default(now())
+
+  @@unique([encounterId, diseaseId])
+  @@index([clinicId, diagnosedAt])
+  @@map("notifiable_disease_cases")
 }

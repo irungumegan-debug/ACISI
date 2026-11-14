@@ -29,6 +29,8 @@ export const ENCRYPTED_FIELDS: ReadonlySet<string> = new Set([
   'substance',
   'reaction',
   'removedReason',
+  // notifiable_disease_cases
+  'reportNote',
 ]);
 
 let cachedKey: Buffer | null | undefined;

@@ -1,3 +1,4 @@
+import { SurveillancePage } from './pages/SurveillancePage';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ProtectedLayout } from './components/ProtectedLayout';
@@ -54,6 +55,7 @@ export function App() {
             <Route path="/patients/:id" element={<PatientDetailPage />} />
             <Route path="/appointments" element={<AppointmentsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/surveillance" element={<SurveillancePage />} />
             <Route path="/doctor/queue" element={<DoctorQueuePage />} />
             <Route path="/doctor/appointments" element={<DoctorAppointmentsPage />} />
             <Route path="/doctor/encounters/:id" element={<DoctorEncounterPage />} />

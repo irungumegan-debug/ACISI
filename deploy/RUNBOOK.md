@@ -336,6 +336,15 @@ If the server says it can't find `icd11-mms-2025-01.json`, the build copied
 the assets to the wrong place (fixed in this release); check with
 `sudo ls -l /opt/acisi/app/dist/assets/icd11/`.
 
+## Release 2026-11-14: notifiable disease alerts and weekly summary
+
+Normal update ("Updating the app"), after the usual backup. The migration
+adds one table (`notifiable_disease_cases`) and runs on start. Check: a doctor
+and a clinic admin both see "Disease surveillance" in the menu; front desk
+does not. The disease list is a draft: when it has been checked against the
+MOH IDSR case definitions, edit `src/services/notifiableDiseases.ts` (names,
+groups, codes) and set `NOTIFIABLE_LIST_CONFIRMED` to that date.
+
 ## Turning on multi-factor login (admins and doctors)
 
 After the PIN, clinic admins and doctors get a 6-digit code by SMS (they can

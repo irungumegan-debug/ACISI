@@ -236,6 +236,19 @@ export function buildLabResultsReadySms(input: { clinicName: string }): string {
   return `${before}${fitClinicName(input.clinicName, before.length + after.length)}${after}`;
 }
 
+/**
+ * To a clinic's admins and doctors when an immediately reportable disease is
+ * diagnosed: "ACISI: An immediately notifiable disease was diagnosed at
+ * Sunrise Family Clinic. Report within 24h. See Disease surveillance in the
+ * console." Never the disease or the patient
+ * (phones are read by others). Always one SMS.
+ */
+export function buildNotifiableAlertSms(input: { clinicName: string }): string {
+  const before = 'ACISI: An immediately notifiable disease was diagnosed at ';
+  const after = '. Report within 24h. See Disease surveillance in the console.';
+  return `${before}${fitClinicName(input.clinicName, before.length + after.length)}${after}`;
+}
+
 /** Clinic name made SMS-safe and shortened so `before + name + after` fits one SMS. */
 function fitClinicName(clinicName: string, fixedLength: number): string {
   const room = SINGLE_SMS_MAX_CHARS - fixedLength;

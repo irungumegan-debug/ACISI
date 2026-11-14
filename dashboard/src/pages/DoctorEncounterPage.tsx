@@ -1,9 +1,9 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { api, ApiError, EncounterDetail, Icd11Code } from '../lib/api';
+import { api, ApiError, EncounterDetail, Icd11Code, NotifiableAlert } from '../lib/api';
 import { Icd11Picker } from '../components/Icd11Picker';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeft, Building2, FileText, Lock, NotebookPen, Phone, Pill, ShieldCheck, Stethoscope } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Building2, FileText, Lock, NotebookPen, Phone, Pill, ShieldCheck, Stethoscope } from 'lucide-react';
 import { Avatar, btn, EmptyState, field, SkeletonList, StatusBadge } from '../components/ui';
 import { PatientFiles } from '../components/PatientFiles';
 import { LabOrdersForVisit, LabResultLine, RequestLabTests } from '../components/DoctorLab';
@@ -35,6 +35,7 @@ export function DoctorEncounterPage() {
   const [pin, setPin] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notifiable, setNotifiable] = useState<NotifiableAlert[] | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -72,8 +73,9 @@ export function DoctorEncounterPage() {
     setSubmitting(true);
     setError(null);
     try {
-      await api.submitConsultation(id, diagnosisCodes.map((c) => c.code), diagnosis, prescription, pin);
-      navigate('/doctor/queue', { replace: true });
+      const res = await api.submitConsultation(id, diagnosisCodes.map((c) => c.code), diagnosis, prescription, pin);
+      if (res.notifiable && res.notifiable.length > 0) setNotifiable(res.notifiable);
+      else navigate('/doctor/queue', { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to submit consultation');
       setPin('');
@@ -82,6 +84,7 @@ export function DoctorEncounterPage() {
     }
   }
 
+  if (notifiable) return <NotifiableNotice alerts={notifiable} onDone={() => navigate('/doctor/queue', { replace: true })} />;
   if (loading) return <SkeletonList rows={3} label="Loading the patient" />;
   if (error && !encounter)
     return (
@@ -347,6 +350,51 @@ export function DoctorEncounterPage() {
       </div>
       </div>
     </div>
+    </div>
+  );
+}
+
+/** Shown after signing when a diagnosis is a notifiable (IDSR) disease. */
+function NotifiableNotice({ alerts, onDone }: { alerts: NotifiableAlert[]; onDone: () => void }) {
+  const immediate = alerts.filter((a) => a.reporting === 'IMMEDIATE');
+  return (
+    <div role="alert" className="mx-auto max-w-xl rounded-2xl border border-red-200 bg-white p-6 shadow-card">
+      <h1 className="mb-3 flex items-center gap-2.5 font-display text-xl font-semibold text-navy-900">
+        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-50 text-red-700">
+          <AlertTriangle size={18} aria-hidden />
+        </span>
+        Signed. Notifiable disease
+      </h1>
+      <ul className="mb-4 space-y-1.5 text-sm">
+        {alerts.map((a) => (
+          <li key={a.diseaseId} className="flex flex-wrap items-baseline gap-x-2">
+            <span className="font-semibold text-navy-900">{a.name}</span>
+            <span className="font-mono text-teal-800">{a.icd11Code}</span>
+            <span className={a.reporting === 'IMMEDIATE' ? 'font-semibold text-red-700' : 'text-ink-500'}>
+              {a.reporting === 'IMMEDIATE' ? 'report within 24 hours' : 'counted in the weekly report'}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {immediate.length > 0 ? (
+        <p className="mb-5 text-sm text-ink-700">
+          Report it now to the Sub-County Disease Surveillance Coordinator, then mark it as reported under{' '}
+          <Link to="/surveillance" className="font-semibold text-navy-900 underline">
+            Disease surveillance
+          </Link>
+          . The clinic&apos;s admins and doctors have been sent an SMS reminder (it names neither the patient nor the disease).
+        </p>
+      ) : (
+        <p className="mb-5 text-sm text-ink-700">It will appear in this week&apos;s summary under Disease surveillance.</p>
+      )}
+      <div className="flex flex-wrap gap-2">
+        <Link to="/surveillance" className={btn.secondary}>
+          Open Disease surveillance
+        </Link>
+        <button type="button" className={btn.gold} onClick={onDone}>
+          Back to my queue
+        </button>
+      </div>
     </div>
   );
 }
