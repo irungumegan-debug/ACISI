@@ -10,6 +10,7 @@ jest.mock('../../src/db/prisma', () => ({
     patient: { findFirst: jest.fn() },
     encounter: { findMany: jest.fn(async () => []) },
     clinic: { findUnique: jest.fn(async () => ({ id: 'c-1', name: 'Sunrise', county: null })) },
+    patientAllergy: { findMany: jest.fn(async () => []) },
   },
 }));
 

@@ -1,6 +1,7 @@
 import path from 'node:path';
 import PDFDocument from 'pdfkit';
 import { StaffRole } from '@prisma/client';
+import { parseDiagnosisCodes } from './icd11Service';
 
 const SIGNATURE_FONT_PATH = path.join(__dirname, '../assets/fonts/DancingScript-Regular.woff');
 
@@ -21,6 +22,8 @@ export interface VisitRecordData {
   departmentName: string;
   visitedAt: Date;
   diagnosis: string | null;
+  /** ICD-11 coded diagnoses (code and WHO title). */
+  diagnosisCodes: { code: string; title: string }[];
   prescription: string | null;
   /**
    * Null for a visit that hasn't reached a signed consultation yet (still
@@ -68,6 +71,7 @@ const FLAG_LABEL: Record<'NORMAL' | 'ABNORMAL' | 'CRITICAL', string> = { NORMAL:
 interface EncounterForVisitRecord {
   createdAt: Date;
   diagnosis: string | null;
+  diagnosisCodes: string | null;
   prescription: string | null;
   consultedAt: Date | null;
   patient: { firstName: string; lastName: string; patientCode: string };
@@ -98,6 +102,7 @@ export function buildVisitRecordDataFromEncounter(encounter: EncounterForVisitRe
     departmentName: encounter.checkIn.department.name,
     visitedAt: encounter.createdAt,
     diagnosis: encounter.diagnosis,
+    diagnosisCodes: parseDiagnosisCodes(encounter.diagnosisCodes),
     prescription: encounter.prescription,
     // Only present once the doctor has actually signed (submitConsultation
     // gates reaching this on a re-entered PIN) — consultedAt is that real
@@ -156,7 +161,10 @@ function drawVisitPage(doc: PDFKit.PDFDocument, data: VisitRecordData): void {
 
   doc.fontSize(13).text('Diagnosis / notes', { underline: true });
   doc.moveDown(0.3);
-  doc.fontSize(11).text(data.diagnosis || 'Not recorded');
+  doc.fontSize(11);
+  for (const d of data.diagnosisCodes) doc.text(`ICD-11 ${d.code}: ${d.title}`);
+  if (data.diagnosis) doc.text(data.diagnosis);
+  else if (data.diagnosisCodes.length === 0) doc.text('Not recorded');
   doc.moveDown(1.5);
 
   doc.fontSize(13).text('Prescription', { underline: true });

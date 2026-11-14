@@ -4,6 +4,7 @@ import { AuthenticatedRequest } from '../dashboard/auth';
 import { loadDashboardSession, SESSION_COOKIE_NAME } from '../dashboard/session';
 import { staffPatientScopeWhere } from '../services/staffPatientScope';
 import { recordAuditEvent } from '../services/auditService';
+import { parseDiagnosisCodes } from '../services/icd11Service';
 import { capabilityStatement, patientEverythingBundle, toPatient, VisitRecord } from './mappers';
 
 /**
@@ -125,6 +126,7 @@ fhirRouter.get('/Patient/:id/\\$everything', async (req, res) => {
     consultedAt: e.consultedAt,
     visitReason: e.visitReason,
     diagnosis: e.diagnosis,
+    diagnosisCodes: parseDiagnosisCodes(e.diagnosisCodes),
     prescription: e.prescription,
     clinicId: e.clinicId,
     departmentName: e.checkIn.department.name,
@@ -140,7 +142,20 @@ fhirRouter.get('/Patient/:id/\\$everything', async (req, res) => {
     })),
   }));
 
-  const bundle = patientEverythingBundle({ baseUrl: baseUrl(req), patient, clinics: clinic ? [clinic] : [], visits });
+  // Allergies recorded at this clinic (same scope as the visits).
+  const allergies = await prisma.patientAllergy.findMany({
+    where: { patientId: patient.id, clinicId },
+    orderBy: { recordedAt: 'asc' },
+    include: { recordedByStaff: { select: { id: true, name: true, staffCode: true } } },
+  });
+
+  const bundle = patientEverythingBundle({
+    baseUrl: baseUrl(req),
+    patient,
+    clinics: clinic ? [clinic] : [],
+    visits,
+    allergies: allergies.map((a) => ({ ...a, recordedBy: a.recordedByStaff })),
+  });
   await audit(req, patient.id, 'everything', bundle.total ?? 0);
   res.type(FHIR_JSON).json(bundle);
 });

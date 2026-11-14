@@ -3,6 +3,34 @@
 Plain-language record of what changed in ACISI, which data each change
 touches, and who can use it. Newest first.
 
+## 2026-11-14: ICD-11 coded diagnoses
+
+One database change, additive (`20261114160000_icd11_diagnosis_codes`); undo
+script in `prisma/rollback/`. Uses WHO's ICD-11 for Mortality and Morbidity
+Statistics (MMS), release 2025-01: 17,231 diagnosis codes with WHO's official
+titles, unmodified (ICD-11 © World Health Organization, licensed CC BY-ND 3.0
+IGO). The list ships with ACISI; no outside service is called.
+
+| # | What changed | Data it touches | Who |
+|---|---|---|---|
+| D1 | **Coded diagnosis:** the consultation form has an ICD-11 search (by words or code). The doctor must pick 1 to 5 codes before signing. The server checks every code against WHO's list and stores WHO's title, never text typed in the browser. | Visits: new `diagnosisCodes` (encrypted at rest) | Doctors |
+| D2 | **Clinical notes:** the free-text box becomes optional "Clinical notes" alongside the codes. Older visits keep their text diagnosis. | Visits (existing `diagnosis`) | Doctors |
+| D3 | **Where codes show:** doctor's visit history, the patient portal, the printed/emailed visit record (PDF). Front desk still never sees a diagnosis on screen. | — | Doctors, patients |
+| D4 | **FHIR:** one Condition per code, coded with system `http://id.who.int/icd/release/11/mms`; notes in `Condition.note`. Older visits are sent as text only. Checked with an independent FHIR R4 validator: 0 errors. | — | — |
+| D5 | **Build fix:** the server build copied `src/assets` into `dist/assets/assets/` on every build after the first, so new files there were never found. Now copies the contents. | — | — |
+
+## 2026-11-14: Allergy list
+
+One database change, additive (`20261114140000_patient_allergies`); undo
+script in `prisma/rollback/`.
+
+| # | What changed | Data it touches | Who |
+|---|---|---|---|
+| A1 | **Record allergies:** substance, type (medicine, food, environment, other), reaction and severity, for patients in the doctor's own queue. Shown in a red banner at the top of the consultation page. | New: patient allergies (substance, reaction and removal reason encrypted at rest) | Doctors |
+| A2 | **Allergy history:** an allergy recorded in error is removed with a reason, never deleted; removed ones are listed with who, when and why. Only the clinic that recorded an allergy can remove it. | Patient allergies | Doctors |
+| A3 | **Sharing:** other clinics' allergies follow the visit-records rule (sharing consent or a records code); otherwise the doctor is told some are hidden. | — | Doctors |
+| A4 | **Patient portal:** "My allergies" lists current allergies. **FHIR:** AllergyIntolerance in Patient/$everything (removed ones as entered-in-error). Recording and removal are audit-logged with IDs only. | — | Patients |
+
 ## 2026-11-14: FHIR R4 interface (Kenya HIE readiness)
 
 HL7 FHIR R4 (4.0.1) at `/fhir/r4`, for exchange with the Kenya Health
@@ -15,8 +43,8 @@ Information Exchange. No database change.
 | H3 | `GET /fhir/r4/Patient/:id/$everything`: Bundle with Patient, Organization (clinic), Practitioner, Encounter, Condition (diagnosis), MedicationRequest (prescription), ServiceRequest (lab test) and Observation (signed lab result, with interpretation N/A/AA). Doctors only, for patients in their own queue; this clinic's visits only. | Doctors |
 | H4 | Every read is audit-logged (`FHIR_PATIENT_EXPORTED`); errors are FHIR OperationOutcome resources. Output checked with an independent FHIR R4 validator: 0 errors. | — |
 
-Diagnoses, prescriptions and lab tests are sent as text until ICD-11/LOINC
-coding is added; identifier systems are ACISI's own until DHA confirms the
+Prescriptions and lab tests are sent as text until coded terminologies for
+them are added (diagnoses: ICD-11 since the entry above); identifier systems are ACISI's own until DHA confirms the
 national ones. System-to-system authentication for the HIE follows DHA's
 specification.
 

@@ -10,6 +10,7 @@ jest.mock('../../src/db/prisma', () => ({
 jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
 jest.mock('../../src/services/patientService', () => ({ getScopedHistory: jest.fn() }));
 jest.mock('../../src/services/labService', () => ({ getLabOrdersForEncounter: jest.fn(async () => []) }));
+jest.mock('../../src/services/allergyService', () => ({ listAllergiesForClinic: jest.fn(async () => ({ allergies: [], hiddenElsewhere: false })) }));
 jest.mock('../../src/services/staffService', () => ({ findActiveStaffById: jest.fn(), comparePin: jest.fn() }));
 jest.mock('../../src/jobs/queue', () => ({ enqueueVisitSummaryEmail: jest.fn() }));
 jest.mock('../../src/services/checkoutSmsService', () => ({ sendCheckoutSms: jest.fn() }));
@@ -140,6 +141,7 @@ describe('submitConsultation', () => {
         clinicId: 'clinic-A',
         departmentIds: ['dept-1'],
         staffId: 'staff-1',
+        diagnosisCodes: [{ code: '1E32', title: 'Influenza, virus not identified' }],
         diagnosis: 'Flu',
         prescription: 'Paracetamol',
         pin: '1234',
@@ -157,6 +159,7 @@ describe('submitConsultation', () => {
         clinicId: 'clinic-A',
         departmentIds: ['dept-1'],
         staffId: 'staff-1',
+        diagnosisCodes: [{ code: '1E32', title: 'Influenza, virus not identified' }],
         diagnosis: 'Flu',
         prescription: 'Paracetamol',
         pin: '1234',
@@ -176,6 +179,7 @@ describe('submitConsultation', () => {
         clinicId: 'clinic-A',
         departmentIds: ['dept-1'],
         staffId: 'staff-1',
+        diagnosisCodes: [{ code: '1E32', title: 'Influenza, virus not identified' }],
         diagnosis: 'Flu',
         prescription: 'Paracetamol',
         pin: 'wrong',
@@ -198,6 +202,7 @@ describe('submitConsultation', () => {
         clinicId: 'clinic-A',
         departmentIds: ['dept-1'],
         staffId: 'staff-1',
+        diagnosisCodes: [{ code: '1E32', title: 'Influenza, virus not identified' }],
         diagnosis: 'Flu',
         prescription: 'Paracetamol',
         pin: '1234',
@@ -219,6 +224,7 @@ describe('submitConsultation', () => {
       departmentIds: ['dept-1'],
       staffId: 'staff-1',
       diagnosis: 'Flu',
+      diagnosisCodes: [{ code: '1E32', title: 'Influenza, virus not identified' }],
       prescription: 'Paracetamol',
       pin: '1234',
     });
@@ -327,6 +333,7 @@ describe('signing PIN shares the per-account wrong-PIN lockout (C6)', () => {
     departmentIds: ['dept-1'],
     staffId: 'lock-doc',
     diagnosis: 'Flu',
+    diagnosisCodes: [{ code: '1E32', title: 'Influenza, virus not identified' }],
     prescription: 'Paracetamol',
     pin: '1234',
   };

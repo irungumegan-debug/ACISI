@@ -8,7 +8,7 @@
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "postinstall": "prisma generate",
     "dev:dashboard": "npm run dev --prefix dashboard",
-    "build": "tsc -p tsconfig.build.json && cp -r src/assets dist/assets && npm install --prefix dashboard && npm run build --prefix dashboard && npm install --prefix web && npm run build --prefix web && npm install --prefix owner && npm run build --prefix owner",
+    "build": "tsc -p tsconfig.build.json && mkdir -p dist/assets && cp -r src/assets/. dist/assets/ && npm install --prefix dashboard && npm run build --prefix dashboard && npm install --prefix web && npm run build --prefix web && npm install --prefix owner && npm run build --prefix owner",
     "dev:web": "npm run dev --prefix web",
     "dev:owner": "npm run dev --prefix owner",
     "start": "prisma migrate deploy && node dist/index.js",

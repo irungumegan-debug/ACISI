@@ -48,12 +48,20 @@ export interface PatientListItem {
   phoneNumber: string;
 }
 
+/** A WHO ICD-11 MMS code and its official title. */
+export interface Icd11Code {
+  code: string;
+  title: string;
+}
+
 export interface VisitHistoryEntry {
   encounterId: string;
   clinicName: string;
   visitedAt: string;
   /** Only ever sent to doctors; null for front desk. */
   diagnosis: string | null;
+  /** ICD-11 coded diagnoses: doctors only (empty for front desk and for older visits). */
+  diagnosisCodes?: Icd11Code[];
   prescription: string | null;
   /** Who handled the visit. */
   doctorName: string | null;
@@ -246,6 +254,8 @@ export interface HistoryEntry {
   visitedAt: string;
   /** Only ever sent to doctors; null for front desk. */
   diagnosis: string | null;
+  /** ICD-11 coded diagnoses: doctors only (empty for front desk and for older visits). */
+  diagnosisCodes?: Icd11Code[];
   prescription: string | null;
   /** Who handled the visit. */
   doctorName: string | null;
@@ -266,6 +276,27 @@ export interface EncounterDetail {
   crossClinicBasis?: 'STANDING_CONSENT' | 'SHARING_CODE' | null;
   /** This visit's lab requests (results once signed). Doctor view only. */
   labOrders?: LabOrderView[];
+  /** Current and removed allergies (same sharing rule as visit history). */
+  allergies?: AllergyItem[];
+  allergiesHiddenElsewhere?: boolean;
+}
+
+export type AllergyCategory = 'MEDICATION' | 'FOOD' | 'ENVIRONMENT' | 'OTHER';
+export type AllergySeverity = 'MILD' | 'MODERATE' | 'SEVERE' | 'UNKNOWN';
+
+export interface AllergyItem {
+  id: string;
+  category: AllergyCategory;
+  substance: string;
+  reaction: string | null;
+  severity: AllergySeverity;
+  recordedAt: string;
+  recordedByName: string;
+  clinicName: string;
+  isOwnClinic: boolean;
+  removedAt: string | null;
+  removedByName: string | null;
+  removedReason: string | null;
 }
 
 export interface DepartmentOption {
@@ -795,6 +826,17 @@ export const api = {
     return request<EncounterDetail>(`/doctor/encounters/${encounterId}`);
   },
 
+  recordAllergy(encounterId: string, body: { category: AllergyCategory; substance: string; reaction: string; severity: AllergySeverity }) {
+    return request<AllergyItem>(`/doctor/encounters/${encodeURIComponent(encounterId)}/allergies`, { method: 'POST', body: JSON.stringify(body) });
+  },
+
+  removeAllergy(encounterId: string, allergyId: string, reason: string) {
+    return request<AllergyItem>(`/doctor/encounters/${encodeURIComponent(encounterId)}/allergies/${encodeURIComponent(allergyId)}/remove`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  },
+
   getDoctorLabTests() {
     return request<{ tests: LabTestItem[] }>('/doctor/lab-tests');
   },
@@ -847,11 +889,16 @@ export const api = {
     return request<LabTestItem>(`/lab-tests/${encodeURIComponent(labTestId)}`, { method: 'PATCH', body: JSON.stringify(body) });
   },
 
-  submitConsultation(encounterId: string, diagnosis: string, prescription: string, pin: string) {
+  submitConsultation(encounterId: string, diagnosisCodes: string[], diagnosis: string, prescription: string, pin: string) {
     return request<{ encounterId: string; status: EncounterStatus }>(`/doctor/encounters/${encounterId}/consult`, {
       method: 'POST',
-      body: JSON.stringify({ diagnosis, prescription, pin }),
+      body: JSON.stringify({ diagnosisCodes, diagnosis, prescription, pin }),
     });
+  },
+
+  /** WHO ICD-11 search for the consultation form. */
+  searchIcd11(q: string) {
+    return request<{ results: Icd11Code[]; release: string }>(`/doctor/icd11?q=${encodeURIComponent(q)}`);
   },
 };
 

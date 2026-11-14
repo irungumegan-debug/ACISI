@@ -9,6 +9,7 @@ import { recordAuditEvent } from './auditService';
 import { generatePatientCode } from '../utils/idCodes';
 import { CONSENT_VERSION, HISTORY_ENCOUNTER_LIMIT } from '../config/constants';
 import { buildVisitRecordDataFromEncounter, VisitLabResult, visitRecordLabInclude } from './visitRecordDocument';
+import { Icd11Entry, parseDiagnosisCodes } from './icd11Service';
 
 type LabOrdersForRecord = NonNullable<Parameters<typeof buildVisitRecordDataFromEncounter>[0]['labOrders']>;
 
@@ -263,6 +264,8 @@ export interface OwnVisitHistoryEntry {
   departmentName: string;
   visitedAt: Date;
   diagnosis: string | null;
+  /** ICD-11 coded diagnoses (empty for visits before ICD-11 coding). */
+  diagnosisCodes: Icd11Entry[];
   prescription: string | null;
   /** Signed lab results, shown to the patient once the visit is checked out. */
   labResults: VisitLabResult[];
@@ -295,6 +298,7 @@ export async function getOwnVisitHistory(patientId: string): Promise<OwnVisitHis
     departmentName: e.checkIn.department.name,
     visitedAt: e.createdAt,
     diagnosis: e.diagnosis,
+    diagnosisCodes: parseDiagnosisCodes(e.diagnosisCodes),
     prescription: e.prescription,
     labResults: labResultsOf(e.labOrders),
   }));
@@ -306,6 +310,8 @@ export interface ScopedHistoryEntry {
   visitedAt: Date;
   /** Always null for front desk (receptionists, clinicians, admins): only doctors see diagnoses. */
   diagnosis: string | null;
+  /** ICD-11 coded diagnoses: doctors only, like `diagnosis`. */
+  diagnosisCodes: Icd11Entry[];
   prescription: string | null;
   /** Signed lab results: doctors only (like diagnoses). Always empty for front desk. */
   labResults: VisitLabResult[];
@@ -389,6 +395,7 @@ export async function getScopedHistory(
       clinicName: e.clinic.name,
       visitedAt: e.createdAt,
       diagnosis: options.includeDiagnosis ? e.diagnosis : null,
+      diagnosisCodes: options.includeDiagnosis ? parseDiagnosisCodes(e.diagnosisCodes) : [],
       prescription: e.prescription,
       labResults: options.includeDiagnosis ? labResultsOf(e.labOrders) : [],
       doctorName: e.consultedByStaff?.name ?? e.assignedDoctor?.name ?? null,

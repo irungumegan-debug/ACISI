@@ -105,7 +105,20 @@ export interface PatientFileItem {
   patientUploaded: boolean;
 }
 
+export interface MyAllergy {
+  id: string;
+  substance: string;
+  reaction: string | null;
+  severity: 'MILD' | 'MODERATE' | 'SEVERE' | 'UNKNOWN';
+  recordedAt: string;
+  clinicName: string;
+  removedAt: string | null;
+}
+
 export const api = {
+  getMyAllergies() {
+    return request<{ allergies: MyAllergy[] }>('/patients/allergies');
+  },
   getMyFiles() {
     return request<{ files: PatientFileItem[] }>('/patients/files');
   },
@@ -389,6 +402,8 @@ export interface VisitHistoryEntry {
   departmentName: string;
   visitedAt: string;
   diagnosis: string | null;
+  /** ICD-11 coded diagnoses (WHO code and title); empty for older visits. */
+  diagnosisCodes?: { code: string; title: string }[];
   prescription: string | null;
   /** Signed lab results, shown once the visit is checked out. */
   labResults?: {

@@ -324,6 +324,18 @@ the encrypted fields, so don't go back to it without help. The audit-log
 protection alone can be removed with
 `prisma/rollback/20261114120000_audit_log_tamper_resistant.down.sql`.
 
+## Release 2026-11-14: ICD-11 coded diagnoses
+
+Normal update ("Updating the app" above), after the usual backup. The
+migration adds one column (`encounters.diagnosisCodes`) and runs on start.
+Then check, as a doctor: a waiting patient's consultation form shows
+"Diagnosis (ICD-11)", typing "malaria" lists WHO codes, and signing without a
+code is refused. Older visits still show their text diagnosis.
+
+If the server says it can't find `icd11-mms-2025-01.json`, the build copied
+the assets to the wrong place (fixed in this release); check with
+`ls /opt/acisi/app/dist/assets/icd11/`.
+
 ## Turning on multi-factor login (admins and doctors)
 
 After the PIN, clinic admins and doctors get a 6-digit code by SMS (they can

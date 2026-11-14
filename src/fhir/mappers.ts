@@ -7,11 +7,14 @@ import type { LabResultFlag, PatientIdType, Sex } from '@prisma/client';
  * below are ACISI's own until DHA confirms the national ones (Client Registry
  * / national ID, KMHFL facility codes) and any Kenyan profiles.
  *
- * Diagnoses, prescriptions and lab tests are sent as text (`code.text`) until
- * coded terminologies (ICD-11, LOINC) are added.
+ * Diagnoses are coded with ICD-11 MMS (WHO); prescriptions and lab tests are
+ * sent as text (`code.text`) until coded terminologies for them are added.
  */
 
 export const FHIR_BASE_PATH = '/fhir/r4';
+
+/** WHO ICD-11 for Mortality and Morbidity Statistics. */
+export const ICD11_MMS_SYSTEM = 'http://id.who.int/icd/release/11/mms';
 
 /** Identifier systems. To be replaced with the national ones DHA specifies. */
 export const SYSTEMS = {
@@ -121,6 +124,8 @@ export interface VisitRecord {
   consultedAt: Date | null;
   visitReason: string | null;
   diagnosis: string | null;
+  /** ICD-11 MMS codes with WHO titles. */
+  diagnosisCodes: { code: string; title: string }[];
   prescription: string | null;
   clinicId: string;
   departmentName: string;
@@ -151,20 +156,34 @@ export function toEncounter(v: VisitRecord, patientId: string): fhir4.Encounter 
   };
 }
 
-export function toCondition(v: VisitRecord, patientId: string): fhir4.Condition | null {
-  if (!v.diagnosis) return null;
-  return {
+/**
+ * One Condition per ICD-11 code (coded with the WHO ICD-11 MMS system), or,
+ * for visits recorded before ICD-11 coding, one text-only Condition.
+ * The doctor's notes go in Condition.note.
+ */
+export function toConditions(v: VisitRecord, patientId: string): fhir4.Condition[] {
+  const common = (id: string, code: fhir4.CodeableConcept): fhir4.Condition => ({
     resourceType: 'Condition',
-    id: `${v.id}-dx`,
+    id,
     clinicalStatus: { coding: [{ system: 'http://terminology.hl7.org/CodeSystem/condition-clinical', code: 'active' }] },
     verificationStatus: { coding: [{ system: 'http://terminology.hl7.org/CodeSystem/condition-ver-status', code: 'confirmed' }] },
     category: [{ coding: [{ system: 'http://terminology.hl7.org/CodeSystem/condition-category', code: 'encounter-diagnosis', display: 'Encounter Diagnosis' }] }],
-    code: { text: v.diagnosis },
+    code,
     subject: ref('Patient', patientId),
     encounter: ref('Encounter', v.id),
     ...(v.consultedAt ? { recordedDate: v.consultedAt.toISOString() } : {}),
     ...(v.doctor ? { recorder: ref('Practitioner', v.doctor.id) } : {}),
-  };
+    ...(v.diagnosis ? { note: [{ text: v.diagnosis }] } : {}),
+  });
+  if (v.diagnosisCodes.length > 0) {
+    return v.diagnosisCodes.map((d, i) =>
+      common(`${v.id}-dx${i + 1}`, { coding: [{ system: ICD11_MMS_SYSTEM, code: d.code, display: d.title }], text: d.title }),
+    );
+  }
+  if (!v.diagnosis) return [];
+  const textOnly = common(`${v.id}-dx`, { text: v.diagnosis });
+  delete textOnly.note; // the text is already the code; no need to repeat it
+  return [textOnly];
 }
 
 export function toMedicationRequest(v: VisitRecord, patientId: string): fhir4.MedicationRequest | null {
@@ -232,12 +251,62 @@ export function toLabResources(v: VisitRecord, patientId: string): (fhir4.Servic
   return out;
 }
 
+export interface AllergyRecord {
+  id: string;
+  category: 'MEDICATION' | 'FOOD' | 'ENVIRONMENT' | 'OTHER';
+  substance: string;
+  reaction: string | null;
+  severity: 'MILD' | 'MODERATE' | 'SEVERE' | 'UNKNOWN';
+  recordedAt: Date;
+  recordedBy: { id: string; name: string; staffCode: string };
+  removedAt: Date | null;
+}
+
+const ALLERGY_CATEGORY: Record<AllergyRecord['category'], fhir4.AllergyIntolerance['category']> = {
+  MEDICATION: ['medication'],
+  FOOD: ['food'],
+  ENVIRONMENT: ['environment'],
+  OTHER: undefined,
+};
+const REACTION_SEVERITY: Record<AllergyRecord['severity'], 'mild' | 'moderate' | 'severe' | undefined> = {
+  MILD: 'mild',
+  MODERATE: 'moderate',
+  SEVERE: 'severe',
+  UNKNOWN: undefined,
+};
+
+/** An allergy as AllergyIntolerance; a removed one is "entered-in-error" with clinical status inactive. */
+export function toAllergyIntolerance(a: AllergyRecord, patientId: string): fhir4.AllergyIntolerance {
+  const category = ALLERGY_CATEGORY[a.category];
+  const severity = REACTION_SEVERITY[a.severity];
+  return {
+    resourceType: 'AllergyIntolerance',
+    id: a.id,
+    clinicalStatus: {
+      coding: [{ system: 'http://terminology.hl7.org/CodeSystem/allergyintolerance-clinical', code: a.removedAt ? 'inactive' : 'active' }],
+    },
+    verificationStatus: {
+      coding: [{ system: 'http://terminology.hl7.org/CodeSystem/allergyintolerance-verification', code: a.removedAt ? 'entered-in-error' : 'confirmed' }],
+    },
+    ...(category ? { category } : {}),
+    ...(a.severity === 'SEVERE' ? { criticality: 'high' as const } : {}),
+    code: { text: a.substance },
+    patient: ref('Patient', patientId),
+    recordedDate: a.recordedAt.toISOString(),
+    recorder: ref('Practitioner', a.recordedBy.id),
+    ...(a.reaction || severity
+      ? { reaction: [{ manifestation: [{ text: a.reaction ?? 'Not recorded' }], ...(severity ? { severity } : {}) }] }
+      : {}),
+  };
+}
+
 /** A patient's record as a FHIR R4 "searchset" Bundle (the result of Patient/$everything). */
 export function patientEverythingBundle(input: {
   baseUrl: string;
   patient: PatientRecord;
   clinics: { id: string; name: string; county: string | null }[];
   visits: VisitRecord[];
+  allergies?: AllergyRecord[];
   now?: Date;
 }): fhir4.Bundle {
   const { baseUrl, patient, visits } = input;
@@ -246,15 +315,16 @@ export function patientEverythingBundle(input: {
     if (v.doctor) practitioners.set(v.doctor.id, v.doctor);
     for (const o of v.labOrders) practitioners.set(o.requestedBy.id, o.requestedBy);
   }
+  for (const a of input.allergies ?? []) practitioners.set(a.recordedBy.id, a.recordedBy);
   const resources: fhir4.FhirResource[] = [
     toPatient(patient),
     ...input.clinics.map(toOrganization),
     ...[...practitioners.values()].map(toPractitioner),
+    ...(input.allergies ?? []).map((a) => toAllergyIntolerance(a, patient.id)),
   ];
   for (const v of visits) {
     resources.push(toEncounter(v, patient.id));
-    const dx = toCondition(v, patient.id);
-    if (dx) resources.push(dx);
+    resources.push(...toConditions(v, patient.id));
     const rx = toMedicationRequest(v, patient.id);
     if (rx) resources.push(rx);
     resources.push(...toLabResources(v, patient.id));
@@ -299,6 +369,7 @@ export function capabilityStatement(baseUrl: string, version: string): fhir4.Cap
             interaction: [{ code: 'read' }],
             operation: [{ name: 'everything', definition: 'http://hl7.org/fhir/OperationDefinition/Patient-everything' }],
           },
+          inBundle('AllergyIntolerance'),
           inBundle('Encounter'),
           inBundle('Condition'),
           inBundle('MedicationRequest'),
