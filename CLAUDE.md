@@ -14,6 +14,16 @@ USSD-first clinic management platform for small clinics in Kenya. See
   only. (See `src/mpesa/clinicStk.ts`; `CLINIC_MPESA_ENV` only allows
   `sandbox` today.)
 
+- **Switch SMS provider (to-do, owner, target ~21 Nov 2026):** SMS still run
+  on Africa's Talking **sandbox** (no real delivery). Owner is applying for a
+  sender ID with a Kenyan SMS provider (TextSMS mentioned). When credentials
+  arrive: add the provider in `src/services/smsService.ts` (all SMS go through
+  `sendSms`), confirm where message content is stored (must stay in Kenya;
+  update the Privacy Notice, DPIA and ODPC records if the processor changes),
+  test real delivery, then turn on multi-factor login (`STAFF_MFA_ENABLED=true`,
+  runbook "Turning on multi-factor login"). Until then MFA stays OFF and the
+  DHA "Multi-Factor Authentication" box stays unticked.
+
 ## Compliance documents
 
 - **DPIA (Data Protection Impact Assessment), 13 Nov 2026:**
