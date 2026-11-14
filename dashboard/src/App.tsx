@@ -1,3 +1,4 @@
+import { RoutineReportsPage } from './pages/RoutineReportsPage';
 import { SurveillancePage } from './pages/SurveillancePage';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -51,6 +52,7 @@ export function App() {
             <Route path="/walk-in" element={<WalkInPage />} />
             <Route path="/checkout/:encounterId" element={<CheckoutPage />} />
             <Route path="/reports/daily" element={<DailySummaryPage />} />
+            <Route path="/reports/routine" element={<RoutineReportsPage />} />
             <Route path="/patients" element={<PatientsPage />} />
             <Route path="/patients/:id" element={<PatientDetailPage />} />
             <Route path="/appointments" element={<AppointmentsPage />} />

@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle2, Download, ShieldAlert, TableProperties } f
 import { api, ApiError, NotifiableCase, WeeklySurveillance } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { btn, Card, EmptyState, field, SkeletonList } from '../components/ui';
+import { HealthEvents } from '../components/HealthEvents';
 
 /** Monday (YYYY-MM-DD) of this week, Kenya time. */
 function thisWeek(): string {
@@ -225,26 +226,29 @@ function Weekly() {
                   <th className="px-3 py-2 text-right font-semibold">Under 5</th>
                   <th className="px-3 py-2 text-right font-semibold">5 and over</th>
                   <th className="px-3 py-2 text-right font-semibold">Age unknown</th>
-                  <th className="py-2 pl-3 text-right font-semibold">Total</th>
+                  <th className="px-3 py-2 text-right font-semibold">Total</th>
+                  <th className="py-2 pl-3 text-right font-semibold">Deaths</th>
                 </tr>
               </thead>
               <tbody>
                 {data.rows.map((r) => (
-                  <tr key={r.diseaseId} className={`border-b border-slate-100 ${r.total > 0 ? 'font-semibold text-navy-900' : 'text-ink-500'}`}>
+                  <tr key={r.diseaseId} className={`border-b border-slate-100 ${r.total + r.deathsUnder5 + r.deathsFiveAndOver > 0 ? 'font-semibold text-navy-900' : 'text-ink-500'}`}>
                     <td className="py-2 pr-3">
                       {r.form505Row}
                       {r.form505Row !== r.name && <span className="block text-xs font-normal text-ink-500">{r.name}</span>}
                       {r.reporting === 'IMMEDIATE' && <span className="block text-xs font-normal text-red-700">immediate</span>}
+                      {r.source === 'EVENTS' && <span className="block text-xs font-normal text-ink-500">from recorded events</span>}
                     </td>
                     {r.countedByAcisi ? (
                       <>
                         <td className="px-3 py-2 text-right tabular-nums">{r.under5}</td>
                         <td className="px-3 py-2 text-right tabular-nums">{r.fiveAndOver}</td>
                         <td className="px-3 py-2 text-right tabular-nums">{r.ageUnknown}</td>
-                        <td className="py-2 pl-3 text-right tabular-nums">{r.total}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{r.total}</td>
+                        <td className="py-2 pl-3 text-right tabular-nums">{r.deathsUnder5 + r.deathsFiveAndOver || ''}</td>
                       </>
                     ) : (
-                      <td colSpan={4} className="py-2 pl-3 pr-1 text-right text-xs italic text-amber-800">
+                      <td colSpan={5} className="py-2 pl-3 pr-1 text-right text-xs italic text-amber-800">
                         count by hand
                       </td>
                     )}
@@ -254,8 +258,9 @@ function Weekly() {
             </table>
           </div>
           <p className="mt-3 text-xs text-ink-500">
-            Cases come from ICD-11 diagnoses signed at this clinic. Rows marked &quot;count by hand&quot; are events, deaths or clusters ACISI
-            can&apos;t detect from a diagnosis. ACISI doesn&apos;t record deaths: fill the MOH 505 death columns by hand. The form goes to the SCDSC by Monday.
+            Cases come from ICD-11 diagnoses signed at this clinic; rows marked &quot;from recorded events&quot; come from the public health events
+            below. Deaths come from recorded events only (ACISI doesn&apos;t record deaths on visits); the CSV splits them under 5 / 5 and over.
+            The form goes to the SCDSC by Monday.
           </p>
         </>
       )}
@@ -270,6 +275,7 @@ export function SurveillancePage() {
   return (
     <div className="space-y-6">
       {isDoctor && <Cases />}
+      <HealthEvents />
       <Weekly />
     </div>
   );

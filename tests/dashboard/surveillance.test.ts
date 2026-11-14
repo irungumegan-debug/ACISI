@@ -24,10 +24,19 @@ jest.mock('../../src/services/notifiableDiseaseService', () => ({
   })),
 }));
 
+jest.mock('../../src/services/publicHealthEventService', () => ({
+  ...jest.requireActual('../../src/services/publicHealthEventService'),
+  listPublicHealthEvents: jest.fn(async () => [{ id: 'ev-1', typeLabel: 'AEFI' }]),
+  recordPublicHealthEvent: jest.fn(async (input: { type: string }) => ({ id: 'ev-2', type: input.type })),
+  markEventReported: jest.fn(async () => undefined),
+  countUnreportedEvents: jest.fn(async () => 1),
+}));
+
 import { loadDashboardSession, SESSION_COOKIE_NAME } from '../../src/dashboard/session';
 import { surveillanceRouter } from '../../src/dashboard/surveillance';
 import { markCaseReported, NotifiableCaseNotFoundError, weeklySummary } from '../../src/services/notifiableDiseaseService';
 import { recordAuditEvent } from '../../src/services/auditService';
+import { EventNotFoundError, InvalidEventError, markEventReported, recordPublicHealthEvent } from '../../src/services/publicHealthEventService';
 
 const mockLoadSession = loadDashboardSession as jest.Mock;
 const base = { staffId: 'staff-1', staffCode: 'ACI-STF-DEMO', staffName: 'Dr. A', clinicId: 'clinic-1', clinicName: 'Sunrise', departmentId: null };
@@ -46,10 +55,9 @@ const post = (path: string, body: object) => request(app()).post(path).set('Cook
 beforeEach(() => jest.clearAllMocks());
 
 describe('who can see notifiable disease cases (names a patient and a diagnosis)', () => {
-  it.each(['RECEPTIONIST', 'CLINICIAN', 'ADMIN', 'LAB_TECHNICIAN'])('%s cannot list cases, see the badge or mark reported', async (role) => {
+  it.each(['RECEPTIONIST', 'CLINICIAN', 'ADMIN', 'LAB_TECHNICIAN'])('%s cannot list cases or mark them reported', async (role) => {
     as(role);
     expect((await get('/surveillance/cases')).status).toBe(403);
-    expect((await get('/surveillance/unreported-count')).status).toBe(403);
     expect((await post('/surveillance/cases/case-1/reported', {})).status).toBe(403);
     expect(markCaseReported).not.toHaveBeenCalled();
   });
@@ -61,7 +69,7 @@ describe('who can see notifiable disease cases (names a patient and a diagnosis)
     expect(list.body.cases[0].diseaseName).toBe('Cholera');
     expect(list.body.listConfirmed).toBe('2026-11-14');
     expect(list.body.listSource).toContain('3rd edition');
-    expect((await get('/surveillance/unreported-count')).body).toEqual({ count: 2 });
+    expect((await get('/surveillance/unreported-count')).body).toEqual({ count: 3 }); // 2 cases + 1 event
     const r = await post('/surveillance/cases/case-1/reported', { note: 'Called SCDSC' });
     expect(r.status).toBe(200);
     expect(markCaseReported).toHaveBeenCalledWith({ caseId: 'case-1', clinicId: 'clinic-1', staffId: 'staff-1', note: 'Called SCDSC' });
@@ -103,5 +111,53 @@ describe('weekly summary (counts only)', () => {
     expect((await get('/surveillance/weekly')).status).toBe(200);
     expect(weeklySummary).toHaveBeenCalledWith('clinic-1', expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/));
     expect((await get('/surveillance/weekly?week=2026-11-10')).status).toBe(400);
+  });
+});
+
+describe('badge', () => {
+  it('admins count unreported events only (no cases: those name a patient)', async () => {
+    as('ADMIN');
+    expect((await get('/surveillance/unreported-count')).body).toEqual({ count: 1 });
+  });
+  it.each(['RECEPTIONIST', 'CLINICIAN', 'LAB_TECHNICIAN'])('%s: 403', async (role) => {
+    as(role);
+    expect((await get('/surveillance/unreported-count')).status).toBe(403);
+  });
+});
+
+describe('public health events', () => {
+  const body = { type: 'ILLNESS_CLUSTER', detectedOn: '2026-11-13', casesCount: 5, casesUnder5: 1, eventDescription: 'Diarrhoea after a funeral meal' };
+
+  it.each(['RECEPTIONIST', 'CLINICIAN', 'LAB_TECHNICIAN'])('%s cannot list, record or mark reported', async (role) => {
+    as(role);
+    expect((await get('/surveillance/events')).status).toBe(403);
+    expect((await post('/surveillance/events', body)).status).toBe(403);
+    expect((await post('/surveillance/events/ev-1/reported', {})).status).toBe(403);
+    expect(recordPublicHealthEvent).not.toHaveBeenCalled();
+  });
+
+  it.each(['DOCTOR', 'ADMIN'])('%s lists (with the types), records and marks reported, in their own clinic', async (role) => {
+    as(role);
+    const list = await get('/surveillance/events');
+    expect(list.status).toBe(200);
+    expect(list.body.types).toEqual(expect.arrayContaining([{ code: 'AEFI', label: expect.any(String), immediate: true }]));
+    const r = await post('/surveillance/events', { ...body, clinicId: 'other-clinic' });
+    expect(r.status).toBe(201);
+    expect(r.body).toEqual({ id: 'ev-2', immediate: true });
+    expect(recordPublicHealthEvent).toHaveBeenCalledWith(expect.objectContaining({ clinicId: 'clinic-1', staffId: 'staff-1', casesCount: 5 }));
+    expect((await post('/surveillance/events/ev-1/reported', { note: 'SCDSC' })).status).toBe(200);
+    expect(markEventReported).toHaveBeenCalledWith({ eventId: 'ev-1', clinicId: 'clinic-1', staffId: 'staff-1', note: 'SCDSC' });
+  });
+
+  it('bad input is 400; service refusals are 400; unknown event is 404', async () => {
+    as('DOCTOR');
+    expect((await post('/surveillance/events', { ...body, casesCount: 0 })).status).toBe(400);
+    expect((await post('/surveillance/events', { ...body, type: 'NOPE' })).status).toBe(400);
+    (recordPublicHealthEvent as jest.Mock).mockRejectedValueOnce(new InvalidEventError('The date can’t be in the future'));
+    const r = await post('/surveillance/events', body);
+    expect(r.status).toBe(400);
+    expect(r.body.error).toContain('future');
+    (markEventReported as jest.Mock).mockRejectedValueOnce(new EventNotFoundError());
+    expect((await post('/surveillance/events/x/reported', {})).status).toBe(404);
   });
 });

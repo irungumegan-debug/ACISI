@@ -113,8 +113,8 @@ code), and a **test patient** with a phone you can check.
 - [ ] **K6. Mark reported.** Mark as reported with a note. *Expect:* green "Reported … by …"; the badge goes down.
 - [ ] **K7. Weekly-only disease.** Sign a test patient with a malaria code (e.g. 1F40.Z). *Expect:* "counted in the weekly report"; no SMS.
 - [ ] **K8. Not notifiable.** Sign with BA00 (hypertension). *Expect:* straight back to the queue, no alert.
-- [ ] **K9. Weekly summary.** Admin → Disease surveillance → Next to this week. *Expect:* rows in the same order as the MOH 505 form; counts under 5 / 5 and over match your test patients; deaths and events say "count by hand"; **no** names anywhere; the cases list is not shown to admins.
-- [ ] **K10. CSV.** Download the CSV. *Expect:* opens in Excel/Sheets; names the source (IDSR Technical Guidelines, 3rd edition) and says deaths are filled by hand.
+- [ ] **K9. Weekly summary.** Admin → Disease surveillance → Next to this week. *Expect:* rows in the same order as the MOH 505 form; counts under 5 / 5 and over match your test patients; AEFI, SARI, maternal/neonatal/malaria deaths and "Others" rows say "from recorded events"; **no** names anywhere; the cases list is not shown to admins.
+- [ ] **K10. CSV.** Download the CSV. *Expect:* opens in Excel/Sheets; names the source (IDSR Technical Guidelines, 3rd edition), has Source and Deaths columns.
 - [ ] **K11. Front desk** typing `/console/surveillance` sees an error, nothing else.
 
 ## L. Prescriptions and allergy warning (after the prescriptions update is installed)
@@ -138,6 +138,19 @@ code), and a **test patient** with a phone you can check.
 - [ ] **M5. Nearly-next SMS** *(simulator)*. A patient waiting 10+ minutes with 2 or fewer ahead. *Expect:* one SMS "ACISI: 2 people are ahead of you at …" (or "You are next at …"); never a second one for the same visit.
 - [ ] **M6. Opted out.** A patient marked "does not want SMS". *Expect:* no nearly-next SMS; the portal card still works.
 
+## N. Public health events and routine reports (after the reports update is installed)
+
+- [ ] **N1. Menu.** Doctor and clinic admin see **Routine reports**; front desk and lab technician don't (typing `/console/reports/routine` shows an error).
+- [ ] **N2. Record an immediate event.** Admin → Disease surveillance → Record an event → "Cluster of unwell people…", today, 5 affected (1 under 5), a TEST description. *Expect:* "Event recorded. Report it … within 24 hours"; red "Report within 24 hours"; the menu badge goes up.
+- [ ] **N3. SMS** *(simulator until live SMS)*. *Expect:* admins and doctors get "ACISI: A public health event was recorded at … Report within 24h…", with no details.
+- [ ] **N4. Checks.** Try a future date, or "Maternal death" with 0 deaths. *Expect:* refused with a clear message.
+- [ ] **N5. Mark reported.** *Expect:* green "Reported … by …"; the badge goes down.
+- [ ] **N6. Weekly event.** Record a neonatal death (1, under 5). *Expect:* "Weekly report", no SMS.
+- [ ] **N7. Weekly summary.** Go to this week. *Expect:* the "Others (specify) … public health event" row shows 5 cases; "Neonatal deaths" shows 1 under Deaths.
+- [ ] **N8. Monthly report.** Routine reports → Monthly → this month. *Expect:* visits and patients match your test visits; your test diagnoses in Top diagnoses; e.g. a test patient signed with BA00 counts once under "Hypertension (New cases)", and not again on a second visit.
+- [ ] **N9. Quarterly / annual.** Switch to Quarterly and Annual. *Expect:* totals equal or larger than the month's.
+- [ ] **N10. CSV.** Download. *Expect:* opens in Excel/Sheets; no patient names anywhere.
+
 ## To confirm (not tests: things only you can check or decide)
 
 Bring these to the DHA/MOH call or check them yourself; tell Claude the answers and the code will be updated.
@@ -145,10 +158,11 @@ Bring these to the DHA/MOH call or check them yourself; tell Claude the answers 
 - [x] **T1. Disease list.** Done 14 Nov: built from the IDSR Technical Guidelines, 3rd edition (Table 5 and the MOH 505 form) you downloaded.
 - [x] **T2. Week.** Done: Monday to Sunday (guidelines).
 - [x] **T3. Age groups.** Done: under 5 / 5 and over (MOH 505 form).
-- [ ] **T4. Deaths.** The MOH 505 form asks for deaths under 5 and 5 and over for each disease. ACISI doesn't record deaths, so clinics fill those columns by hand. Decide: should ACISI record deaths (e.g. a "patient died" outcome on a visit)?
+- [ ] **T4. Deaths.** The MOH 505 form asks for deaths under 5 and 5 and over for each disease. Since 14 Nov, deaths recorded as public health events are counted (maternal, neonatal, malaria deaths, clusters); deaths from other diseases (e.g. a cholera death) are still filled by hand. Decide: should ACISI also record deaths on a visit?
+- [ ] **T12. Monthly report to MOH.** The guidelines' monthly table goes to the Sub-County. Ask DHA/MOH: which form (MOH 705A/B in KHIS?) and should ACISI send it automatically?
 - [ ] **T5. Sending.** Immediate cases go to the SCDSC (form MOH 502), weekly MOH 505 to the SCDSC by Monday (guidelines). Ask DHA/MOH: should ACISI send these automatically (KHIS/eIDSR or the HIE)?
 - [ ] **T6. Privacy Notice.** Approve adding a sentence such as: *"Your clinic must report some infectious diseases (for example cholera or measles) to the Ministry of Health's public health officers, as the law requires."* (Then the ODPC record may need the same update.)
-- [ ] **T7. DPIA v1.2.** Read and sign: notifiable disease reporting was added (sections 2.5, 2.6, 4.2, action A9).
+- [ ] **T7. DPIA v1.3.** Read and sign: notifiable disease reporting (v1.2) and public health events (v1.3) were added (sections 2.4, 2.5, 2.6, 4.2, action A9).
 - [ ] **T11. Medicines list terms.** DHA's ePrescription guide is CC-BY 4.0, but says the medicine list (from the Pharmacy and Poisons Board) is "subject to separate terms". Ask DHA whether ACISI may use and keep a copy of the list (it's what DHA requires for ePrescribing).
 - [ ] **T10. 2012 vs 2022 lists.** The older chart you sent (2012) differs from the 3rd edition (e.g. rabies, typhoid and dysentery are now immediate; COVID-19, chikungunya, Zika and smallpox were added). ACISI follows the 3rd edition. If your Sub-County still uses the older chart, tell Claude.
 - [ ] **T8. SMS sender.** When TextSMS is connected, the alert SMS (K3) and MFA (section F) both need a real-delivery test.

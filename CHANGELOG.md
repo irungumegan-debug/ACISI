@@ -3,6 +3,20 @@
 Plain-language record of what changed in ACISI, which data each change
 touches, and who can use it. Newest first.
 
+## 2026-11-14: Routine reports and public health events
+
+One database change, additive (`20261114230000_public_health_events`); undo
+script in `prisma/rollback/`. Follows the **Kenya IDSR Technical Guidelines,
+3rd edition (MOH, 2022)**: event-based surveillance, Table 5 (immediately
+reportable events) and the monthly reporting table.
+
+| # | What changed | Data it touches | Who |
+|---|---|---|---|
+| R1 | **Public health events** (Disease surveillance page): record what a diagnosis can't show: a cluster of unwell people or of deaths, sick or dead animals, an adverse event after immunization (AEFI), a SARI cluster, a maternal, neonatal or malaria death, or a food-borne, chemical or unknown event. Date, people affected and deaths (each with "under 5"), place, description. **Counts only, never patient names.** | New: events (description, place and report note encrypted at rest) | Doctors, clinic admins |
+| R2 | **Immediate events alert** the clinic's admins and doctors by SMS ("A public health event was recorded at {clinic}. Report within 24h…", no details), show "Report within 24 hours" and a red menu badge until someone marks them reported to the Sub-County (with an optional note). Neonatal and malaria deaths are weekly. All audit-logged (IDs only). | Events | Doctors, clinic admins |
+| R3 | **Weekly MOH 505 summary** now fills the rows that used to say "count by hand" from recorded events (AEFI, SARI, maternal, neonatal and malaria deaths, events of concern) and adds a **Deaths** column (under 5 / 5 and over in the CSV). | — | Doctors, clinic admins |
+| R4 | **Routine reports** (new menu item): monthly, quarterly or annual. Visits (walk-in / remote, completed), patients seen (new / returning), by sex, age group and department, top 10 ICD-11 diagnoses, lab requests and abnormal/critical results, prescriptions and top medicines, notifiable cases, public health events, and the **IDSR monthly reportable diseases** table (diabetes, hypertension and HIV new cases, cancers, malaria, malnutrition and pneumonia under 5, STIs, TB and leprosy quarterly…) split under 5 / 5 and over. Road traffic injuries are counted by hand (a code doesn't say how an injury happened). Download as CSV (audit-logged). Counts only, no names. | — (reads visits) | Doctors, clinic admins |
+
 ## 2026-11-14: Live place in the queue for patients
 
 One database change, additive (`20261114220000_queue_nearly_next_sms`); undo

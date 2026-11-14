@@ -5,6 +5,7 @@ import { sendSms } from './smsService';
 import { buildNotifiableAlertSms } from './smsTemplates';
 import { ageInYears } from './labService';
 import { logger } from '../utils/logger';
+import { EVENT_FORM_ROWS, eventsBetween } from './publicHealthEventService';
 import { matchNotifiable, NOTIFIABLE_DISEASES, NOTIFIABLE_LIST_CONFIRMED, NOTIFIABLE_LIST_SOURCE, NotifiableReporting } from './notifiableDiseases';
 
 /**
@@ -216,12 +217,17 @@ export interface WeeklyRow {
   reporting: NotifiableReporting;
   /** The MOH 505 row it is counted in. */
   form505Row: string;
-  /** False for events, deaths and syndromes ACISI can't detect from a diagnosis: count by hand. */
+  /** False only for a row with neither diagnosis codes nor a recorded-event kind: count by hand. */
   countedByAcisi: boolean;
+  /** DIAGNOSES: from ICD-11 codes doctors signed. EVENTS: from public health events staff recorded. */
+  source: 'DIAGNOSES' | 'EVENTS';
   under5: number;
   fiveAndOver: number;
   ageUnknown: number;
   total: number;
+  /** Deaths, from recorded public health events only (ACISI doesn't record deaths on visits). */
+  deathsUnder5: number;
+  deathsFiveAndOver: number;
 }
 
 export interface WeeklySummary {
@@ -238,23 +244,30 @@ export interface WeeklySummary {
 /** Cases per disease for one week in MOH 505 row order, split under 5 / 5 and over, zeros included. */
 export async function weeklySummary(clinicId: string, weekStart: string): Promise<WeeklySummary> {
   const { from, to } = weekBounds(weekStart);
-  const [clinic, cases] = await Promise.all([
+  const nextMonday = new Date(`${weekStart}T00:00:00Z`);
+  nextMonday.setUTCDate(nextMonday.getUTCDate() + 7);
+  const [clinic, cases, events] = await Promise.all([
     prisma.clinic.findUnique({ where: { id: clinicId }, select: { name: true, county: true } }),
     prisma.notifiableDiseaseCase.findMany({
       where: { clinicId, diagnosedAt: { gte: from, lt: to } },
       select: { diseaseId: true, diagnosedAt: true, patient: { select: { dateOfBirth: true } } },
     }),
+    eventsBetween(clinicId, weekStart, nextMonday.toISOString().slice(0, 10)),
   ]);
+  const eventRows = new Set(Object.values(EVENT_FORM_ROWS).map((r) => r.diseaseId));
   const rows: WeeklyRow[] = NOTIFIABLE_DISEASES.map((d) => ({
     diseaseId: d.id,
     name: d.name,
     reporting: d.reporting,
     form505Row: d.form505Row,
-    countedByAcisi: d.icd11.length > 0,
+    countedByAcisi: d.icd11.length > 0 || eventRows.has(d.id),
+    source: d.icd11.length > 0 ? 'DIAGNOSES' : 'EVENTS',
     under5: 0,
     fiveAndOver: 0,
     ageUnknown: 0,
     total: 0,
+    deathsUnder5: 0,
+    deathsFiveAndOver: 0,
   }));
   const byId = new Map(rows.map((r) => [r.diseaseId, r]));
   for (const c of cases) {
@@ -265,6 +278,20 @@ export async function weeklySummary(clinicId: string, weekStart: string): Promis
     else if (age < 5) row.under5++;
     else row.fiveAndOver++;
     row.total++;
+  }
+  // Recorded public health events fill their rows (AEFI, SARI, maternal,
+  // neonatal and malaria deaths, events of concern), split by age.
+  for (const e of events) {
+    const map = EVENT_FORM_ROWS[e.type];
+    const row = byId.get(map.diseaseId);
+    if (!row) continue;
+    if (map.count === 'cases') {
+      row.under5 += e.casesUnder5;
+      row.fiveAndOver += e.casesCount - e.casesUnder5;
+      row.total += e.casesCount;
+    }
+    row.deathsUnder5 += e.deathsUnder5;
+    row.deathsFiveAndOver += e.deathsCount - e.deathsUnder5;
   }
   const end = new Date(`${weekStart}T00:00:00Z`);
   end.setUTCDate(end.getUTCDate() + 6);
@@ -291,12 +318,14 @@ export function weeklySummaryCsv(s: WeeklySummary): string {
     ['County', s.county ?? ''],
     ['Week', `${s.weekStart} to ${s.weekEnd} (Monday to Sunday)`],
     ['Disease list', s.listConfirmed ? `${s.listSource} (checked ${s.listConfirmed})` : 'DRAFT - not yet confirmed against the MOH IDSR case definitions'],
-    ['Note', 'Rows marked "count by hand" are events, deaths or clusters ACISI cannot detect from a diagnosis. ACISI does not record deaths: fill the MOH 505 death columns by hand.'],
+    ['Note', 'Cases come from ICD-11 diagnoses signed at this clinic, or (source "events") from public health events staff recorded. Deaths come from recorded events only: ACISI does not record deaths on visits.'],
     [],
-    ['MOH 505 row', 'Disease', 'Reporting', 'Cases under 5', 'Cases 5 and over', 'Age unknown', 'Total cases'],
+    ['MOH 505 row', 'Disease', 'Reporting', 'Source', 'Cases under 5', 'Cases 5 and over', 'Age unknown', 'Total cases', 'Deaths under 5', 'Deaths 5 and over'],
     ...s.rows.map((r) => {
-      const head = [r.form505Row, r.name, r.reporting === 'IMMEDIATE' ? 'Immediate' : 'Weekly'];
-      return r.countedByAcisi ? [...head, r.under5, r.fiveAndOver, r.ageUnknown, r.total] : [...head, 'count by hand', '', '', ''];
+      const head = [r.form505Row, r.name, r.reporting === 'IMMEDIATE' ? 'Immediate' : 'Weekly', r.source === 'EVENTS' ? 'events' : 'diagnoses'];
+      return r.countedByAcisi
+        ? [...head, r.under5, r.fiveAndOver, r.ageUnknown, r.total, r.deathsUnder5, r.deathsFiveAndOver]
+        : [...head, 'count by hand', '', '', '', '', ''];
     }),
   ];
   return `${lines.map((l) => l.map(csvCell).join(',')).join('\n')}\n`;

@@ -82,6 +82,62 @@ export interface NotifiableCase {
   reportNote: string | null;
 }
 
+export interface HealthEvent {
+  id: string;
+  type: string;
+  typeLabel: string;
+  immediate: boolean;
+  detectedOn: string;
+  casesCount: number;
+  casesUnder5: number;
+  deathsCount: number;
+  deathsUnder5: number;
+  eventDescription: string;
+  eventPlace: string | null;
+  recordedBy: string;
+  recordedAt: string;
+  reportedAt: string | null;
+  reportedBy: string | null;
+  reportNote: string | null;
+}
+
+export interface CountRow {
+  label: string;
+  count: number;
+}
+
+export interface RoutineReport {
+  clinicName: string;
+  county: string | null;
+  period: 'MONTH' | 'QUARTER' | 'YEAR';
+  value: string;
+  label: string;
+  startDate: string;
+  endDate: string;
+  visits: { total: number; completed: number; walkIn: number; remote: number };
+  patients: { seen: number; newToClinic: number; returning: number };
+  bySex: CountRow[];
+  byAge: CountRow[];
+  byDepartment: CountRow[];
+  topDiagnoses: { code: string; title: string; count: number }[];
+  visitsWithoutCodes: number;
+  lab: { ordersRequested: number; testsDone: number; abnormal: number; critical: number };
+  prescriptions: { visitsWithPrescription: number; medicineLines: number; topMedicines: CountRow[] };
+  notifiable: { immediate: number; weekly: number; byDisease: CountRow[] };
+  events: { total: number; cases: number; deaths: number; byType: CountRow[] };
+  monthlyDiseases: {
+    id: string;
+    name: string;
+    quarterly: boolean;
+    countedByAcisi: boolean;
+    note: string | null;
+    under5: number;
+    fiveAndOver: number;
+    ageUnknown: number;
+    total: number;
+  }[];
+}
+
 export interface WeeklySurveillance {
   clinicName: string;
   county: string | null;
@@ -93,12 +149,17 @@ export interface WeeklySurveillance {
     reporting: NotifiableReporting;
     /** The MOH 505 row it is counted in. */
     form505Row: string;
-    /** False: an event, death or syndrome ACISI can't detect from a diagnosis; count by hand. */
+    /** False: nothing in ACISI feeds this row; count by hand. */
     countedByAcisi: boolean;
+    /** DIAGNOSES: ICD-11 codes; EVENTS: public health events staff recorded. */
+    source: 'DIAGNOSES' | 'EVENTS';
     under5: number;
     fiveAndOver: number;
     ageUnknown: number;
     total: number;
+    /** From recorded events only. */
+    deathsUnder5: number;
+    deathsFiveAndOver: number;
   }[];
   totalCases: number;
   /** Date the disease list was checked against the MOH documents, or null while it is a draft. */
@@ -1039,6 +1100,37 @@ export const api = {
   },
 
   /** Weekly counts (doctors and admins). `week` is a Monday, YYYY-MM-DD; empty = last full week. */
+  /** Public health events (counts only). */
+  listHealthEvents() {
+    return request<{ events: HealthEvent[]; types: { code: string; label: string; immediate: boolean }[] }>('/surveillance/events');
+  },
+
+  recordHealthEvent(body: {
+    type: string;
+    detectedOn: string;
+    casesCount: number;
+    casesUnder5: number;
+    deathsCount: number;
+    deathsUnder5: number;
+    eventDescription: string;
+    eventPlace: string | null;
+  }) {
+    return request<{ id: string; immediate: boolean }>('/surveillance/events', { method: 'POST', body: JSON.stringify(body) });
+  },
+
+  markHealthEventReported(id: string, note: string) {
+    return request<{ ok: true }>(`/surveillance/events/${encodeURIComponent(id)}/reported`, { method: 'POST', body: JSON.stringify({ note: note || null }) });
+  },
+
+  /** Routine report: period MONTH (YYYY-MM), QUARTER (YYYY-Q1..Q4) or YEAR (YYYY). */
+  routineReport(period: string, value: string) {
+    return request<RoutineReport>(`/routine-reports?period=${period}&value=${encodeURIComponent(value)}`);
+  },
+
+  routineReportCsvUrl(period: string, value: string) {
+    return `/api/staff/routine-reports/csv?period=${period}&value=${encodeURIComponent(value)}`;
+  },
+
   weeklySurveillance(week?: string) {
     return request<WeeklySurveillance>(`/surveillance/weekly${week ? `?week=${week}` : ''}`);
   },

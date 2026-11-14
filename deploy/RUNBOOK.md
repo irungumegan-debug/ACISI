@@ -361,6 +361,15 @@ one table (`prescription_items`) and runs on start. Check: `sudo ls -l
 consultation page shows "Medicine 1" with a medicine search, and typing
 "paracetamol" lists DHA medicines.
 
+## Release 2026-11-14: routine reports and public health events
+
+Normal update ("Updating the app"), after the usual backup. The migration adds
+one table (`public_health_events`) and runs on start. Check: a clinic admin
+sees **Routine reports** in the menu and the page shows last month's numbers;
+Disease surveillance shows a **Public health events** card with "Record an
+event". Front desk sees neither. The monthly disease list is in
+`src/services/routineReportService.ts` (`MONTHLY_DISEASES`).
+
 ## Turning on multi-factor login (admins and doctors)
 
 After the PIN, clinic admins and doctors get a 6-digit code by SMS (they can

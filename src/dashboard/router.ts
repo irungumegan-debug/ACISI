@@ -14,6 +14,7 @@ import { phoneVerificationRouter } from './phoneVerification';
 import { filesRouter } from './files';
 import { labRouter, labTestsAdminRouter } from './lab';
 import { surveillanceRouter } from './surveillance';
+import { routineReportsRouter } from './routineReports';
 
 export const dashboardRouter = Router();
 
@@ -27,6 +28,7 @@ dashboardRouter.use('/patients', patientsRouter);
 dashboardRouter.use('/checkins', checkinsRouter);
 dashboardRouter.use('/doctor', doctorRouter);
 dashboardRouter.use('/surveillance', surveillanceRouter);
+dashboardRouter.use('/routine-reports', routineReportsRouter);
 dashboardRouter.use('/appointments', appointmentsRouter);
 dashboardRouter.use('/walk-in', walkInRouter);
 dashboardRouter.use('/billing', billingRouter);
