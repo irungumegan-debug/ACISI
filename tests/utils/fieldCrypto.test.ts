@@ -51,3 +51,25 @@ describe('field encryption at rest (AES-256-GCM)', () => {
     expect(row.createdAt).toBe(when);
   });
 });
+
+describe('money amounts and other objects pass through untouched (regression: check-ins failed)', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { Prisma } = require('@prisma/client') as typeof import('@prisma/client');
+
+  it('keeps a Prisma.Decimal a Decimal in a write, at any depth', () => {
+    const amount = new Prisma.Decimal(100);
+    const data = encryptWritePayload({ amountKes: amount, nested: { create: { amountKes: amount, diagnosis: 'x' } } }) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+    expect(data.amountKes).toBe(amount);
+    expect(data.amountKes instanceof Prisma.Decimal).toBe(true);
+    expect(data.nested.create.amountKes).toBe(amount);
+    expect(isEncrypted(data.nested.create.diagnosis)).toBe(true);
+  });
+
+  it('keeps a Decimal in a result untouched', () => {
+    const amount = new Prisma.Decimal('250.50');
+    const row = decryptResult({ amountKes: amount, diagnosis: encryptValue('Flu') });
+    expect(row.amountKes).toBe(amount);
+    expect(row.amountKes.toString()).toBe('250.5');
+    expect(row.diagnosis).toBe('Flu');
+  });
+});
