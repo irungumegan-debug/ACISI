@@ -17,9 +17,10 @@ jest.mock('../../src/services/notifiableDiseaseService', () => ({
     county: 'Nairobi',
     weekStart: week,
     weekEnd: '2026-11-15',
-    rows: [{ diseaseId: 'cholera', name: 'Cholera', reporting: 'IMMEDIATE', under5: 0, fiveAndOver: 1, ageUnknown: 0, total: 1 }],
+    rows: [{ diseaseId: 'cholera', name: 'Cholera', reporting: 'IMMEDIATE', form505Row: 'Cholera', countedByAcisi: true, under5: 0, fiveAndOver: 1, ageUnknown: 0, total: 1 }],
     totalCases: 1,
     listConfirmed: null,
+    listSource: 'MOH',
   })),
 }));
 
@@ -58,7 +59,8 @@ describe('who can see notifiable disease cases (names a patient and a diagnosis)
     const list = await get('/surveillance/cases');
     expect(list.status).toBe(200);
     expect(list.body.cases[0].diseaseName).toBe('Cholera');
-    expect(list.body.listConfirmed).toBeNull();
+    expect(list.body.listConfirmed).toBe('2026-11-14');
+    expect(list.body.listSource).toContain('3rd edition');
     expect((await get('/surveillance/unreported-count')).body).toEqual({ count: 2 });
     const r = await post('/surveillance/cases/case-1/reported', { note: 'Called SCDSC' });
     expect(r.status).toBe(200);

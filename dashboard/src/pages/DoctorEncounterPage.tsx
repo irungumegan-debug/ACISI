@@ -373,12 +373,14 @@ function NotifiableNotice({ alerts, onDone }: { alerts: NotifiableAlert[]; onDon
             <span className={a.reporting === 'IMMEDIATE' ? 'font-semibold text-red-700' : 'text-ink-500'}>
               {a.reporting === 'IMMEDIATE' ? 'report within 24 hours' : 'counted in the weekly report'}
             </span>
+            {a.note && <span className="basis-full text-xs text-ink-500">{a.note}</span>}
           </li>
         ))}
       </ul>
       {immediate.length > 0 ? (
         <p className="mb-5 text-sm text-ink-700">
-          Report it now to the Sub-County Disease Surveillance Coordinator, then mark it as reported under{' '}
+          Report it now to the Sub-County Disease Surveillance Coordinator (SCDSC) by the fastest means (e.g. a phone call) and fill in
+          the case-based reporting form MOH 502. Don&apos;t wait for lab confirmation. Then mark it as reported under{' '}
           <Link to="/surveillance" className="font-semibold text-navy-900 underline">
             Disease surveillance
           </Link>

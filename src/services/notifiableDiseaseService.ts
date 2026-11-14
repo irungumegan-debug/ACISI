@@ -5,7 +5,7 @@ import { sendSms } from './smsService';
 import { buildNotifiableAlertSms } from './smsTemplates';
 import { ageInYears } from './labService';
 import { logger } from '../utils/logger';
-import { matchNotifiable, NOTIFIABLE_DISEASES, NOTIFIABLE_LIST_CONFIRMED, NotifiableReporting } from './notifiableDiseases';
+import { matchNotifiable, NOTIFIABLE_DISEASES, NOTIFIABLE_LIST_CONFIRMED, NOTIFIABLE_LIST_SOURCE, NotifiableReporting } from './notifiableDiseases';
 
 /**
  * Notifiable (IDSR) diseases: when a doctor signs a visit with an ICD-11
@@ -21,6 +21,8 @@ export interface NotifiableAlert {
   name: string;
   reporting: NotifiableReporting;
   icd11Code: string;
+  /** e.g. "reported by testing laboratories only". */
+  note?: string;
 }
 
 type Tx = Prisma.TransactionClient;
@@ -46,7 +48,13 @@ export async function recordNotifiableCases(
     })),
     skipDuplicates: true,
   });
-  return matches.map(({ disease, code }) => ({ diseaseId: disease.id, name: disease.name, reporting: disease.reporting, icd11Code: code }));
+  return matches.map(({ disease, code }) => ({
+    diseaseId: disease.id,
+    name: disease.name,
+    reporting: disease.reporting,
+    icd11Code: code,
+    ...(disease.note ? { note: disease.note } : {}),
+  }));
 }
 
 /**
@@ -206,6 +214,10 @@ export interface WeeklyRow {
   diseaseId: string;
   name: string;
   reporting: NotifiableReporting;
+  /** The MOH 505 row it is counted in. */
+  form505Row: string;
+  /** False for events, deaths and syndromes ACISI can't detect from a diagnosis: count by hand. */
+  countedByAcisi: boolean;
   under5: number;
   fiveAndOver: number;
   ageUnknown: number;
@@ -220,9 +232,10 @@ export interface WeeklySummary {
   rows: WeeklyRow[];
   totalCases: number;
   listConfirmed: string | null;
+  listSource: string;
 }
 
-/** Cases per disease for one week, split under 5 / 5 and over. Every listed disease appears, zeros included. */
+/** Cases per disease for one week in MOH 505 row order, split under 5 / 5 and over, zeros included. */
 export async function weeklySummary(clinicId: string, weekStart: string): Promise<WeeklySummary> {
   const { from, to } = weekBounds(weekStart);
   const [clinic, cases] = await Promise.all([
@@ -232,7 +245,17 @@ export async function weeklySummary(clinicId: string, weekStart: string): Promis
       select: { diseaseId: true, diagnosedAt: true, patient: { select: { dateOfBirth: true } } },
     }),
   ]);
-  const rows: WeeklyRow[] = NOTIFIABLE_DISEASES.map((d) => ({ diseaseId: d.id, name: d.name, reporting: d.reporting, under5: 0, fiveAndOver: 0, ageUnknown: 0, total: 0 }));
+  const rows: WeeklyRow[] = NOTIFIABLE_DISEASES.map((d) => ({
+    diseaseId: d.id,
+    name: d.name,
+    reporting: d.reporting,
+    form505Row: d.form505Row,
+    countedByAcisi: d.icd11.length > 0,
+    under5: 0,
+    fiveAndOver: 0,
+    ageUnknown: 0,
+    total: 0,
+  }));
   const byId = new Map(rows.map((r) => [r.diseaseId, r]));
   for (const c of cases) {
     const row = byId.get(c.diseaseId);
@@ -253,6 +276,7 @@ export async function weeklySummary(clinicId: string, weekStart: string): Promis
     rows,
     totalCases: rows.reduce((n, r) => n + r.total, 0),
     listConfirmed: NOTIFIABLE_LIST_CONFIRMED,
+    listSource: NOTIFIABLE_LIST_SOURCE,
   };
 }
 
@@ -266,11 +290,14 @@ export function weeklySummaryCsv(s: WeeklySummary): string {
     ['Clinic', s.clinicName],
     ['County', s.county ?? ''],
     ['Week', `${s.weekStart} to ${s.weekEnd} (Monday to Sunday)`],
-    ['Disease list', s.listConfirmed ? `confirmed ${s.listConfirmed}` : 'DRAFT - not yet confirmed against the MOH IDSR case definitions'],
-    ['Deaths', 'not recorded in ACISI'],
+    ['Disease list', s.listConfirmed ? `${s.listSource} (checked ${s.listConfirmed})` : 'DRAFT - not yet confirmed against the MOH IDSR case definitions'],
+    ['Note', 'Rows marked "count by hand" are events, deaths or clusters ACISI cannot detect from a diagnosis. ACISI does not record deaths: fill the MOH 505 death columns by hand.'],
     [],
-    ['Disease', 'Reporting', 'Cases under 5', 'Cases 5 and over', 'Age unknown', 'Total'],
-    ...s.rows.map((r) => [r.name, r.reporting === 'IMMEDIATE' ? 'Immediate' : 'Weekly', r.under5, r.fiveAndOver, r.ageUnknown, r.total]),
+    ['MOH 505 row', 'Disease', 'Reporting', 'Cases under 5', 'Cases 5 and over', 'Age unknown', 'Total cases'],
+    ...s.rows.map((r) => {
+      const head = [r.form505Row, r.name, r.reporting === 'IMMEDIATE' ? 'Immediate' : 'Weekly'];
+      return r.countedByAcisi ? [...head, r.under5, r.fiveAndOver, r.ageUnknown, r.total] : [...head, 'count by hand', '', '', ''];
+    }),
   ];
   return `${lines.map((l) => l.map(csvCell).join(',')).join('\n')}\n`;
 }

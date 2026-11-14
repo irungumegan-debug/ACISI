@@ -39,10 +39,9 @@ USSD-first clinic management platform for small clinics in Kenya. See
   ICD-11 coded diagnoses done 14 Nov (WHO MMS 2025-01 bundled in
   src/assets/icd11/, doctors must pick 1-5 codes; FHIR Condition coded).
   Notifiable-disease alerts + weekly summary built 14 Nov
-  (src/services/notifiableDiseases.ts): disease list is a DRAFT (NPHI site
-  unreachable in-session); confirm against the MOH IDSR case definitions
-  chart, then set NOTIFIABLE_LIST_CONFIRMED. Items to confirm: checklist
-  section "To confirm" (docs/testing/manual-test-checklist.md).
+  (src/services/notifiableDiseases.ts), list from the IDSR Technical
+  Guidelines 3rd ed. (2022) Table 5 + MOH 505 form (owner uploaded the PDFs).
+  Open items: checklist section "To confirm" (docs/testing/manual-test-checklist.md).
   Remaining, in order: (4) automatic weekly IDSR submission once DHA/MOH say
   where; (5-6) FHIR R4 interface: base built 14 Nov (src/fhir/, /fhir/r4); adapt to
   DHA's HIE spec (identifiers, profiles, auth, submission) after the owner's

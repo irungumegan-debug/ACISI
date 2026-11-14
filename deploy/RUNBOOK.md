@@ -341,9 +341,10 @@ the assets to the wrong place (fixed in this release); check with
 Normal update ("Updating the app"), after the usual backup. The migration
 adds one table (`notifiable_disease_cases`) and runs on start. Check: a doctor
 and a clinic admin both see "Disease surveillance" in the menu; front desk
-does not. The disease list is a draft: when it has been checked against the
-MOH IDSR case definitions, edit `src/services/notifiableDiseases.ts` (names,
-groups, codes) and set `NOTIFIABLE_LIST_CONFIRMED` to that date.
+does not. The disease list follows the IDSR Technical Guidelines, 3rd edition
+(2022). If MOH changes it, edit `src/services/notifiableDiseases.ts` (names,
+groups, MOH 505 rows, ICD-11 codes) and set `NOTIFIABLE_LIST_CONFIRMED` to the
+date it was checked.
 
 ## Turning on multi-factor login (admins and doctors)
 

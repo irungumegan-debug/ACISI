@@ -22,8 +22,13 @@ function shiftWeek(week: string, by: number): string {
 
 const dateTime = (iso: string) => new Date(iso).toLocaleString('en-KE', { dateStyle: 'medium', timeStyle: 'short' });
 
-function DraftNotice({ confirmed }: { confirmed: string | null }) {
-  if (confirmed) return <p className="mb-4 text-xs text-ink-500">Disease list checked against the MOH IDSR case definitions on {confirmed}.</p>;
+function ListNotice({ confirmed, source }: { confirmed: string | null; source?: string }) {
+  if (confirmed)
+    return (
+      <p className="mb-4 text-xs text-ink-500">
+        Disease list from {source ?? 'the MOH IDSR case definitions'}, checked {confirmed}.
+      </p>
+    );
   return (
     <p className="mb-4 flex items-start gap-2 rounded-xl bg-amber-50 px-3.5 py-3 text-sm text-amber-900 ring-1 ring-amber-200">
       <AlertTriangle size={16} aria-hidden className="mt-0.5 flex-none" />
@@ -69,7 +74,7 @@ function ReportedForm({ c, onDone }: { c: NotifiableCase; onDone: () => void }) 
         value={note}
         maxLength={500}
         onChange={(e) => setNote(e.target.value)}
-        placeholder="e.g. Sub-County Disease Surveillance Coordinator, by phone"
+        placeholder="e.g. SCDSC, by phone; MOH 502 sent"
         className={field.input}
       />
       {error && (
@@ -92,6 +97,7 @@ function ReportedForm({ c, onDone }: { c: NotifiableCase; onDone: () => void }) 
 function Cases() {
   const [cases, setCases] = useState<NotifiableCase[] | null>(null);
   const [confirmed, setConfirmed] = useState<string | null>(null);
+  const [source, setSource] = useState<string | undefined>();
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(() => {
@@ -100,6 +106,7 @@ function Cases() {
       .then((r) => {
         setCases(r.cases);
         setConfirmed(r.listConfirmed);
+        setSource(r.listSource);
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load cases'));
   }, []);
@@ -116,7 +123,7 @@ function Cases() {
   return (
     <Card title="Notifiable disease cases" icon={ShieldAlert} bodyClassName="p-0">
       <div className="px-5 pt-4">
-        <DraftNotice confirmed={confirmed} />
+        <ListNotice confirmed={confirmed} source={source} />
       </div>
       {cases.length === 0 ? (
         <EmptyState icon={CheckCircle2} tone="success" title="No notifiable diseases diagnosed yet." />
@@ -209,12 +216,12 @@ function Weekly() {
       {!data && !error && <SkeletonList rows={4} label="Loading the summary" />}
       {data && (
         <>
-          <DraftNotice confirmed={data.listConfirmed} />
+          <ListNotice confirmed={data.listConfirmed} source={data.listSource} />
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wider text-ink-500">
-                  <th className="py-2 pr-3 font-semibold">Disease</th>
+                  <th className="py-2 pr-3 font-semibold">MOH 505 row</th>
                   <th className="px-3 py-2 text-right font-semibold">Under 5</th>
                   <th className="px-3 py-2 text-right font-semibold">5 and over</th>
                   <th className="px-3 py-2 text-right font-semibold">Age unknown</th>
@@ -225,21 +232,30 @@ function Weekly() {
                 {data.rows.map((r) => (
                   <tr key={r.diseaseId} className={`border-b border-slate-100 ${r.total > 0 ? 'font-semibold text-navy-900' : 'text-ink-500'}`}>
                     <td className="py-2 pr-3">
-                      {r.name}
-                      {r.reporting === 'IMMEDIATE' && <span className="ml-1.5 text-xs font-normal text-red-700">(immediate)</span>}
+                      {r.form505Row}
+                      {r.form505Row !== r.name && <span className="block text-xs font-normal text-ink-500">{r.name}</span>}
+                      {r.reporting === 'IMMEDIATE' && <span className="block text-xs font-normal text-red-700">immediate</span>}
                     </td>
-                    <td className="px-3 py-2 text-right tabular-nums">{r.under5}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{r.fiveAndOver}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{r.ageUnknown}</td>
-                    <td className="py-2 pl-3 text-right tabular-nums">{r.total}</td>
+                    {r.countedByAcisi ? (
+                      <>
+                        <td className="px-3 py-2 text-right tabular-nums">{r.under5}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{r.fiveAndOver}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{r.ageUnknown}</td>
+                        <td className="py-2 pl-3 text-right tabular-nums">{r.total}</td>
+                      </>
+                    ) : (
+                      <td colSpan={4} className="py-2 pl-3 pr-1 text-right text-xs italic text-amber-800">
+                        count by hand
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
           <p className="mt-3 text-xs text-ink-500">
-            Counts come from ICD-11 diagnoses signed at this clinic. Deaths are not recorded in ACISI. Use these numbers for the MOH 505
-            weekly form.
+            Cases come from ICD-11 diagnoses signed at this clinic. Rows marked &quot;count by hand&quot; are events, deaths or clusters ACISI
+            can&apos;t detect from a diagnosis. ACISI doesn&apos;t record deaths: fill the MOH 505 death columns by hand. The form goes to the SCDSC by Monday.
           </p>
         </>
       )}

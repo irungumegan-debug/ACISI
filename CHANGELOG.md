@@ -6,17 +6,18 @@ touches, and who can use it. Newest first.
 ## 2026-11-14: Notifiable disease alerts and weekly summary (IDSR)
 
 One database change, additive (`20261114180000_notifiable_disease_cases`);
-undo script in `prisma/rollback/`. The disease list is a **draft** until it is
-checked against the Ministry of Health IDSR case definitions; the console
-says so on every surveillance screen and in the CSV.
+undo script in `prisma/rollback/`. The disease list follows the **Kenya IDSR
+Technical Guidelines, 3rd edition (MOH, 2022)**: Table 5 (immediately
+reportable) and the rows of the MOH 505 weekly form (2020 edition), as
+downloaded from nphi.go.ke on 14 Nov 2026.
 
 | # | What changed | Data it touches | Who |
 |---|---|---|---|
-| N1 | **Automatic detection:** when a doctor signs a visit with an ICD-11 code on the notifiable list (`src/services/notifiableDiseases.ts`, 24 diseases, each mapped to WHO ICD-11 codes), a case is recorded in the same save. | New: notifiable disease cases (patient, disease, code, date; report note encrypted at rest) | Doctors |
-| N2 | **Alert on screen:** after signing, the doctor sees the disease, its code and "report within 24 hours" (immediate) or "counted in the weekly report". | — | Doctors |
+| N1 | **Automatic detection:** when a doctor signs a visit with an ICD-11 code on the notifiable list (`src/services/notifiableDiseases.ts`: the 27 immediately reportable entries of Table 5 and the weekly-only MOH 505 rows, each mapped to WHO ICD-11 codes), a case is recorded in the same save. Events, deaths and clusters (AEFI, SARI, maternal and neonatal deaths, malaria deaths, public health events) have no diagnosis code: ACISI lists them as "count by hand". | New: notifiable disease cases (patient, disease, code, date; report note encrypted at rest) | Doctors |
+| N2 | **Alert on screen:** after signing, the doctor sees the disease, its code and "report within 24 hours" (immediate: to the Sub-County Disease Surveillance Coordinator, form MOH 502, without waiting for lab confirmation) or "counted in the weekly report". | — | Doctors |
 | N3 | **SMS reminder** for immediately reportable diseases to the clinic's active admins and doctors: "An immediately notifiable disease was diagnosed at {clinic}. Report within 24h…". Names neither the patient nor the disease. Not counted against the clinic's SMS allowance. | Staff phone numbers | Admins, doctors |
 | N4 | **Disease surveillance page:** doctors see the clinic's cases (patient, ACISI ID, age, sex, disease, code) and mark immediately reportable ones as reported, with an optional note; a red badge in the menu counts those not yet reported. | Notifiable disease cases | Doctors |
-| N5 | **Weekly summary** (Monday to Sunday, Kenya time): cases per disease, under 5 / 5 and over / age unknown, and a CSV download for the MOH 505 form. Counts only, no names. Deaths are not recorded in ACISI. | — | Doctors, clinic admins |
+| N5 | **Weekly summary** (Monday to Sunday, Kenya time) in MOH 505 row order: cases under 5 / 5 and over / age unknown, and a CSV download. Counts only, no names. ACISI doesn't record deaths, so the form's death columns are filled by hand. | — | Doctors, clinic admins |
 | N6 | Audit: `NOTIFIABLE_DISEASE_DIAGNOSED`, `NOTIFIABLE_DISEASE_ALERT_SENT`, `NOTIFIABLE_CASE_REPORTED`, `IDSR_WEEKLY_SUMMARY_DOWNLOADED` (IDs and disease IDs only). | — | — |
 
 Not yet: sending reports to the Ministry automatically (KHIS/DHIS2 or the

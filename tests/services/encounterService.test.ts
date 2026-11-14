@@ -16,7 +16,10 @@ jest.mock('../../src/services/notifiableDiseaseService', () => ({
 
 jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
 jest.mock('../../src/services/patientService', () => ({ getScopedHistory: jest.fn() }));
-jest.mock('../../src/services/labService', () => ({ getLabOrdersForEncounter: jest.fn(async () => []) }));
+jest.mock('../../src/services/labService', () => ({
+  getLabOrdersForEncounter: jest.fn(async () => []),
+  ageInYears: jest.requireActual('../../src/services/labService').ageInYears,
+}));
 jest.mock('../../src/services/allergyService', () => ({ listAllergiesForClinic: jest.fn(async () => ({ allergies: [], hiddenElsewhere: false })) }));
 jest.mock('../../src/services/staffService', () => ({ findActiveStaffById: jest.fn(), comparePin: jest.fn() }));
 jest.mock('../../src/jobs/queue', () => ({ enqueueVisitSummaryEmail: jest.fn() }));

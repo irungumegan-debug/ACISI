@@ -62,6 +62,7 @@ export interface NotifiableAlert {
   name: string;
   reporting: NotifiableReporting;
   icd11Code: string;
+  note?: string;
 }
 
 export interface NotifiableCase {
@@ -86,10 +87,23 @@ export interface WeeklySurveillance {
   county: string | null;
   weekStart: string;
   weekEnd: string;
-  rows: { diseaseId: string; name: string; reporting: NotifiableReporting; under5: number; fiveAndOver: number; ageUnknown: number; total: number }[];
+  rows: {
+    diseaseId: string;
+    name: string;
+    reporting: NotifiableReporting;
+    /** The MOH 505 row it is counted in. */
+    form505Row: string;
+    /** False: an event, death or syndrome ACISI can't detect from a diagnosis; count by hand. */
+    countedByAcisi: boolean;
+    under5: number;
+    fiveAndOver: number;
+    ageUnknown: number;
+    total: number;
+  }[];
   totalCases: number;
-  /** Date the disease list was confirmed against the MOH chart, or null while it is a draft. */
+  /** Date the disease list was checked against the MOH documents, or null while it is a draft. */
   listConfirmed: string | null;
+  listSource: string;
 }
 
 export interface VisitHistoryEntry {
@@ -936,7 +950,7 @@ export const api = {
 
   /** Disease surveillance (IDSR): case list, doctors only. */
   listNotifiableCases() {
-    return request<{ cases: NotifiableCase[]; listConfirmed: string | null }>('/surveillance/cases');
+    return request<{ cases: NotifiableCase[]; listConfirmed: string | null; listSource: string }>('/surveillance/cases');
   },
 
   unreportedNotifiableCount() {

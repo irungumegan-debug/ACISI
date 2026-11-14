@@ -11,7 +11,7 @@ import {
   weeklySummary,
   weeklySummaryCsv,
 } from '../services/notifiableDiseaseService';
-import { NOTIFIABLE_LIST_CONFIRMED } from '../services/notifiableDiseases';
+import { NOTIFIABLE_LIST_CONFIRMED, NOTIFIABLE_LIST_SOURCE } from '../services/notifiableDiseases';
 import { recordAuditEvent } from '../services/auditService';
 
 /**
@@ -41,7 +41,7 @@ const doctorsAndAdmins = allow(['DOCTOR', 'ADMIN']);
 surveillanceRouter.get('/cases', doctorsOnly, async (req, res) => {
   const { clinicId } = session(req);
   const cases = await listNotifiableCases(clinicId, { unreportedOnly: req.query.unreported === '1' });
-  res.json({ cases, listConfirmed: NOTIFIABLE_LIST_CONFIRMED });
+  res.json({ cases, listConfirmed: NOTIFIABLE_LIST_CONFIRMED, listSource: NOTIFIABLE_LIST_SOURCE });
 });
 
 /** For the menu badge. */

@@ -424,9 +424,10 @@ release means rebuilding the JSON with the script and changing
 
 ## Notifiable diseases / IDSR (`src/services/notifiableDisease*.ts`)
 
-`notifiableDiseases.ts` holds the list (id, name, IMMEDIATE or WEEKLY, ICD-11
-stems; a code matches a stem or its subcodes). It is a draft until
-`NOTIFIABLE_LIST_CONFIRMED` is set. `submitConsultation` saves the visit and
+`notifiableDiseases.ts` holds the list from the Kenya IDSR Technical
+Guidelines, 3rd edition (Table 5 and the MOH 505 form): id, name, IMMEDIATE or
+WEEKLY, MOH 505 row, ICD-11 stems (a code matches a stem or its subcodes).
+Entries with no stems are counted by hand. `submitConsultation` saves the visit and
 `recordNotifiableCases` in one transaction; after commit,
 `notifyNotifiableCases` audits and, for IMMEDIATE diseases, SMSes the
 clinic's active ADMIN and DOCTOR staff with no patient or disease in the text.

@@ -113,21 +113,22 @@ code), and a **test patient** with a phone you can check.
 - [ ] **K6. Mark reported.** Mark as reported with a note. *Expect:* green "Reported … by …"; the badge goes down.
 - [ ] **K7. Weekly-only disease.** Sign a test patient with a malaria code (e.g. 1F40.Z). *Expect:* "counted in the weekly report"; no SMS.
 - [ ] **K8. Not notifiable.** Sign with BA00 (hypertension). *Expect:* straight back to the queue, no alert.
-- [ ] **K9. Weekly summary.** Admin → Disease surveillance → Next to this week. *Expect:* counts under 5 / 5 and over match your test patients; **no** names anywhere; the cases list is not shown to admins.
-- [ ] **K10. CSV.** Download the CSV. *Expect:* opens in Excel/Sheets; says the list is DRAFT and deaths are not recorded.
+- [ ] **K9. Weekly summary.** Admin → Disease surveillance → Next to this week. *Expect:* rows in the same order as the MOH 505 form; counts under 5 / 5 and over match your test patients; deaths and events say "count by hand"; **no** names anywhere; the cases list is not shown to admins.
+- [ ] **K10. CSV.** Download the CSV. *Expect:* opens in Excel/Sheets; names the source (IDSR Technical Guidelines, 3rd edition) and says deaths are filled by hand.
 - [ ] **K11. Front desk** typing `/console/surveillance` sees an error, nothing else.
 
 ## To confirm (not tests: things only you can check or decide)
 
 Bring these to the DHA/MOH call or check them yourself; tell Claude the answers and the code will be updated.
 
-- [ ] **T1. Disease list.** Get the official **IDSR Standard Case Definitions** chart (Kenya IDSR Technical Guidelines, 3rd edition, NPHI: nphi.go.ke). Check each of the 24 diseases in ACISI's draft list: is it on the official list, and is it **immediate** or **weekly**? Which official diseases are missing? Send Claude the chart (photo or PDF) to update it.
-- [ ] **T2. Week.** Does the MOH 505 week run **Monday to Sunday** (what ACISI uses)? If not, which days?
-- [ ] **T3. Age groups.** Does MOH 505 use **under 5 / 5 and over** (what ACISI uses)?
-- [ ] **T4. Deaths.** MOH 505 may ask for deaths. ACISI doesn't record deaths: should it?
-- [ ] **T5. Who reports.** Confirm it's the **Sub-County Disease Surveillance Coordinator**, and how (phone, form, KHIS). Will DHA/MOH want ACISI to send reports automatically (KHIS/DHIS2 or the HIE)?
+- [x] **T1. Disease list.** Done 14 Nov: built from the IDSR Technical Guidelines, 3rd edition (Table 5 and the MOH 505 form) you downloaded.
+- [x] **T2. Week.** Done: Monday to Sunday (guidelines).
+- [x] **T3. Age groups.** Done: under 5 / 5 and over (MOH 505 form).
+- [ ] **T4. Deaths.** The MOH 505 form asks for deaths under 5 and 5 and over for each disease. ACISI doesn't record deaths, so clinics fill those columns by hand. Decide: should ACISI record deaths (e.g. a "patient died" outcome on a visit)?
+- [ ] **T5. Sending.** Immediate cases go to the SCDSC (form MOH 502), weekly MOH 505 to the SCDSC by Monday (guidelines). Ask DHA/MOH: should ACISI send these automatically (KHIS/eIDSR or the HIE)?
 - [ ] **T6. Privacy Notice.** Approve adding a sentence such as: *"Your clinic must report some infectious diseases (for example cholera or measles) to the Ministry of Health's public health officers, as the law requires."* (Then the ODPC record may need the same update.)
 - [ ] **T7. DPIA v1.2.** Read and sign: notifiable disease reporting was added (sections 2.5, 2.6, 4.2, action A9).
+- [ ] **T10. 2012 vs 2022 lists.** The older chart you sent (2012) differs from the 3rd edition (e.g. rabies, typhoid and dysentery are now immediate; COVID-19, chikungunya, Zika and smallpox were added). ACISI follows the 3rd edition. If your Sub-County still uses the older chart, tell Claude.
 - [ ] **T8. SMS sender.** When TextSMS is connected, the alert SMS (K3) and MFA (section F) both need a real-delivery test.
 - [ ] **T9. Restore test date** (H2) for the DHA form.
 
