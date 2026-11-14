@@ -73,7 +73,8 @@ done
 find "$BACKUP_DIR" -maxdepth 1 -type f \( -name 'acisi-db-*.dump.age' -o -name 'acisi-config-*.tar.age' \) \
   -mtime +$((KEEP_DAYS - 1)) -print -delete
 # Newest KEEP_FILE_COPIES file archives only (names sort by date).
-ls -1 "$BACKUP_DIR"/acisi-files-*.tar.age 2>/dev/null | sort | head -n -"$KEEP_FILE_COPIES" | xargs -r rm -v --
+# (find, not ls: with no archives yet, ls would fail and mark the whole backup failed.)
+find "$BACKUP_DIR" -maxdepth 1 -type f -name 'acisi-files-*.tar.age' -print | sort | head -n -"$KEEP_FILE_COPIES" | xargs -r rm -v --
 
 # Off-server copy (disabled until /etc/acisi/backup-offsite.sh exists; see
 # deploy/backup/offsite-hook.example.sh). The destination must be in Kenya.
