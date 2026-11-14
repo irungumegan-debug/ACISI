@@ -6,6 +6,7 @@ import { ArrowLeft, Building2, FileText, Lock, NotebookPen, Phone, Pill, ShieldC
 import { Avatar, btn, EmptyState, field, SkeletonList, StatusBadge } from '../components/ui';
 import { PatientFiles } from '../components/PatientFiles';
 import { LabOrdersForVisit, LabResultLine, RequestLabTests } from '../components/DoctorLab';
+import { Allergies } from '../components/Allergies';
 
 const textarea = `${field.input} min-h-36 resize-y py-3 text-base leading-relaxed sm:text-[15px]`;
 
@@ -106,6 +107,8 @@ export function DoctorEncounterPage() {
         </div>
         <StatusBadge status={encounter.status} />
       </div>
+
+    <Allergies encounterId={encounter.encounterId} initial={encounter.allergies ?? []} hiddenElsewhere={encounter.allergiesHiddenElsewhere ?? false} />
 
     <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
       <div className="order-2 lg:order-1">

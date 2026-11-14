@@ -84,3 +84,22 @@ it('the CapabilityStatement claims FHIR 4.0.1 and only what is served', () => {
   expect(patient.operation![0]!.name).toBe('everything');
   for (const r of c.rest![0]!.resource!.filter((x) => x.type !== 'Patient')) expect(r.interaction).toBeUndefined();
 });
+
+it('maps allergies to AllergyIntolerance; a removed one is entered-in-error and inactive', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { toAllergyIntolerance } = require('../../src/fhir/mappers') as typeof import('../../src/fhir/mappers');
+  const base = { id: 'al-1', category: 'MEDICATION' as const, substance: 'Penicillin', reaction: 'Rash', severity: 'SEVERE' as const, recordedAt: new Date('2026-11-14T08:00:00Z'), recordedBy: DOCTOR, removedAt: null };
+  expect(toAllergyIntolerance(base, 'p-1')).toMatchObject({
+    resourceType: 'AllergyIntolerance',
+    clinicalStatus: { coding: [{ code: 'active' }] },
+    verificationStatus: { coding: [{ code: 'confirmed' }] },
+    category: ['medication'],
+    criticality: 'high',
+    code: { text: 'Penicillin' },
+    reaction: [{ manifestation: [{ text: 'Rash' }], severity: 'severe' }],
+  });
+  expect(toAllergyIntolerance({ ...base, removedAt: new Date() }, 'p-1')).toMatchObject({
+    clinicalStatus: { coding: [{ code: 'inactive' }] },
+    verificationStatus: { coding: [{ code: 'entered-in-error' }] },
+  });
+});

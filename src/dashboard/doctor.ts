@@ -15,6 +15,9 @@ import { listDepartmentAppointmentsToday } from '../services/appointmentService'
 import { getDoctorDepartmentIds } from '../services/departmentService';
 import { listLabTests, requestLabTests } from '../services/labService';
 import { sendLabError } from './lab';
+import { AllergyError, recordAllergy, removeAllergy } from '../services/allergyService';
+import { doctorQueueFilter } from '../services/doctorScope';
+import { prisma } from '../db/prisma';
 
 export const doctorRouter = Router();
 
@@ -172,5 +175,72 @@ doctorRouter.post('/encounters/:id/lab-orders', async (req, res) => {
     res.status(201).json(result);
   } catch (err) {
     if (!sendLabError(err, res)) throw err;
+  }
+});
+
+/** The patient of a visit in this doctor's own queue, or null. */
+async function patientInMyQueue(req: Request, res: Response): Promise<string | null> {
+  const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  const encounter = await prisma.encounter.findFirst({
+    where: { id: req.params.id as string, ...doctorQueueFilter(clinicId, departmentsOf(res), staffId) },
+    select: { patientId: true },
+  });
+  return encounter?.patientId ?? null;
+}
+
+function sendAllergyError(err: unknown, res: Response): boolean {
+  if (err instanceof AllergyError) {
+    res.status(err.status).json({ error: err.message });
+    return true;
+  }
+  return false;
+}
+
+const allergySchema = z.object({
+  category: z.enum(['MEDICATION', 'FOOD', 'ENVIRONMENT', 'OTHER']),
+  substance: z.string(),
+  reaction: z.string().nullish(),
+  severity: z.enum(['MILD', 'MODERATE', 'SEVERE', 'UNKNOWN']),
+});
+
+/** Records an allergy for the patient of a visit in this doctor's queue. */
+doctorRouter.post('/encounters/:id/allergies', async (req, res) => {
+  const parsed = allergySchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Choose the type and severity, and enter the substance' });
+    return;
+  }
+  const patientId = await patientInMyQueue(req, res);
+  if (!patientId) {
+    res.status(404).json({ error: 'Patient not found in your queue' });
+    return;
+  }
+  const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  try {
+    res.status(201).json(await recordAllergy({ patientId, clinicId, staffId, ...parsed.data }));
+  } catch (err) {
+    if (!sendAllergyError(err, res)) throw err;
+  }
+});
+
+const removeAllergySchema = z.object({ reason: z.string() });
+
+/** Marks an allergy (recorded at this clinic) as removed, e.g. recorded in error. It stays in the history. */
+doctorRouter.post('/encounters/:id/allergies/:allergyId/remove', async (req, res) => {
+  const parsed = removeAllergySchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Give a reason' });
+    return;
+  }
+  const patientId = await patientInMyQueue(req, res);
+  if (!patientId) {
+    res.status(404).json({ error: 'Patient not found in your queue' });
+    return;
+  }
+  const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  try {
+    res.json(await removeAllergy({ allergyId: req.params.allergyId as string, patientId, clinicId, staffId, reason: parsed.data.reason }));
+  } catch (err) {
+    if (!sendAllergyError(err, res)) throw err;
   }
 });

@@ -105,7 +105,20 @@ export interface PatientFileItem {
   patientUploaded: boolean;
 }
 
+export interface MyAllergy {
+  id: string;
+  substance: string;
+  reaction: string | null;
+  severity: 'MILD' | 'MODERATE' | 'SEVERE' | 'UNKNOWN';
+  recordedAt: string;
+  clinicName: string;
+  removedAt: string | null;
+}
+
 export const api = {
+  getMyAllergies() {
+    return request<{ allergies: MyAllergy[] }>('/patients/allergies');
+  },
   getMyFiles() {
     return request<{ files: PatientFileItem[] }>('/patients/files');
   },
