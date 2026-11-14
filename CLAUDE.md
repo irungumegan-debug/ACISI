@@ -42,6 +42,11 @@ USSD-first clinic management platform for small clinics in Kenya. See
   (src/services/notifiableDiseases.ts), list from the IDSR Technical
   Guidelines 3rd ed. (2022) Table 5 + MOH 505 form (owner uploaded the PDFs).
   Open items: checklist section "To confirm" (docs/testing/manual-test-checklist.md).
+  Structured prescriptions + allergy warning built 14 Nov (DHA ePrescription
+  IG codes in src/assets/dha/). DHA FHIR guides (Kenya Core 1.0.0, Patient
+  Summary 0.1.0, ePrescription 0.1.0) download from fhir.dha.go.ke/ig/...
+  /package.tgz (host now allowed in the ACISI environment); HIE test
+  credentials: interoperability@dha.go.ke.
   Remaining, in order: (4) automatic weekly IDSR submission once DHA/MOH say
   where; (5-6) FHIR R4 interface: base built 14 Nov (src/fhir/, /fhir/r4); adapt to
   DHA's HIE spec (identifiers, profiles, auth, submission) after the owner's

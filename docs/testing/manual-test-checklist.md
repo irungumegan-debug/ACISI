@@ -117,6 +117,18 @@ code), and a **test patient** with a phone you can check.
 - [ ] **K10. CSV.** Download the CSV. *Expect:* opens in Excel/Sheets; names the source (IDSR Technical Guidelines, 3rd edition) and says deaths are filled by hand.
 - [ ] **K11. Front desk** typing `/console/surveillance` sees an error, nothing else.
 
+## L. Prescriptions and allergy warning (after the prescriptions update is installed)
+
+- [ ] **L1. Medicine search.** Doctor → waiting test patient → Prescription → type "paracetamol 500". *Expect:* DHA medicines with codes (e.g. GE10177 Paracetamol 500 mg Oral Tablet); picking one fills Unit (tablets) and Route (Oral).
+- [ ] **L2. Quantity.** Dose 2, 3 times a day, 3 days. *Expect:* Quantity to give fills in 18 by itself; you can change it.
+- [ ] **L3. Not on the list.** Type a made-up medicine → "Use … (not on DHA's list)". *Expect:* accepted, marked "not on DHA's list".
+- [ ] **L4. Allergy warning.** Record a Penicillin allergy, then add "Amoxicillin 500 mg Oral Capsule". *Expect:* red "Allergy warning … same group (penicillins)" on that card.
+- [ ] **L5. Blocked without a reason.** Continue to sign. *Expect:* "Medicine 1 clashes with a recorded allergy…". Give a reason → signing works; the sign screen shows the override in red.
+- [ ] **L6. No false alarm.** Paracetamol with the same patient. *Expect:* no warning.
+- [ ] **L7. Current medicines.** Next visit of that patient. *Expect:* "Current medicines" lists them, with the override reason; finished courses under "Medication history".
+- [ ] **L8. SMS and record.** Checkout. *Expect:* the SMS (simulator) and the printed record show one line per medicine (a long prescription in the SMS says "see your ACISI profile").
+- [ ] **L9. FHIR.** As G2. *Expect:* MedicationRequests with `"code":"GE…"` and the DHA route and unit codes.
+
 ## To confirm (not tests: things only you can check or decide)
 
 Bring these to the DHA/MOH call or check them yourself; tell Claude the answers and the code will be updated.
@@ -128,6 +140,7 @@ Bring these to the DHA/MOH call or check them yourself; tell Claude the answers 
 - [ ] **T5. Sending.** Immediate cases go to the SCDSC (form MOH 502), weekly MOH 505 to the SCDSC by Monday (guidelines). Ask DHA/MOH: should ACISI send these automatically (KHIS/eIDSR or the HIE)?
 - [ ] **T6. Privacy Notice.** Approve adding a sentence such as: *"Your clinic must report some infectious diseases (for example cholera or measles) to the Ministry of Health's public health officers, as the law requires."* (Then the ODPC record may need the same update.)
 - [ ] **T7. DPIA v1.2.** Read and sign: notifiable disease reporting was added (sections 2.5, 2.6, 4.2, action A9).
+- [ ] **T11. Medicines list terms.** DHA's ePrescription guide is CC-BY 4.0, but says the medicine list (from the Pharmacy and Poisons Board) is "subject to separate terms". Ask DHA whether ACISI may use and keep a copy of the list (it's what DHA requires for ePrescribing).
 - [ ] **T10. 2012 vs 2022 lists.** The older chart you sent (2012) differs from the 3rd edition (e.g. rabies, typhoid and dysentery are now immediate; COVID-19, chikungunya, Zika and smallpox were added). ACISI follows the 3rd edition. If your Sub-County still uses the older chart, tell Claude.
 - [ ] **T8. SMS sender.** When TextSMS is connected, the alert SMS (K3) and MFA (section F) both need a real-delivery test.
 - [ ] **T9. Restore test date** (H2) for the DHA form.

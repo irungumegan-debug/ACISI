@@ -1,5 +1,7 @@
 import type * as fhir4 from 'fhir/r4';
 import type { LabResultFlag, PatientIdType, Sex } from '@prisma/client';
+import { dhaDisplay, dhaSystem } from '../services/dhaTerminology';
+import { formatPrescriptionLine, FREQUENCIES, FrequencyCode, rowToLine } from '../services/prescriptionService';
 
 /**
  * ACISI records as HL7 FHIR R4 resources, for exchange with the Kenya Health
@@ -25,6 +27,7 @@ export const SYSTEMS = {
   alienId: 'https://acisi.co.ke/fhir/sid/kenya-alien-id',
   clinic: 'https://acisi.co.ke/fhir/sid/clinic',
   staffCode: 'https://acisi.co.ke/fhir/sid/staff-code',
+  prescriptionItem: 'https://acisi.co.ke/fhir/sid/prescription-item',
 } as const;
 
 const ID_SYSTEM: Record<PatientIdType, string> = {
@@ -127,6 +130,21 @@ export interface VisitRecord {
   /** ICD-11 MMS codes with WHO titles. */
   diagnosisCodes: { code: string; title: string }[];
   prescription: string | null;
+  /** Structured prescription lines (empty for visits before structured prescribing). */
+  prescriptionItems: {
+    id: string;
+    productCode: string | null;
+    drugName: string;
+    doseValue: number;
+    doseUnit: string;
+    route: string;
+    frequency: string;
+    durationDays: number | null;
+    quantity: number | null;
+    quantityUnit: string | null;
+    instructionCodes: string | null;
+    instructions: string | null;
+  }[];
   clinicId: string;
   departmentName: string;
   doctor: { id: string; name: string; staffCode: string } | null;
@@ -186,20 +204,63 @@ export function toConditions(v: VisitRecord, patientId: string): fhir4.Condition
   return [textOnly];
 }
 
-export function toMedicationRequest(v: VisitRecord, patientId: string): fhir4.MedicationRequest | null {
-  if (!v.prescription) return null;
-  return {
-    resourceType: 'MedicationRequest',
-    id: `${v.id}-rx`,
-    status: 'active',
-    intent: 'order',
-    medicationCodeableConcept: { text: v.prescription },
+/**
+ * One MedicationRequest per prescribed medicine, following the shape of
+ * DHA's Kenya ePrescription guide: medicine coded with DHA's Generic
+ * Products list, route and dose units with DHA codes, structured timing,
+ * DHA additional-instruction codes and the quantity to dispense. Visits
+ * from before structured prescribing are sent as one text-only request.
+ */
+export function toMedicationRequests(v: VisitRecord, patientId: string): fhir4.MedicationRequest[] {
+  const common = {
+    resourceType: 'MedicationRequest' as const,
+    status: (v.status === 'DONE' ? 'completed' : 'active') as fhir4.MedicationRequest['status'],
+    intent: 'order' as const,
+    category: [{ coding: [{ system: 'http://terminology.hl7.org/CodeSystem/medicationrequest-category', code: 'outpatient', display: 'Outpatient' }] }],
     subject: ref('Patient', patientId),
     encounter: ref('Encounter', v.id),
     ...(v.consultedAt ? { authoredOn: v.consultedAt.toISOString() } : {}),
     ...(v.doctor ? { requester: ref('Practitioner', v.doctor.id) } : {}),
-    dosageInstruction: [{ text: v.prescription }],
   };
+  if (v.prescriptionItems.length === 0) {
+    if (!v.prescription) return [];
+    return [{ ...common, id: `${v.id}-rx`, medicationCodeableConcept: { text: v.prescription }, dosageInstruction: [{ text: v.prescription }] }];
+  }
+  return v.prescriptionItems.map((i) => {
+    const line = rowToLine(i);
+    const freq = FREQUENCIES[i.frequency as FrequencyCode];
+    const unitCode = (code: string) => ({ system: dhaSystem('units'), code, unit: dhaDisplay('units', code) ?? code });
+    const repeat: fhir4.TimingRepeat = {
+      ...(freq?.fhir ? { frequency: freq.fhir.frequency, period: freq.fhir.period, periodUnit: freq.fhir.periodUnit as fhir4.TimingRepeat['periodUnit'] } : {}),
+      ...(i.frequency === 'STAT' ? { count: 1 } : {}),
+      ...(i.durationDays ? { boundsDuration: { value: i.durationDays, unit: 'd', system: 'http://unitsofmeasure.org', code: 'd' } } : {}),
+    };
+    const additional = (i.instructionCodes ? i.instructionCodes.split(',') : []).map((code) => ({
+      coding: [{ system: dhaSystem('instructions'), code, display: dhaDisplay('instructions', code) ?? code }],
+    }));
+    return {
+      ...common,
+      id: i.id,
+      identifier: [{ system: SYSTEMS.prescriptionItem, value: i.id }],
+      medicationCodeableConcept: i.productCode
+        ? { coding: [{ system: dhaSystem('products'), code: i.productCode, display: i.drugName }], text: i.drugName }
+        : { text: i.drugName },
+      ...(i.instructions ? { note: [{ text: i.instructions }] } : {}),
+      dosageInstruction: [
+        {
+          text: formatPrescriptionLine(line),
+          ...(additional.length ? { additionalInstruction: additional } : {}),
+          timing: { repeat, ...(freq?.fhir?.code ? { code: { coding: [{ system: 'http://terminology.hl7.org/CodeSystem/v3-GTSAbbreviation', code: freq.fhir.code }] } } : {}) },
+          ...(i.frequency === 'PRN' ? { asNeededBoolean: true } : {}),
+          route: { coding: [{ system: dhaSystem('routes'), code: i.route, display: dhaDisplay('routes', i.route) ?? i.route }] },
+          doseAndRate: [{ doseQuantity: { value: i.doseValue, ...unitCode(i.doseUnit) } }],
+        },
+      ],
+      ...(i.quantity
+        ? { dispenseRequest: { quantity: { value: i.quantity, ...unitCode(i.quantityUnit ?? i.doseUnit) }, ...(i.durationDays ? { expectedSupplyDuration: { value: i.durationDays, unit: 'd', system: 'http://unitsofmeasure.org', code: 'd' } } : {}) } }
+        : {}),
+    };
+  });
 }
 
 const INTERPRETATION: Record<LabResultFlag, fhir4.Coding> = {
@@ -325,8 +386,7 @@ export function patientEverythingBundle(input: {
   for (const v of visits) {
     resources.push(toEncounter(v, patient.id));
     resources.push(...toConditions(v, patient.id));
-    const rx = toMedicationRequest(v, patient.id);
-    if (rx) resources.push(rx);
+    resources.push(...toMedicationRequests(v, patient.id));
     resources.push(...toLabResources(v, patient.id));
   }
   return {

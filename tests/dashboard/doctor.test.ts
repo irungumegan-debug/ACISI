@@ -38,6 +38,7 @@ jest.mock('../../src/services/encounterService', () => ({
       this.name = 'InvalidPinError';
     }
   },
+  PinLockedOutError: class PinLockedOutError extends Error {},
 }));
 
 import { loadDashboardSession, SESSION_COOKIE_NAME } from '../../src/dashboard/session';
@@ -51,6 +52,7 @@ import {
 import { findActiveStaffById, setDoctorPresenceBySelf } from '../../src/services/staffService';
 import { listDepartmentAppointmentsToday } from '../../src/services/appointmentService';
 import { doctorRouter } from '../../src/dashboard/doctor';
+import { AllergyOverrideRequiredError } from '../../src/services/prescriptionService';
 import { getDoctorDepartmentIds } from '../../src/services/departmentService';
 
 const mockDoctorDepartments = getDoctorDepartmentIds as jest.Mock;
@@ -203,6 +205,9 @@ describe('GET /doctor/encounters/:id', () => {
   });
 });
 
+/** Paracetamol 500 mg Oral Tablet (DHA GE10177): 2 tablets 3 times a day for 3 days. */
+const RX = [{ productCode: 'GE10177', doseValue: 2, doseUnit: 'UM10415', route: 'RT10025', frequency: 'TDS', durationDays: 3 }];
+
 describe('POST /doctor/encounters/:id/consult', () => {
   it('rejects a missing diagnosis or prescription', async () => {
     mockLoadSession.mockResolvedValue(DOCTOR_SESSION);
@@ -214,7 +219,7 @@ describe('POST /doctor/encounters/:id/consult', () => {
   it('rejects a missing PIN — signing is not optional', async () => {
     mockLoadSession.mockResolvedValue(DOCTOR_SESSION);
     const res = await withCookie(
-      request(buildApp()).post('/doctor/encounters/enc-1/consult').send({ diagnosis: 'Flu', prescription: 'Paracetamol 500mg' }),
+      request(buildApp()).post('/doctor/encounters/enc-1/consult').send({ diagnosis: 'Flu', prescriptionItems: RX }),
     );
     expect(res.status).toBe(400);
     expect(mockSubmitConsult).not.toHaveBeenCalled();
@@ -227,7 +232,7 @@ describe('POST /doctor/encounters/:id/consult', () => {
     const res = await withCookie(
       request(buildApp())
         .post('/doctor/encounters/enc-1/consult')
-        .send({ diagnosisCodes: ['1F40.Z'], diagnosis: 'Flu', prescription: 'Paracetamol 500mg', pin: '1234' }),
+        .send({ diagnosisCodes: ['1F40.Z'], diagnosis: 'Flu', prescriptionItems: RX, pin: '1234' }),
     );
 
     expect(res.status).toBe(200);
@@ -250,7 +255,7 @@ describe('POST /doctor/encounters/:id/consult', () => {
     const res = await withCookie(
       request(buildApp())
         .post('/doctor/encounters/enc-1/consult')
-        .send({ diagnosisCodes: ['1F40.Z'], diagnosis: 'Flu', prescription: 'Paracetamol 500mg', pin: 'wrong' }),
+        .send({ diagnosisCodes: ['1F40.Z'], diagnosis: 'Flu', prescriptionItems: RX, pin: 'wrong' }),
     );
 
     expect(res.status).toBe(401);
@@ -278,12 +283,12 @@ describe('ICD-11 coded diagnosis', () => {
     mockSubmitConsult.mockResolvedValue({ id: 'enc-1', status: 'READY_FOR_CHECKOUT' });
     const send = (body: object) => withCookie(request(buildApp()).post('/doctor/encounters/enc-1/consult').send(body));
 
-    expect((await send({ diagnosisCodes: [], prescription: 'x', pin: '1' })).status).toBe(400);
-    const fake = await send({ diagnosisCodes: ['ZZ99'], prescription: 'x', pin: '1' });
+    expect((await send({ diagnosisCodes: [], prescriptionItems: RX, pin: '1' })).status).toBe(400);
+    const fake = await send({ diagnosisCodes: ['ZZ99'], prescriptionItems: RX, pin: '1' });
     expect(fake.status).toBe(400);
     expect(fake.body.error).toContain('ZZ99');
 
-    const ok = await send({ diagnosisCodes: ['1f40.z', '1F40.Z', 'BA00'], prescription: 'AL', pin: '1' });
+    const ok = await send({ diagnosisCodes: ['1f40.z', '1F40.Z', 'BA00'], prescriptionItems: RX, pin: '1' });
     expect(ok.status).toBe(200);
     expect(mockSubmitConsult.mock.lastCall[0].diagnosisCodes).toEqual([
       { code: '1F40.Z', title: 'Malaria due to Plasmodium falciparum, unspecified' },
@@ -297,5 +302,63 @@ describe('ICD-11 coded diagnosis', () => {
     const res = await withCookie(request(buildApp()).get('/doctor/icd11?q=cholera'));
     expect(res.body.results[0]).toEqual({ code: '1A00', title: 'Cholera' });
     expect(res.body.release).toBe('2025-01');
+  });
+});
+
+describe('structured prescriptions', () => {
+  const send = (body: object) => withCookie(request(buildApp()).post('/doctor/encounters/enc-1/consult').send(body));
+  beforeEach(() => {
+    mockLoadSession.mockResolvedValue(DOCTOR_SESSION);
+    mockDoctorDepartments.mockResolvedValue(['dept-1']);
+    mockSubmitConsult.mockResolvedValue({ id: 'enc-1', status: 'READY_FOR_CHECKOUT', notifiable: [] });
+  });
+
+  it('takes the medicine name from DHA\'s list, never from the browser', async () => {
+    const res = await send({ diagnosisCodes: ['1E32'], prescriptionItems: [{ ...RX[0], drugName: 'Something else' }], pin: '1' });
+    expect(res.status).toBe(200);
+    expect(mockSubmitConsult.mock.lastCall[0].prescriptionItems[0]).toMatchObject({
+      productCode: 'GE10177',
+      drugName: 'Paracetamol 500 mg Oral Tablet',
+      doseValue: 2,
+      doseUnit: 'UM10415',
+      route: 'RT10025',
+      frequency: 'TDS',
+      durationDays: 3,
+    });
+  });
+
+  it('refuses unknown medicine codes, units, routes and instructions', async () => {
+    const bad = async (patch: object) => (await send({ diagnosisCodes: ['1E32'], prescriptionItems: [{ ...RX[0], ...patch }], pin: '1' })).status;
+    expect(await bad({ productCode: 'GE99999' })).toBe(400);
+    expect(await bad({ doseUnit: 'UM99999' })).toBe(400);
+    expect(await bad({ route: 'RT10004' })).toBe(400); // haemodialysis: not offered
+    expect(await bad({ instructionCodes: ['MADE-UP'] })).toBe(400);
+    expect(await bad({ doseValue: 0 })).toBe(400);
+    expect(await bad({ productCode: null, drugName: '' })).toBe(400);
+    expect(mockSubmitConsult).not.toHaveBeenCalled();
+  });
+
+  it('accepts a medicine not on the list by name', async () => {
+    const res = await send({ diagnosisCodes: ['1E32'], prescriptionItems: [{ ...RX[0], productCode: null, drugName: 'Local herbal syrup' }], pin: '1' });
+    expect(res.status).toBe(200);
+    expect(mockSubmitConsult.mock.lastCall[0].prescriptionItems[0]).toMatchObject({ productCode: null, drugName: 'Local herbal syrup' });
+  });
+
+  it('an allergy clash without a reason is refused with the clashes listed (409)', async () => {
+    mockSubmitConsult.mockRejectedValueOnce(
+      new AllergyOverrideRequiredError([{ index: 0, drugName: 'Amoxicillin', allergyId: 'al-1', allergySubstance: 'Penicillin', reason: 'same group' }]),
+    );
+    const res = await send({ diagnosisCodes: ['1E32'], prescriptionItems: RX, pin: '1' });
+    expect(res.status).toBe(409);
+    expect(res.body.allergyConflicts[0]).toMatchObject({ index: 0, allergySubstance: 'Penicillin' });
+  });
+
+  it('searches DHA\'s medicines list and offers DHA codes for routes, units and instructions', async () => {
+    const m = await withCookie(request(buildApp()).get('/doctor/medicines?q=paracetamol 500'));
+    expect(m.body.results[0]).toMatchObject({ code: 'GE10177', name: 'Paracetamol 500 mg Oral Tablet', suggestedRoute: 'RT10025', suggestedDoseUnit: 'UM10415' });
+    const o = await withCookie(request(buildApp()).get('/doctor/prescription-options'));
+    expect(o.body.routes).toContainEqual({ code: 'RT10025', name: 'Oral' });
+    expect(o.body.instructions).toHaveLength(25);
+    expect(o.body.frequencies.map((f: { code: string }) => f.code)).toEqual(['OD', 'BD', 'TDS', 'QID', 'NOCTE', 'PRN', 'STAT', 'WEEKLY']);
   });
 });

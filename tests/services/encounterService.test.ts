@@ -5,6 +5,7 @@ jest.mock('../../src/db/prisma', () => ({
     encounter: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
     patient: { findUniqueOrThrow: jest.fn() },
     notifiableDiseaseCase: { createMany: jest.fn() },
+    prescriptionItem: { createMany: jest.fn() },
     // Interactive transactions run against the same mocks.
     $transaction: jest.fn((fn: (tx: unknown) => unknown) => fn(jest.requireMock('../../src/db/prisma').prisma)),
   },
@@ -63,6 +64,22 @@ const mockUpdateMany = (prisma.encounter as unknown as { updateMany: jest.Mock }
 const mockFindUniqueOrThrow = (prisma.encounter as unknown as { findUniqueOrThrow: jest.Mock }).findUniqueOrThrow;
 
 const DOCTOR_STAFF = { id: 'staff-1', name: 'Dr. Amani Wambui', pinHash: 'hashed' };
+
+/** A resolved prescription line: Paracetamol 500 mg Oral Tablet, 2 tablets 3 times a day for 3 days. */
+const PARA = {
+  productCode: 'GE10177',
+  drugName: 'Paracetamol 500 mg Oral Tablet',
+  doseValue: 2,
+  doseUnit: 'UM10415' as const,
+  route: 'RT10025',
+  frequency: 'TDS' as const,
+  durationDays: 3,
+  quantity: 18,
+  quantityUnit: 'UM10415' as const,
+  instructionCodes: ['TAKE-WITH-OR-AFTER-FOOD'],
+  instructions: null as string | null,
+  allergyOverrideReason: null as string | null,
+};
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -153,7 +170,7 @@ describe('submitConsultation', () => {
         staffId: 'staff-1',
         diagnosisCodes: [{ code: '1E32', title: 'Influenza, virus not identified' }],
         diagnosis: 'Flu',
-        prescription: 'Paracetamol',
+        prescriptionItems: [PARA],
         pin: '1234',
       }),
     ).rejects.toThrow(EncounterNotAccessibleError);
@@ -171,7 +188,7 @@ describe('submitConsultation', () => {
         staffId: 'staff-1',
         diagnosisCodes: [{ code: '1E32', title: 'Influenza, virus not identified' }],
         diagnosis: 'Flu',
-        prescription: 'Paracetamol',
+        prescriptionItems: [PARA],
         pin: '1234',
       }),
     ).rejects.toThrow(EncounterNotConsultableError);
@@ -191,7 +208,7 @@ describe('submitConsultation', () => {
         staffId: 'staff-1',
         diagnosisCodes: [{ code: '1E32', title: 'Influenza, virus not identified' }],
         diagnosis: 'Flu',
-        prescription: 'Paracetamol',
+        prescriptionItems: [PARA],
         pin: 'wrong',
       }),
     ).rejects.toThrow(InvalidPinError);
@@ -214,7 +231,7 @@ describe('submitConsultation', () => {
         staffId: 'staff-1',
         diagnosisCodes: [{ code: '1E32', title: 'Influenza, virus not identified' }],
         diagnosis: 'Flu',
-        prescription: 'Paracetamol',
+        prescriptionItems: [PARA],
         pin: '1234',
       }),
     ).rejects.toThrow(InvalidPinError);
@@ -235,7 +252,7 @@ describe('submitConsultation', () => {
       staffId: 'staff-1',
       diagnosis: 'Flu',
       diagnosisCodes: [{ code: '1E32', title: 'Influenza, virus not identified' }],
-      prescription: 'Paracetamol',
+      prescriptionItems: [PARA],
       pin: '1234',
     });
 
@@ -344,7 +361,7 @@ describe('signing PIN shares the per-account wrong-PIN lockout (C6)', () => {
     staffId: 'lock-doc',
     diagnosis: 'Flu',
     diagnosisCodes: [{ code: '1E32', title: 'Influenza, virus not identified' }],
-    prescription: 'Paracetamol',
+    prescriptionItems: [PARA],
     pin: '1234',
   };
 
@@ -412,7 +429,7 @@ describe('notifiable diseases at signing', () => {
       staffId: 'staff-notif',
       diagnosis: '',
       diagnosisCodes: codes,
-      prescription: 'ORS',
+      prescriptionItems: [PARA],
       pin: '1234',
     });
 
@@ -446,5 +463,73 @@ describe('notifiable diseases at signing', () => {
     const result = await sign([{ code: 'BA00', title: 'Essential hypertension' }]);
     expect(createMany).not.toHaveBeenCalled();
     expect(result.notifiable).toEqual([]);
+  });
+});
+
+describe('structured prescriptions and the allergy check at signing', () => {
+  const rxCreate = (prisma as unknown as { prescriptionItem: { createMany: jest.Mock } }).prescriptionItem.createMany;
+  const { listAllergiesForClinic } = jest.requireMock('../../src/services/allergyService') as { listAllergiesForClinic: jest.Mock };
+  const AMOX = { ...PARA, productCode: 'GE10151', drugName: 'Amoxicillin 250 mg/Clavulanic acid 125 mg Oral Tablet', instructionCodes: [] };
+  const penicillin = { id: 'al-1', category: 'MEDICATION', substance: 'Penicillin', removedAt: null };
+  const sign = (items: typeof PARA[]) =>
+    submitConsultation({
+      encounterId: 'enc-rx',
+      clinicId: 'clinic-A',
+      departmentIds: ['dept-1'],
+      staffId: 'staff-rx',
+      diagnosis: '',
+      diagnosisCodes: [{ code: '1E32', title: 'Influenza, virus not identified' }],
+      prescriptionItems: items,
+      prescriptionAdvice: 'Drink plenty of fluids',
+      pin: '1234',
+    });
+
+  beforeEach(() => {
+    rxCreate.mockReset();
+    mockFindFirst.mockResolvedValue({ id: 'enc-rx', patientId: 'pat-1', status: 'IN_CONSULTATION' });
+    mockFindActiveStaffById.mockResolvedValue(DOCTOR_STAFF);
+    mockComparePin.mockResolvedValue(true);
+    mockUpdate.mockResolvedValue({ id: 'enc-rx', patientId: 'pat-1', status: 'READY_FOR_CHECKOUT' });
+    listAllergiesForClinic.mockResolvedValue({ allergies: [], hiddenElsewhere: false });
+  });
+
+  it('saves one row per medicine and writes the readable prescription text from them', async () => {
+    await sign([PARA]);
+    expect(mockUpdate.mock.lastCall[0].data.prescription).toBe(
+      'Paracetamol 500 mg Oral Tablet: 2 tablets 3 times a day for 3 days (18 tablets). Take with or after food.\nDrink plenty of fluids',
+    );
+    expect(rxCreate).toHaveBeenCalledWith({
+      data: [expect.objectContaining({ encounterId: 'enc-rx', position: 0, productCode: 'GE10177', instructionCodes: 'TAKE-WITH-OR-AFTER-FOOD', allergyOverrideReason: null })],
+    });
+  });
+
+  it('a penicillin allergy blocks co-amoxiclav until the doctor gives a reason, and the PIN is not even checked', async () => {
+    listAllergiesForClinic.mockResolvedValue({ allergies: [penicillin], hiddenElsewhere: false });
+    mockComparePin.mockClear();
+    await expect(sign([PARA, AMOX])).rejects.toMatchObject({ conflicts: [expect.objectContaining({ index: 1, allergyId: 'al-1' })] });
+    expect(mockComparePin).not.toHaveBeenCalled();
+    expect(mockUpdate).not.toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'enc-rx' } }));
+  });
+
+  it('with a reason it is signed, the reason is kept on that line only, and the override is audit-logged (IDs only)', async () => {
+    listAllergiesForClinic.mockResolvedValue({ allergies: [penicillin], hiddenElsewhere: false });
+    await sign([{ ...PARA, allergyOverrideReason: 'not needed' }, { ...AMOX, allergyOverrideReason: 'Reaction was mild; benefits outweigh' }]);
+    const rows = rxCreate.mock.lastCall[0].data;
+    expect(rows[0].allergyOverrideReason).toBeNull();
+    expect(rows[1].allergyOverrideReason).toBe('Reaction was mild; benefits outweigh');
+    expect(mockRecordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'PRESCRIPTION_ALLERGY_OVERRIDDEN', entityId: 'enc-rx', metadata: { lines: 1, allergyIds: ['al-1'] } }),
+    );
+  });
+
+  it('food and removed allergies are not checked against medicines', async () => {
+    listAllergiesForClinic.mockResolvedValue({
+      allergies: [
+        { id: 'al-2', category: 'FOOD', substance: 'Amoxicillin', removedAt: null },
+        { ...penicillin, removedAt: new Date() },
+      ],
+      hiddenElsewhere: false,
+    });
+    await expect(sign([AMOX])).resolves.toBeTruthy();
   });
 });

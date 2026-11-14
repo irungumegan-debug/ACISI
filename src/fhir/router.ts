@@ -110,6 +110,7 @@ fhirRouter.get('/Patient/:id/\\$everything', async (req, res) => {
       checkIn: { select: { department: { select: { name: true } } } },
       consultedByStaff: { select: { id: true, name: true, staffCode: true } },
       assignedDoctor: { select: { id: true, name: true, staffCode: true } },
+      prescriptionItems: { orderBy: { position: 'asc' } },
       labOrders: {
         orderBy: { requestedAt: 'asc' },
         include: { items: { orderBy: { position: 'asc' } }, requestedByStaff: { select: { id: true, name: true, staffCode: true } } },
@@ -128,6 +129,7 @@ fhirRouter.get('/Patient/:id/\\$everything', async (req, res) => {
     diagnosis: e.diagnosis,
     diagnosisCodes: parseDiagnosisCodes(e.diagnosisCodes),
     prescription: e.prescription,
+    prescriptionItems: e.prescriptionItems,
     clinicId: e.clinicId,
     departmentName: e.checkIn.department.name,
     doctor: e.consultedByStaff ?? e.assignedDoctor,
