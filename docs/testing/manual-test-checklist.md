@@ -1,6 +1,6 @@
 # ACISI manual test checklist (features built 13–14 November 2026)
 
-Sections A–K are tests; the last section lists things to **confirm**.
+Sections A–N are tests; the last section lists things to **confirm**.
 
 Use **test patients and test staff only**, never real patient data. Work on the
 live site (acisi.co.ke) after each update is installed. Tick each box when the
