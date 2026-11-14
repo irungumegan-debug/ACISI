@@ -110,6 +110,13 @@ function RolePicker({ onPick }: { onPick: (kind: 'patient' | 'doctor' | 'staff' 
   );
 }
 
+/** The latest date of birth that is 18 today (YYYY-MM-DD), for the date picker. */
+function latestAdultBirthday(): string {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - 18);
+  return d.toISOString().slice(0, 10);
+}
+
 function PatientSignupForm({ onBack }: { onBack: () => void }) {
   const navigate = useNavigate();
   const { setSession } = usePatientAuth();
@@ -195,7 +202,8 @@ function PatientSignupForm({ onBack }: { onBack: () => void }) {
       </div>
       <div className="field">
         <label>Date of birth</label>
-        <input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} />
+        <input type="date" required max={latestAdultBirthday()} value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} />
+        <p className="field-hint">You need to be 18 or older. A parent or guardian checks a child in at the clinic.</p>
       </div>
       <div className="field">
         <label htmlFor="signup-sex">Sex (optional)</label>

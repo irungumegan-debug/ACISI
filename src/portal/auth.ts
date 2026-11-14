@@ -120,11 +120,19 @@ portalAuthRouter.post('/register', async (req, res) => {
   // code, or at the clinic); only then does the patient choose their PIN.
   // The signup is kept so nothing is retyped.
   try {
+    // Accounts are for adults (Terms, Privacy Notice): a parent or guardian
+    // manages a child's visits at the clinic.
+    const dob = parseSignupDateOfBirth(parsed.data.dateOfBirth);
+    if (!dob.ok) {
+      res.status(400).json({ error: dob.error });
+      return;
+    }
+
     const { pendingId, smsSent } = await startPendingSignup({
       phoneNumberE164: phoneE164,
       firstName: parsed.data.firstName,
       lastName: parsed.data.lastName,
-      dateOfBirth: parsed.data.dateOfBirth ? new Date(parsed.data.dateOfBirth) : undefined,
+      dateOfBirth: dob.date,
       sex: parsed.data.sex ?? 'UNKNOWN',
       email: parsed.data.email || undefined,
       identity,
@@ -413,6 +421,27 @@ portalAuthRouter.post('/account/delete', requirePatientSession, async (req, res)
 portalAuthRouter.post('/activity', (req, res, next) => {
   requirePatientSession(req, res, () => res.status(204).send()).catch(next);
 });
+
+export const MIN_ACCOUNT_AGE = 18;
+
+/** Signup date of birth: required, a real past date, and 18 or older today. */
+export function parseSignupDateOfBirth(raw: string | undefined, now: Date = new Date()): { ok: true; date: Date } | { ok: false; error: string } {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw?.trim() ?? '');
+  if (!m) return { ok: false, error: 'Enter your date of birth' };
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const date = new Date(Date.UTC(y, mo - 1, d));
+  if (date.getUTCFullYear() !== y || date.getUTCMonth() !== mo - 1 || date.getUTCDate() !== d || y < 1900 || date > now) {
+    return { ok: false, error: 'Enter a real date of birth' };
+  }
+  const adultFrom = new Date(Date.UTC(y + MIN_ACCOUNT_AGE, mo - 1, d));
+  if (adultFrom > now) {
+    return {
+      ok: false,
+      error: 'You must be 18 or older to create an ACISI account. A parent or guardian can check a child in at the clinic.',
+    };
+  }
+  return { ok: true, date };
+}
 
 export async function requirePatientSession(req: Request, res: Response, next: NextFunction): Promise<void> {
   const token = req.cookies?.[PATIENT_SESSION_COOKIE_NAME] as string | undefined;
