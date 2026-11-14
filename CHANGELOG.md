@@ -3,6 +3,18 @@
 Plain-language record of what changed in ACISI, which data each change
 touches, and who can use it. Newest first.
 
+## 2026-11-14: Allergy list
+
+One database change, additive (`20261114140000_patient_allergies`); undo
+script in `prisma/rollback/`.
+
+| # | What changed | Data it touches | Who |
+|---|---|---|---|
+| A1 | **Record allergies:** substance, type (medicine, food, environment, other), reaction and severity, for patients in the doctor's own queue. Shown in a red banner at the top of the consultation page. | New: patient allergies (substance, reaction and removal reason encrypted at rest) | Doctors |
+| A2 | **Allergy history:** an allergy recorded in error is removed with a reason, never deleted; removed ones are listed with who, when and why. Only the clinic that recorded an allergy can remove it. | Patient allergies | Doctors |
+| A3 | **Sharing:** other clinics' allergies follow the visit-records rule (sharing consent or a records code); otherwise the doctor is told some are hidden. | — | Doctors |
+| A4 | **Patient portal:** "My allergies" lists current allergies. **FHIR:** AllergyIntolerance in Patient/$everything (removed ones as entered-in-error). Recording and removal are audit-logged with IDs only. | — | Patients |
+
 ## 2026-11-14: FHIR R4 interface (Kenya HIE readiness)
 
 HL7 FHIR R4 (4.0.1) at `/fhir/r4`, for exchange with the Kenya Health

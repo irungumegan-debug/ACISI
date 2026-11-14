@@ -6,6 +6,7 @@ import { EMPTY_IDENTITY, IdentityFields } from '../components/IdentityFields';
 import { RecordRequestsNotice, SharingPanel } from '../components/RecordSharing';
 import { FeeNotice } from '../components/FeeNotice';
 import { MyFiles } from '../components/MyFiles';
+import { MyAllergies } from '../components/MyAllergies';
 import type { PatientIdentity } from '../lib/api';
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -757,6 +758,7 @@ function RecordsPanel({ patientCode }: { patientCode: string }) {
           </>
         )}
       </div>
+      <MyAllergies />
       <MyFiles />
     </>
   );

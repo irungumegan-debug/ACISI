@@ -266,6 +266,27 @@ export interface EncounterDetail {
   crossClinicBasis?: 'STANDING_CONSENT' | 'SHARING_CODE' | null;
   /** This visit's lab requests (results once signed). Doctor view only. */
   labOrders?: LabOrderView[];
+  /** Current and removed allergies (same sharing rule as visit history). */
+  allergies?: AllergyItem[];
+  allergiesHiddenElsewhere?: boolean;
+}
+
+export type AllergyCategory = 'MEDICATION' | 'FOOD' | 'ENVIRONMENT' | 'OTHER';
+export type AllergySeverity = 'MILD' | 'MODERATE' | 'SEVERE' | 'UNKNOWN';
+
+export interface AllergyItem {
+  id: string;
+  category: AllergyCategory;
+  substance: string;
+  reaction: string | null;
+  severity: AllergySeverity;
+  recordedAt: string;
+  recordedByName: string;
+  clinicName: string;
+  isOwnClinic: boolean;
+  removedAt: string | null;
+  removedByName: string | null;
+  removedReason: string | null;
 }
 
 export interface DepartmentOption {
@@ -793,6 +814,17 @@ export const api = {
 
   getDoctorEncounter(encounterId: string) {
     return request<EncounterDetail>(`/doctor/encounters/${encounterId}`);
+  },
+
+  recordAllergy(encounterId: string, body: { category: AllergyCategory; substance: string; reaction: string; severity: AllergySeverity }) {
+    return request<AllergyItem>(`/doctor/encounters/${encodeURIComponent(encounterId)}/allergies`, { method: 'POST', body: JSON.stringify(body) });
+  },
+
+  removeAllergy(encounterId: string, allergyId: string, reason: string) {
+    return request<AllergyItem>(`/doctor/encounters/${encodeURIComponent(encounterId)}/allergies/${encodeURIComponent(allergyId)}/remove`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
   },
 
   getDoctorLabTests() {

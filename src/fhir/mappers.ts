@@ -232,12 +232,62 @@ export function toLabResources(v: VisitRecord, patientId: string): (fhir4.Servic
   return out;
 }
 
+export interface AllergyRecord {
+  id: string;
+  category: 'MEDICATION' | 'FOOD' | 'ENVIRONMENT' | 'OTHER';
+  substance: string;
+  reaction: string | null;
+  severity: 'MILD' | 'MODERATE' | 'SEVERE' | 'UNKNOWN';
+  recordedAt: Date;
+  recordedBy: { id: string; name: string; staffCode: string };
+  removedAt: Date | null;
+}
+
+const ALLERGY_CATEGORY: Record<AllergyRecord['category'], fhir4.AllergyIntolerance['category']> = {
+  MEDICATION: ['medication'],
+  FOOD: ['food'],
+  ENVIRONMENT: ['environment'],
+  OTHER: undefined,
+};
+const REACTION_SEVERITY: Record<AllergyRecord['severity'], 'mild' | 'moderate' | 'severe' | undefined> = {
+  MILD: 'mild',
+  MODERATE: 'moderate',
+  SEVERE: 'severe',
+  UNKNOWN: undefined,
+};
+
+/** An allergy as AllergyIntolerance; a removed one is "entered-in-error" with clinical status inactive. */
+export function toAllergyIntolerance(a: AllergyRecord, patientId: string): fhir4.AllergyIntolerance {
+  const category = ALLERGY_CATEGORY[a.category];
+  const severity = REACTION_SEVERITY[a.severity];
+  return {
+    resourceType: 'AllergyIntolerance',
+    id: a.id,
+    clinicalStatus: {
+      coding: [{ system: 'http://terminology.hl7.org/CodeSystem/allergyintolerance-clinical', code: a.removedAt ? 'inactive' : 'active' }],
+    },
+    verificationStatus: {
+      coding: [{ system: 'http://terminology.hl7.org/CodeSystem/allergyintolerance-verification', code: a.removedAt ? 'entered-in-error' : 'confirmed' }],
+    },
+    ...(category ? { category } : {}),
+    ...(a.severity === 'SEVERE' ? { criticality: 'high' as const } : {}),
+    code: { text: a.substance },
+    patient: ref('Patient', patientId),
+    recordedDate: a.recordedAt.toISOString(),
+    recorder: ref('Practitioner', a.recordedBy.id),
+    ...(a.reaction || severity
+      ? { reaction: [{ manifestation: [{ text: a.reaction ?? 'Not recorded' }], ...(severity ? { severity } : {}) }] }
+      : {}),
+  };
+}
+
 /** A patient's record as a FHIR R4 "searchset" Bundle (the result of Patient/$everything). */
 export function patientEverythingBundle(input: {
   baseUrl: string;
   patient: PatientRecord;
   clinics: { id: string; name: string; county: string | null }[];
   visits: VisitRecord[];
+  allergies?: AllergyRecord[];
   now?: Date;
 }): fhir4.Bundle {
   const { baseUrl, patient, visits } = input;
@@ -246,10 +296,12 @@ export function patientEverythingBundle(input: {
     if (v.doctor) practitioners.set(v.doctor.id, v.doctor);
     for (const o of v.labOrders) practitioners.set(o.requestedBy.id, o.requestedBy);
   }
+  for (const a of input.allergies ?? []) practitioners.set(a.recordedBy.id, a.recordedBy);
   const resources: fhir4.FhirResource[] = [
     toPatient(patient),
     ...input.clinics.map(toOrganization),
     ...[...practitioners.values()].map(toPractitioner),
+    ...(input.allergies ?? []).map((a) => toAllergyIntolerance(a, patient.id)),
   ];
   for (const v of visits) {
     resources.push(toEncounter(v, patient.id));
@@ -299,6 +351,7 @@ export function capabilityStatement(baseUrl: string, version: string): fhir4.Cap
             interaction: [{ code: 'read' }],
             operation: [{ name: 'everything', definition: 'http://hl7.org/fhir/OperationDefinition/Patient-everything' }],
           },
+          inBundle('AllergyIntolerance'),
           inBundle('Encounter'),
           inBundle('Condition'),
           inBundle('MedicationRequest'),

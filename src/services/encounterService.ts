@@ -4,6 +4,12 @@ import { prisma } from '../db/prisma';
 import { recordAuditEvent } from './auditService';
 import { verifySigningPin } from './signingPin';
 import { getLabOrdersForEncounter, LabOrderView } from './labService';
+import { AllergyView, listAllergiesForClinic } from './allergyService';
+
+async function allergiesFor(patientId: string, clinicId: string): Promise<{ allergies: AllergyView[]; allergiesHiddenElsewhere: boolean }> {
+  const { allergies, hiddenElsewhere } = await listAllergiesForClinic(patientId, clinicId);
+  return { allergies, allergiesHiddenElsewhere: hiddenElsewhere };
+}
 import { getScopedHistory, ScopedHistoryEntry } from './patientService';
 import { emailConfigured } from '../config/email';
 import { enqueueVisitSummaryEmail } from '../jobs/queue';
@@ -80,6 +86,10 @@ export interface EncounterDetail {
   hasHiddenHistoryElsewhere: boolean;
   /** This visit's lab requests, with results once the lab has signed them. */
   labOrders: LabOrderView[];
+  /** The patient's allergies (current and removed), same sharing rule as visit history. */
+  allergies: AllergyView[];
+  /** True when other clinics recorded allergies that aren't shown (no sharing consent). */
+  allergiesHiddenElsewhere: boolean;
 }
 
 async function assertEncounterInDoctorQueue(encounterId: string, clinicId: string, departmentIds: string[], staffId: string): Promise<Encounter> {
@@ -144,6 +154,7 @@ export async function getEncounterForDoctor(
     history,
     hasHiddenHistoryElsewhere,
     labOrders: await getLabOrdersForEncounter(encounter.id),
+    ...(await allergiesFor(encounter.patientId, clinicId)),
   };
 }
 

@@ -187,6 +187,7 @@ model Clinic {
   patientFiles     PatientFile[]
   labTests         LabTest[]
   labOrders        LabOrder[]
+  allergies        PatientAllergy[]
 
   @@map("clinics")
 }
@@ -295,6 +296,8 @@ model Staff {
   labOrdersRequested       LabOrder[]        @relation("LabOrderRequestedBy")
   labOrdersStarted         LabOrder[]        @relation("LabOrderStartedBy")
   labOrdersCompleted       LabOrder[]        @relation("LabOrderCompletedBy")
+  allergiesRecorded        PatientAllergy[]  @relation("AllergyRecordedBy")
+  allergiesRemoved         PatientAllergy[]  @relation("AllergyRemovedBy")
 
   @@index([clinicId])
   @@index([departmentId])
@@ -370,6 +373,7 @@ model Patient {
   appointments     Appointment[]
   legalAcceptances LegalAcceptance[]
   files            PatientFile[]
+  allergies        PatientAllergy[]
 
   @@map("patients")
 }
@@ -1112,4 +1116,48 @@ model LabOrderItem {
 
   @@index([labOrderId])
   @@map("lab_order_items")
+}
+
+enum AllergyCategory {
+  MEDICATION
+  FOOD
+  ENVIRONMENT
+  OTHER
+}
+
+enum AllergySeverity {
+  MILD
+  MODERATE
+  SEVERE
+  UNKNOWN
+}
+
+/// A patient's allergy or intolerance, recorded by a doctor. Never deleted:
+/// an allergy found to be wrong is marked removed (who, when, why), so the
+/// full allergy history stays. Substance, reaction and reasons are encrypted
+/// at rest (utils/fieldCrypto.ts).
+model PatientAllergy {
+  id                 String          @id @default(cuid())
+  patientId          String
+  patient            Patient         @relation(fields: [patientId], references: [id])
+  /// The clinic where it was recorded.
+  clinicId           String
+  clinic             Clinic          @relation(fields: [clinicId], references: [id])
+  category           AllergyCategory
+  /// e.g. "Penicillin", "Groundnuts". Encrypted at rest.
+  substance          String
+  /// e.g. "Rash, swelling of the lips". Encrypted at rest.
+  reaction           String?
+  severity           AllergySeverity @default(UNKNOWN)
+  recordedByStaffId  String
+  recordedByStaff    Staff           @relation("AllergyRecordedBy", fields: [recordedByStaffId], references: [id])
+  recordedAt         DateTime        @default(now())
+  removedAt          DateTime?
+  removedByStaffId   String?
+  removedByStaff     Staff?          @relation("AllergyRemovedBy", fields: [removedByStaffId], references: [id])
+  /// Why it was removed (e.g. "Recorded in error"). Encrypted at rest.
+  removedReason      String?
+
+  @@index([patientId])
+  @@map("patient_allergies")
 }
