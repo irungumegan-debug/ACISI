@@ -397,6 +397,16 @@ uploading clinic and the patient; other clinics only on a sharing basis
 (`crossClinicAccessBasis`). Uploads are refused below `FILE_UPLOAD_MIN_FREE_MB`
 free disk. Every upload and view is audit-logged with IDs only.
 
+## FHIR R4 interface (`src/fhir/`)
+
+`mappers.ts` turns ACISI records into FHIR R4 core resources (typed with
+`@types/fhir`); `router.ts` serves them at `/fhir/r4`: `metadata` (public),
+`Patient/:id` (staff with the patient-page scope) and `Patient/:id/$everything`
+(doctors only, own queue, own clinic's visits). Values are decrypted by the
+database client like everywhere else. Still to come, per DHA's HIE spec:
+national identifier systems (Client Registry, KMHFL), ICD-11/LOINC codes,
+Kenyan profiles, and system-to-system authentication and submission to the HIE.
+
 ## Two frontend SPAs, one origin
 
 `web/` (marketing site, signup/login, patient portal) and `dashboard/`

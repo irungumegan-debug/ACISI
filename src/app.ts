@@ -14,6 +14,8 @@ import { dashboardRouter } from './dashboard/router';
 import { portalRouter } from './portal/router';
 import { clinicsRouter } from './clinics/router';
 import { ownerRouter } from './owner/router';
+import { fhirRouter } from './fhir/router';
+import { FHIR_BASE_PATH } from './fhir/mappers';
 import { requestLogger } from './middleware/requestLogger';
 import { errorHandler } from './middleware/errorHandler';
 import { logger } from './utils/logger';
@@ -49,6 +51,8 @@ export function createApp(): Express {
   app.use('/api/patients', portalRouter);
   app.use('/api/clinics', clinicsRouter);
   app.use('/api/owner', ownerRouter);
+  // HL7 FHIR R4 (Kenya HIE readiness): /fhir/r4/metadata, /fhir/r4/Patient/:id/$everything
+  app.use(FHIR_BASE_PATH, fhirRouter);
 
   // Three separate SPA builds, served statically from this same
   // process/origin — no CORS needed, and session cookies work the same way

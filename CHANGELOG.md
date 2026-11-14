@@ -3,6 +3,23 @@
 Plain-language record of what changed in ACISI, which data each change
 touches, and who can use it. Newest first.
 
+## 2026-11-14: FHIR R4 interface (Kenya HIE readiness)
+
+HL7 FHIR R4 (4.0.1) at `/fhir/r4`, for exchange with the Kenya Health
+Information Exchange. No database change.
+
+| # | What changed | Who |
+|---|---|---|
+| H1 | `GET /fhir/r4/metadata`: CapabilityStatement (public; no patient data). Claims only what is served. | — |
+| H2 | `GET /fhir/r4/Patient/:id`: Patient resource (ACISI ID, ID document, name, sex, birth date, phone, next of kin). Same access rule as the patient page. | Front desk, admins, doctors |
+| H3 | `GET /fhir/r4/Patient/:id/$everything`: Bundle with Patient, Organization (clinic), Practitioner, Encounter, Condition (diagnosis), MedicationRequest (prescription), ServiceRequest (lab test) and Observation (signed lab result, with interpretation N/A/AA). Doctors only, for patients in their own queue; this clinic's visits only. | Doctors |
+| H4 | Every read is audit-logged (`FHIR_PATIENT_EXPORTED`); errors are FHIR OperationOutcome resources. Output checked with an independent FHIR R4 validator: 0 errors. | — |
+
+Diagnoses, prescriptions and lab tests are sent as text until ICD-11/LOINC
+coding is added; identifier systems are ACISI's own until DHA confirms the
+national ones. System-to-system authentication for the HIE follows DHA's
+specification.
+
 ## 2026-11-14: Multi-factor login for clinic admins and doctors
 
 After the right staff ID and PIN, clinic admins and doctors enter a 6-digit

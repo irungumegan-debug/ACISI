@@ -30,5 +30,7 @@ USSD-first clinic management platform for small clinics in Kenya. See
   ICD-11 MMS Simple Tabulation file. Remaining, in order:
   (3) ICD-11 coded diagnoses incl. MOH
   notifiable diseases; (4) notifiable-disease alert + automatic weekly IDSR
-  report; (5-6) FHIR R4 interface ready for the Kenya HIE; (7) retest, update
+  report; (5-6) FHIR R4 interface: base built 14 Nov (src/fhir/, /fhir/r4); adapt to
+  DHA's HIE spec (identifiers, profiles, auth, submission) after the owner's
+  call with DHA; (7) retest, update
   the attestation, submit.
