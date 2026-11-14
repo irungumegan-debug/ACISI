@@ -98,3 +98,16 @@ export const maintenanceQueue = new Queue<MaintenanceJobData>('maintenance', que
 export async function scheduleHourlyMaintenance(): Promise<void> {
   await maintenanceQueue.upsertJobScheduler('hourly-maintenance', { pattern: '0 * * * *', tz: 'Africa/Nairobi' }, { name: 'hourly', data: {}, opts: JOB_RETENTION });
 }
+
+/** The once-a-minute "you're nearly next" sweep carries no data. */
+export type QueueAlertJobData = Record<string, never>;
+
+export const queueAlertQueue = new Queue<QueueAlertJobData>('queue-alerts', queueOptions);
+
+/**
+ * Starts (idempotent, safe on every boot) the once-a-minute sweep that sends
+ * waiting patients a "you're nearly next" SMS (see jobs/workers/queueAlertWorker.ts).
+ */
+export async function scheduleQueueAlertSweep(): Promise<void> {
+  await queueAlertQueue.upsertJobScheduler('nearly-next-sweep', { every: 60_000 }, { name: 'sweep', data: {}, opts: JOB_RETENTION });
+}

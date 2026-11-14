@@ -129,6 +129,15 @@ code), and a **test patient** with a phone you can check.
 - [ ] **L8. SMS and record.** Checkout. *Expect:* the SMS (simulator) and the printed record show one line per medicine (a long prescription in the SMS says "see your ACISI profile").
 - [ ] **L9. FHIR.** As G2. *Expect:* MedicationRequests with `"code":"GE…"` and the DHA route and unit codes.
 
+## M. Live queue position (after the queue update is installed)
+
+- [ ] **M1. Walk-in sees their number.** Front desk checks in 3 test patients (A, B, C); C has a portal account. C logs in. *Expect:* "My visit today … You're number 3".
+- [ ] **M2. It moves by itself.** Doctor opens patient A. Wait up to 20 seconds without touching C's phone. *Expect:* C's card changes to "You're number 2".
+- [ ] **M3. Stages.** Doctor opens C. *Expect:* "With the doctor"; after a lab request "At the lab"; when results are signed "Back from the lab"; after signing "Ready to pay".
+- [ ] **M4. Remote check-in SMS** *(simulator until live SMS)*. Check in from the portal with others waiting. *Expect:* "…Payment confirmed: KES … You are number N in the queue."
+- [ ] **M5. Nearly-next SMS** *(simulator)*. A patient waiting 10+ minutes with 2 or fewer ahead. *Expect:* one SMS "ACISI: 2 people are ahead of you at …" (or "You are next at …"); never a second one for the same visit.
+- [ ] **M6. Opted out.** A patient marked "does not want SMS". *Expect:* no nearly-next SMS; the portal card still works.
+
 ## To confirm (not tests: things only you can check or decide)
 
 Bring these to the DHA/MOH call or check them yourself; tell Claude the answers and the code will be updated.

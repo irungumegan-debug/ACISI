@@ -3,6 +3,18 @@
 Plain-language record of what changed in ACISI, which data each change
 touches, and who can use it. Newest first.
 
+## 2026-11-14: Live place in the queue for patients
+
+One database change, additive (`20261114220000_queue_nearly_next_sms`); undo
+script in `prisma/rollback/`.
+
+| # | What changed | Data it touches | Who |
+|---|---|---|---|
+| Q1 | **"My visit today" card** at the top of the patient portal, for any visit in progress however the patient checked in (front desk walk-in, portal, USSD): "You're number 3", "You're next", "With the doctor", "At the lab", "Back from the lab", "Ready to pay". Refreshes every 20 seconds while the page is open, so the number drops as each person ahead is called in. | — (reads visits) | Patients |
+| Q2 | **Remote check-in SMS** now ends "You are number 4 in the queue." when the patient is already waiting. Still one SMS. | — | Patients |
+| Q3 | **"You're nearly next" SMS**, checked every minute: once per visit, to anyone with 2 or fewer people ahead who has waited at least 10 minutes (walk-ins included, so they can step out). "ACISI: 2 people are ahead of you at {clinic}. Please make your way there." Never the department or anything medical; respects "does not want SMS"; counted against the clinic's SMS allowance; audit-logged (IDs only). | Visits: new `nearlyNextSmsAt` | Patients |
+| Q4 | The queue number is calculated the same way everywhere (portal, SMS): waiting patients at the same clinic and department who checked in earlier and can go to the same doctor. | — | — |
+
 ## 2026-11-14: Structured prescriptions and allergy warning
 
 One database change, additive (`20261114200000_prescription_items`); undo

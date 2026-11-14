@@ -422,6 +422,17 @@ requires 1-5 codes; the server validates them and stores
 release means rebuilding the JSON with the script and changing
 `ICD11_RELEASE`.
 
+## Patient queue position (`src/services/queueStatusService.ts`)
+
+`queuePositionFor` (WAITING visits at the same clinic and department created
+earlier, restricted to the assigned doctor's queue plus unassigned visits) is
+the one place the number is worked out. `GET /api/patients/visit-today`
+returns the patient's visits in progress (any channel) with stage and number;
+the portal card polls it every 20 s while visible. The `queue-alerts` BullMQ
+scheduler runs `sendNearlyNextSms` every minute: it claims
+`encounters.nearlyNextSmsAt` before sending, so each visit gets at most one
+"nearly next" SMS (2 or fewer ahead, waited 10+ minutes).
+
 ## Structured prescriptions (`src/services/prescriptionService.ts`)
 
 Each medicine is a `PrescriptionItem` (DHA Generic Products code or a typed

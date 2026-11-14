@@ -249,6 +249,20 @@ export function buildNotifiableAlertSms(input: { clinicName: string }): string {
   return `${before}${fitClinicName(input.clinicName, before.length + after.length)}${after}`;
 }
 
+/**
+ * When 2 or fewer people are ahead: "ACISI: You are next at Sunrise Family
+ * Clinic. Please be ready." / "ACISI: 2 people are ahead of you at Sunrise
+ * Family Clinic. Please make your way there." Never the department or
+ * anything medical. Always one SMS.
+ */
+export function buildNearlyNextSms(input: { clinicName: string; peopleAhead: number }): string {
+  const [before, after] =
+    input.peopleAhead <= 0
+      ? ['ACISI: You are next at ', '. Please be ready.']
+      : [`ACISI: ${input.peopleAhead} ${input.peopleAhead === 1 ? 'person is' : 'people are'} ahead of you at `, '. Please make your way there.'];
+  return `${before}${fitClinicName(input.clinicName, before.length + after.length)}${after}`;
+}
+
 /** Clinic name made SMS-safe and shortened so `before + name + after` fits one SMS. */
 function fitClinicName(clinicName: string, fixedLength: number): string {
   const room = SINGLE_SMS_MAX_CHARS - fixedLength;
@@ -258,13 +272,15 @@ function fitClinicName(clinicName: string, fixedLength: number): string {
 
 /**
  * The ACISI check-in fee SMS: two short lines, always one SMS.
- * Paid:   "ACISI: Check-in confirmed at Sunrise Family Clinic.\nPayment confirmed: KES 100."
+ * Paid:   "ACISI: Check-in confirmed at Sunrise Family Clinic.\nPayment confirmed: KES 100.\nYou are number 4 in the queue."
+ *         (the last line only when the patient is already waiting in the queue)
  * Failed: "ACISI: Check-in at Sunrise Family Clinic: payment not received.\nPay from your ACISI profile."
  */
-export function buildCheckInFeeSms(input: { clinicName: string; amountKes: number; paid: boolean }): string {
+export function buildCheckInFeeSms(input: { clinicName: string; amountKes: number; paid: boolean; queuePosition?: number | null }): string {
   if (input.paid) {
     const before = 'ACISI: Check-in confirmed at ';
-    const after = `.\nPayment confirmed: KES ${formatKes(input.amountKes)}.`;
+    const place = input.queuePosition ? (input.queuePosition === 1 ? '\nYou are next in line.' : `\nYou are number ${input.queuePosition} in the queue.`) : '';
+    const after = `.\nPayment confirmed: KES ${formatKes(input.amountKes)}.${place}`;
     return `${before}${fitClinicName(input.clinicName, before.length + after.length)}${after}`;
   }
   const before = 'ACISI: Check-in at ';

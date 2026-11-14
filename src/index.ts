@@ -6,7 +6,8 @@ import { startSmsReceiptWorker } from './jobs/workers/smsReceiptWorker';
 import { startStkStatusWorker } from './jobs/workers/stkStatusWorker';
 import { startVisitSummaryEmailWorker } from './jobs/workers/visitSummaryEmailWorker';
 import { startClinicStkStatusWorker } from './jobs/workers/clinicStkStatusWorker';
-import { scheduleCheckInPaymentSweep, scheduleHourlyMaintenance } from './jobs/queue';
+import { scheduleCheckInPaymentSweep, scheduleHourlyMaintenance, scheduleQueueAlertSweep } from './jobs/queue';
+import { startQueueAlertWorker } from './jobs/workers/queueAlertWorker';
 import { startMaintenanceWorker } from './jobs/workers/maintenanceWorker';
 
 const app = createApp();
@@ -15,6 +16,7 @@ const stkStatusWorker = startStkStatusWorker();
 const visitSummaryEmailWorker = startVisitSummaryEmailWorker();
 const clinicStkStatusWorker = startClinicStkStatusWorker();
 const maintenanceWorker = startMaintenanceWorker();
+const queueAlertWorker = startQueueAlertWorker();
 
 const server = app.listen(env.PORT, () => {
   logger.info({ port: env.PORT, env: env.NODE_ENV }, 'ACISI server listening');
@@ -22,13 +24,14 @@ const server = app.listen(env.PORT, () => {
 
 scheduleCheckInPaymentSweep().catch((err) => logger.error({ err }, 'Could not schedule the check-in payment sweep'));
 scheduleHourlyMaintenance().catch((err) => logger.error({ err }, 'Could not schedule hourly maintenance'));
+scheduleQueueAlertSweep().catch((err) => logger.error({ err }, 'Could not schedule the nearly-next SMS sweep'));
 
 void ensureOwnerFromEnv({ email: env.OWNER_EMAIL, name: env.OWNER_NAME, password: env.OWNER_PASSWORD });
 
 async function shutdown(signal: string): Promise<void> {
   logger.info({ signal }, 'Shutting down');
   server.close();
-  await Promise.all([smsWorker.close(), stkStatusWorker.close(), visitSummaryEmailWorker.close(), clinicStkStatusWorker.close(), maintenanceWorker.close()]);
+  await Promise.all([smsWorker.close(), stkStatusWorker.close(), visitSummaryEmailWorker.close(), clinicStkStatusWorker.close(), maintenanceWorker.close(), queueAlertWorker.close()]);
   process.exit(0);
 }
 

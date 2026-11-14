@@ -24,6 +24,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+export interface VisitToday {
+  encounterId: string;
+  clinicName: string;
+  departmentName: string;
+  checkedInAt: string;
+  stage: 'WAITING' | 'BACK_FROM_LAB' | 'WITH_DOCTOR' | 'AT_LAB' | 'READY_FOR_CHECKOUT';
+  /** 1 = next; only while waiting. */
+  queuePosition: number | null;
+  feePending: boolean;
+}
+
 export interface ClinicListItem {
   id: string;
   name: string;
@@ -116,6 +127,10 @@ export interface MyAllergy {
 }
 
 export const api = {
+  /** Visits in progress today (any check-in channel), with the live place in the queue. */
+  getVisitToday() {
+    return request<{ visits: VisitToday[] }>('/patients/visit-today');
+  },
   getMyAllergies() {
     return request<{ allergies: MyAllergy[] }>('/patients/allergies');
   },

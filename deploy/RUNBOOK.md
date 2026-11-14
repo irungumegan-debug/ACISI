@@ -346,6 +346,13 @@ does not. The disease list follows the IDSR Technical Guidelines, 3rd edition
 groups, MOH 505 rows, ICD-11 codes) and set `NOTIFIABLE_LIST_CONFIRMED` to the
 date it was checked.
 
+## Release 2026-11-14: live queue position for patients
+
+Normal update. The migration adds one column (`encounters.nearlyNextSmsAt`).
+A new background job (`queue-alerts`, every minute) sends "you're nearly
+next" SMS; it uses Redis like the other jobs (a few KB). Check: a patient with
+a portal account who is checked in sees "My visit today" with their number.
+
 ## Release 2026-11-14: structured prescriptions and allergy warning
 
 Normal update ("Updating the app"), after the usual backup. The migration adds
