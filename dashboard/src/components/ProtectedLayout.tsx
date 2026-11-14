@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import { Navigate, NavLink, Outlet, useLocation } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
-import { BarChart3, CalendarDays, ClipboardList, FlaskConical, LogOut, Menu, ScrollText, Settings, UserRound, UsersRound, X } from 'lucide-react';
+import { BarChart3, CalendarDays, ClipboardList, FlaskConical, LogOut, Menu, ScrollText, Settings, ShieldAlert, UserRound, UsersRound, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api, ApiError, LegalStatus } from '../lib/api';
 import { CONFIDENTIALITY_UNDERTAKING_PATH, legalBoxSatisfied, PRIVACY_PATH, TERMS_PATH } from '../lib/legal';
@@ -23,6 +23,7 @@ function navFor(role: string): NavItem[] {
     return [
       { to: '/doctor/queue', label: 'My queue', icon: ClipboardList, also: ['/doctor/encounters'] },
       { to: '/doctor/appointments', label: 'Appointments', icon: CalendarDays },
+      { to: '/surveillance', label: 'Disease surveillance', icon: ShieldAlert },
     ];
   }
   const items: NavItem[] = [
@@ -31,7 +32,11 @@ function navFor(role: string): NavItem[] {
     { to: '/appointments', label: 'Appointments', icon: CalendarDays },
   ];
   if (role === 'ADMIN') {
-    items.push({ to: '/reports/daily', label: 'Daily summary', icon: BarChart3 }, { to: '/settings', label: 'Settings', icon: Settings });
+    items.push(
+      { to: '/reports/daily', label: 'Daily summary', icon: BarChart3 },
+      { to: '/surveillance', label: 'Disease surveillance', icon: ShieldAlert },
+      { to: '/settings', label: 'Settings', icon: Settings },
+    );
   }
   return items;
 }
@@ -51,6 +56,7 @@ const PAGE_TITLES: [string, string][] = [
   ['/patients', 'Patients'],
   ['/appointments', 'Appointments'],
   ['/settings', 'Settings'],
+  ['/surveillance', 'Disease surveillance'],
   ['/doctor/queue', 'My queue'],
   ['/doctor/appointments', 'Appointments'],
   ['/doctor/encounters', 'Consultation'],
@@ -71,9 +77,27 @@ function isActive(item: NavItem, pathname: string): boolean {
   return [item.to, ...(item.also ?? [])].some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
+/** Immediately reportable cases not yet marked reported: doctors only, refreshed on every page change. */
+function useUnreportedCount(role: string | undefined, pathname: string): number {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    if (role !== 'DOCTOR') return;
+    let cancelled = false;
+    api
+      .unreportedNotifiableCount()
+      .then((r) => !cancelled && setCount(r.count))
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [role, pathname]);
+  return role === 'DOCTOR' ? count : 0;
+}
+
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const { session, logout } = useAuth();
   const { pathname } = useLocation();
+  const unreported = useUnreportedCount(session?.role, pathname);
   if (!session) return null;
 
   return (
@@ -111,6 +135,11 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               {active && <span aria-hidden className="absolute -left-3 top-2 bottom-2 w-1 rounded-r-full bg-foil" />}
               <item.icon size={19} aria-hidden className={active ? 'text-gold-400' : 'text-slate-400 group-hover:text-white'} />
               {item.label}
+              {item.to === '/surveillance' && unreported > 0 && (
+                <span className="ml-auto rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white" aria-label={`${unreported} to report`}>
+                  {unreported}
+                </span>
+              )}
             </NavLink>
           );
         })}

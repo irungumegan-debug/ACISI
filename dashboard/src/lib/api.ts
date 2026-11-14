@@ -54,6 +54,58 @@ export interface Icd11Code {
   title: string;
 }
 
+export type NotifiableReporting = 'IMMEDIATE' | 'WEEKLY';
+
+/** A notifiable disease matched when a doctor signs a visit. */
+export interface NotifiableAlert {
+  diseaseId: string;
+  name: string;
+  reporting: NotifiableReporting;
+  icd11Code: string;
+  note?: string;
+}
+
+export interface NotifiableCase {
+  id: string;
+  diseaseName: string;
+  reporting: NotifiableReporting;
+  icd11Code: string;
+  diagnosedAt: string;
+  diagnosedBy: string;
+  patientId: string;
+  patientName: string;
+  patientCode: string;
+  age: number | null;
+  sex: string;
+  reportedAt: string | null;
+  reportedBy: string | null;
+  reportNote: string | null;
+}
+
+export interface WeeklySurveillance {
+  clinicName: string;
+  county: string | null;
+  weekStart: string;
+  weekEnd: string;
+  rows: {
+    diseaseId: string;
+    name: string;
+    reporting: NotifiableReporting;
+    /** The MOH 505 row it is counted in. */
+    form505Row: string;
+    /** False: an event, death or syndrome ACISI can't detect from a diagnosis; count by hand. */
+    countedByAcisi: boolean;
+    under5: number;
+    fiveAndOver: number;
+    ageUnknown: number;
+    total: number;
+  }[];
+  totalCases: number;
+  /** Date the disease list was checked against the MOH documents, or null while it is a draft. */
+  listConfirmed: string | null;
+  listSource: string;
+}
+
 export interface VisitHistoryEntry {
   encounterId: string;
   clinicName: string;
@@ -890,10 +942,35 @@ export const api = {
   },
 
   submitConsultation(encounterId: string, diagnosisCodes: string[], diagnosis: string, prescription: string, pin: string) {
-    return request<{ encounterId: string; status: EncounterStatus }>(`/doctor/encounters/${encounterId}/consult`, {
+    return request<{ encounterId: string; status: EncounterStatus; notifiable?: NotifiableAlert[] }>(`/doctor/encounters/${encounterId}/consult`, {
       method: 'POST',
       body: JSON.stringify({ diagnosisCodes, diagnosis, prescription, pin }),
     });
+  },
+
+  /** Disease surveillance (IDSR): case list, doctors only. */
+  listNotifiableCases() {
+    return request<{ cases: NotifiableCase[]; listConfirmed: string | null; listSource: string }>('/surveillance/cases');
+  },
+
+  unreportedNotifiableCount() {
+    return request<{ count: number }>('/surveillance/unreported-count');
+  },
+
+  markNotifiableReported(caseId: string, note: string) {
+    return request<{ ok: true }>(`/surveillance/cases/${encodeURIComponent(caseId)}/reported`, {
+      method: 'POST',
+      body: JSON.stringify({ note: note || null }),
+    });
+  },
+
+  /** Weekly counts (doctors and admins). `week` is a Monday, YYYY-MM-DD; empty = last full week. */
+  weeklySurveillance(week?: string) {
+    return request<WeeklySurveillance>(`/surveillance/weekly${week ? `?week=${week}` : ''}`);
+  },
+
+  weeklySurveillanceCsvUrl(week: string) {
+    return `/api/staff/surveillance/weekly.csv?week=${week}`;
   },
 
   /** WHO ICD-11 search for the consultation form. */

@@ -132,7 +132,7 @@ doctorRouter.post('/encounters/:id/consult', async (req, res) => {
       prescription: parsed.data.prescription,
       pin: parsed.data.pin,
     });
-    res.json({ encounterId: encounter.id, status: encounter.status });
+    res.json({ encounterId: encounter.id, status: encounter.status, notifiable: encounter.notifiable });
   } catch (err) {
     if (err instanceof EncounterNotAccessibleError) {
       res.status(404).json({ error: err.message });

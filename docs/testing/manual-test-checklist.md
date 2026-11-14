@@ -1,5 +1,7 @@
 # ACISI manual test checklist (features built 13–14 November 2026)
 
+Sections A–K are tests; the last section lists things to **confirm**.
+
 Use **test patients and test staff only**, never real patient data. Work on the
 live site (acisi.co.ke) after each update is installed. Tick each box when the
 result matches "Expect". If something doesn't match, note what you saw and
@@ -100,6 +102,35 @@ code), and a **test patient** with a phone you can check.
 - [ ] **J6.** Front desk → patient page. *Expect:* no codes or notes on screen; the printed visit record shows "ICD-11 …" lines.
 - [ ] **J7.** Patient portal → My records (after checkout). *Expect:* diagnosis shown as "Title (ICD-11 code)".
 - [ ] **J8.** FHIR (as G2). *Expect:* each Condition has `"system":"http://id.who.int/icd/release/11/mms"` and the code.
+
+## K. Notifiable diseases (after the disease-surveillance update is installed)
+
+- [ ] **K1. Menu.** Doctor and clinic admin each see **Disease surveillance**. Front desk and lab technician don't.
+- [ ] **K2. Immediate alert.** Doctor signs a test patient with **1A00 Cholera**. *Expect:* "Signed. Notifiable disease … report within 24 hours" screen.
+- [ ] **K3. SMS reminder** *(once real SMS is live; in sandbox, check the Africa's Talking simulator)*. *Expect:* admins and doctors get "An immediately notifiable disease was diagnosed at … Report within 24h…", with **no** patient name and **no** disease.
+- [ ] **K4. Badge.** Doctor's menu shows a red number on Disease surveillance.
+- [ ] **K5. Case list.** Doctor → Disease surveillance. *Expect:* the case with name, ACISI ID, age, sex, disease, code, "Report within 24 hours".
+- [ ] **K6. Mark reported.** Mark as reported with a note. *Expect:* green "Reported … by …"; the badge goes down.
+- [ ] **K7. Weekly-only disease.** Sign a test patient with a malaria code (e.g. 1F40.Z). *Expect:* "counted in the weekly report"; no SMS.
+- [ ] **K8. Not notifiable.** Sign with BA00 (hypertension). *Expect:* straight back to the queue, no alert.
+- [ ] **K9. Weekly summary.** Admin → Disease surveillance → Next to this week. *Expect:* rows in the same order as the MOH 505 form; counts under 5 / 5 and over match your test patients; deaths and events say "count by hand"; **no** names anywhere; the cases list is not shown to admins.
+- [ ] **K10. CSV.** Download the CSV. *Expect:* opens in Excel/Sheets; names the source (IDSR Technical Guidelines, 3rd edition) and says deaths are filled by hand.
+- [ ] **K11. Front desk** typing `/console/surveillance` sees an error, nothing else.
+
+## To confirm (not tests: things only you can check or decide)
+
+Bring these to the DHA/MOH call or check them yourself; tell Claude the answers and the code will be updated.
+
+- [x] **T1. Disease list.** Done 14 Nov: built from the IDSR Technical Guidelines, 3rd edition (Table 5 and the MOH 505 form) you downloaded.
+- [x] **T2. Week.** Done: Monday to Sunday (guidelines).
+- [x] **T3. Age groups.** Done: under 5 / 5 and over (MOH 505 form).
+- [ ] **T4. Deaths.** The MOH 505 form asks for deaths under 5 and 5 and over for each disease. ACISI doesn't record deaths, so clinics fill those columns by hand. Decide: should ACISI record deaths (e.g. a "patient died" outcome on a visit)?
+- [ ] **T5. Sending.** Immediate cases go to the SCDSC (form MOH 502), weekly MOH 505 to the SCDSC by Monday (guidelines). Ask DHA/MOH: should ACISI send these automatically (KHIS/eIDSR or the HIE)?
+- [ ] **T6. Privacy Notice.** Approve adding a sentence such as: *"Your clinic must report some infectious diseases (for example cholera or measles) to the Ministry of Health's public health officers, as the law requires."* (Then the ODPC record may need the same update.)
+- [ ] **T7. DPIA v1.2.** Read and sign: notifiable disease reporting was added (sections 2.5, 2.6, 4.2, action A9).
+- [ ] **T10. 2012 vs 2022 lists.** The older chart you sent (2012) differs from the 3rd edition (e.g. rabies, typhoid and dysentery are now immediate; COVID-19, chikungunya, Zika and smallpox were added). ACISI follows the 3rd edition. If your Sub-County still uses the older chart, tell Claude.
+- [ ] **T8. SMS sender.** When TextSMS is connected, the alert SMS (K3) and MFA (section F) both need a real-delivery test.
+- [ ] **T9. Restore test date** (H2) for the DHA form.
 
 ---
 

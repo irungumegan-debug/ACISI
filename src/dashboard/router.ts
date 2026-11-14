@@ -13,6 +13,7 @@ import { legalRouter } from './legal';
 import { phoneVerificationRouter } from './phoneVerification';
 import { filesRouter } from './files';
 import { labRouter, labTestsAdminRouter } from './lab';
+import { surveillanceRouter } from './surveillance';
 
 export const dashboardRouter = Router();
 
@@ -25,6 +26,7 @@ dashboardRouter.use('/lab-tests', labTestsAdminRouter);
 dashboardRouter.use('/patients', patientsRouter);
 dashboardRouter.use('/checkins', checkinsRouter);
 dashboardRouter.use('/doctor', doctorRouter);
+dashboardRouter.use('/surveillance', surveillanceRouter);
 dashboardRouter.use('/appointments', appointmentsRouter);
 dashboardRouter.use('/walk-in', walkInRouter);
 dashboardRouter.use('/billing', billingRouter);

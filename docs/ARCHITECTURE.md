@@ -422,6 +422,20 @@ requires 1-5 codes; the server validates them and stores
 release means rebuilding the JSON with the script and changing
 `ICD11_RELEASE`.
 
+## Notifiable diseases / IDSR (`src/services/notifiableDisease*.ts`)
+
+`notifiableDiseases.ts` holds the list from the Kenya IDSR Technical
+Guidelines, 3rd edition (Table 5 and the MOH 505 form): id, name, IMMEDIATE or
+WEEKLY, MOH 505 row, ICD-11 stems (a code matches a stem or its subcodes).
+Entries with no stems are counted by hand. `submitConsultation` saves the visit and
+`recordNotifiableCases` in one transaction; after commit,
+`notifyNotifiableCases` audits and, for IMMEDIATE diseases, SMSes the
+clinic's active ADMIN and DOCTOR staff with no patient or disease in the text.
+`src/dashboard/surveillance.ts` (`/api/staff/surveillance`): `cases`,
+`unreported-count` and `cases/:id/reported` for doctors only (they name the
+patient and the diagnosis); `weekly` and `weekly.csv` (counts only) for
+doctors and admins. Weeks run Monday 00:00 to Sunday 23:59 Kenya time (UTC+3).
+
 ## Two frontend SPAs, one origin
 
 `web/` (marketing site, signup/login, patient portal) and `dashboard/`

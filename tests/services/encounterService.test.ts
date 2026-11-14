@@ -4,12 +4,22 @@ jest.mock('../../src/db/prisma', () => ({
   prisma: {
     encounter: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
     patient: { findUniqueOrThrow: jest.fn() },
+    notifiableDiseaseCase: { createMany: jest.fn() },
+    // Interactive transactions run against the same mocks.
+    $transaction: jest.fn((fn: (tx: unknown) => unknown) => fn(jest.requireMock('../../src/db/prisma').prisma)),
   },
+}));
+jest.mock('../../src/services/notifiableDiseaseService', () => ({
+  ...jest.requireActual('../../src/services/notifiableDiseaseService'),
+  notifyNotifiableCases: jest.fn(async () => undefined),
 }));
 
 jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
 jest.mock('../../src/services/patientService', () => ({ getScopedHistory: jest.fn() }));
-jest.mock('../../src/services/labService', () => ({ getLabOrdersForEncounter: jest.fn(async () => []) }));
+jest.mock('../../src/services/labService', () => ({
+  getLabOrdersForEncounter: jest.fn(async () => []),
+  ageInYears: jest.requireActual('../../src/services/labService').ageInYears,
+}));
 jest.mock('../../src/services/allergyService', () => ({ listAllergiesForClinic: jest.fn(async () => ({ allergies: [], hiddenElsewhere: false })) }));
 jest.mock('../../src/services/staffService', () => ({ findActiveStaffById: jest.fn(), comparePin: jest.fn() }));
 jest.mock('../../src/jobs/queue', () => ({ enqueueVisitSummaryEmail: jest.fn() }));
@@ -388,5 +398,53 @@ describe('checkout SMS is sent directly, not through a separate visit-summary qu
     const queue = jest.requireActual('../../src/jobs/queue');
     expect(queue.enqueueVisitSummarySms).toBeUndefined();
     expect(queue.visitSummarySmsQueue).toBeUndefined();
+  });
+});
+
+describe('notifiable diseases at signing', () => {
+  const createMany = (prisma as unknown as { notifiableDiseaseCase: { createMany: jest.Mock } }).notifiableDiseaseCase.createMany;
+  const { notifyNotifiableCases } = jest.requireMock('../../src/services/notifiableDiseaseService') as { notifyNotifiableCases: jest.Mock };
+  const sign = (codes: { code: string; title: string }[]) =>
+    submitConsultation({
+      encounterId: 'enc-n',
+      clinicId: 'clinic-A',
+      departmentIds: ['dept-1'],
+      staffId: 'staff-notif',
+      diagnosis: '',
+      diagnosisCodes: codes,
+      prescription: 'ORS',
+      pin: '1234',
+    });
+
+  beforeEach(() => {
+    createMany.mockReset();
+    notifyNotifiableCases.mockClear();
+    mockFindFirst.mockResolvedValue({ id: 'enc-n', status: 'IN_CONSULTATION' });
+    mockFindActiveStaffById.mockResolvedValue(DOCTOR_STAFF);
+    mockComparePin.mockResolvedValue(true);
+    mockUpdate.mockResolvedValue({ id: 'enc-n', patientId: 'pat-1', status: 'READY_FOR_CHECKOUT' });
+  });
+
+  it('a cholera diagnosis records an immediately reportable case, in the same save, and alerts', async () => {
+    const result = await sign([{ code: '1A00', title: 'Cholera' }]);
+    expect(createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: [expect.objectContaining({ diseaseId: 'cholera', reporting: 'IMMEDIATE', icd11Code: '1A00', patientId: 'pat-1', clinicId: 'clinic-A', diagnosedByStaffId: 'staff-notif' })],
+        skipDuplicates: true,
+      }),
+    );
+    expect(result.notifiable).toEqual([{ diseaseId: 'cholera', name: 'Cholera', reporting: 'IMMEDIATE', icd11Code: '1A00' }]);
+    expect(notifyNotifiableCases).toHaveBeenCalledWith(expect.objectContaining({ clinicId: 'clinic-A', encounterId: 'enc-n' }));
+  });
+
+  it('a subcode matches its disease (1F40.Z -> malaria, weekly)', async () => {
+    const result = await sign([{ code: '1F40.Z', title: 'Malaria due to Plasmodium falciparum, unspecified' }]);
+    expect(result.notifiable).toEqual([expect.objectContaining({ diseaseId: 'malaria', reporting: 'WEEKLY', icd11Code: '1F40.Z' })]);
+  });
+
+  it('a diagnosis that is not notifiable records nothing', async () => {
+    const result = await sign([{ code: 'BA00', title: 'Essential hypertension' }]);
+    expect(createMany).not.toHaveBeenCalled();
+    expect(result.notifiable).toEqual([]);
   });
 });
