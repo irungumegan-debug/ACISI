@@ -14,7 +14,7 @@ import crypto from 'node:crypto';
 
 export const ENCRYPTED_PREFIX = 'enc:v1:';
 
-/** Fields encrypted wherever they appear in a write (Encounter, LabOrder, LabOrderItem, Patient, PendingPatientSignup). */
+/** Fields encrypted wherever they appear in a write (Encounter, LabOrder, LabOrderItem, Patient, PendingPatientSignup, PatientAllergy). */
 export const ENCRYPTED_FIELDS: ReadonlySet<string> = new Set([
   'diagnosis',
   'prescription',
@@ -25,6 +25,9 @@ export const ENCRYPTED_FIELDS: ReadonlySet<string> = new Set([
   'idNumber',
   'nextOfKinName',
   'nextOfKinPhone',
+  'substance',
+  'reaction',
+  'removedReason',
 ]);
 
 let cachedKey: Buffer | null | undefined;
@@ -70,10 +73,21 @@ export function decryptValue(stored: string): string {
   return Buffer.concat([decipher.update(raw.subarray(28)), decipher.final()]).toString('utf8');
 }
 
+/**
+ * Only plain objects and arrays are walked. Anything else (Prisma.Decimal
+ * money amounts, Date, Buffer, any class instance) is passed through
+ * untouched: rebuilding a Decimal as a plain object breaks the write.
+ */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== 'object') return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
 /** Encrypts the listed fields anywhere in a Prisma write payload (nested creates included). */
 export function encryptWritePayload(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(encryptWritePayload);
-  if (!value || typeof value !== 'object' || value instanceof Date || Buffer.isBuffer(value)) return value;
+  if (!isPlainObject(value)) return value;
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
     if (ENCRYPTED_FIELDS.has(k) && typeof v === 'string') out[k] = encryptValue(v);
@@ -88,7 +102,7 @@ export function encryptWritePayload(value: unknown): unknown {
 export function decryptResult<T>(value: T): T {
   if (typeof value === 'string') return (isEncrypted(value) ? decryptValue(value) : value) as T;
   if (Array.isArray(value)) return value.map(decryptResult) as T;
-  if (!value || typeof value !== 'object' || value instanceof Date || Buffer.isBuffer(value)) return value;
+  if (!isPlainObject(value)) return value;
   for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
     if (v && (typeof v === 'object' || isEncrypted(v))) (value as Record<string, unknown>)[k] = decryptResult(v);
   }
