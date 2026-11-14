@@ -24,7 +24,10 @@ USSD-first clinic management platform for small clinics in Kenya. See
   submitted or paid). Answers must be checked against the code, never assumed.
   Done 14 Nov 2026 (on branch, deploy with the runbook "DHA fixes" release):
   tamper-resistant audit log, 15-min inactivity logoff, under-18 check,
-  AES-256-GCM encryption at rest (fields + files). Remaining, in order:
+  AES-256-GCM encryption at rest (fields + files); multi-factor login for
+  admins and doctors (off until STAFF_MFA_ENABLED=true, see runbook).
+  ICD-11 list download from WHO was blocked in-session; owner may upload the
+  ICD-11 MMS Simple Tabulation file. Remaining, in order:
   (3) ICD-11 coded diagnoses incl. MOH
   notifiable diseases; (4) notifiable-disease alert + automatic weekly IDSR
   report; (5-6) FHIR R4 interface ready for the Kenya HIE; (7) retest, update

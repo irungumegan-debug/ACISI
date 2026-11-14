@@ -1,11 +1,13 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { api, StaffSession } from '../lib/api';
+import { api, LoginCodeChallenge, StaffSession } from '../lib/api';
 import { useIdleLogoff } from '../lib/useIdleLogoff';
 
 interface AuthContextValue {
   session: StaffSession | null;
   loading: boolean;
-  login: (staffCode: string, pin: string) => Promise<void>;
+  /** Returns a challenge when an SMS code is needed (admins and doctors); then call completeLogin. */
+  login: (staffCode: string, pin: string) => Promise<LoginCodeChallenge | null>;
+  completeLogin: (challengeId: string, code: string, rememberDevice: boolean) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -23,8 +25,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => setLoading(false));
   }, []);
 
-  async function login(staffCode: string, pin: string): Promise<void> {
-    await api.login(staffCode, pin);
+  async function login(staffCode: string, pin: string): Promise<LoginCodeChallenge | null> {
+    const result = await api.login(staffCode, pin);
+    if ('mfaRequired' in result) return result;
+    setSession(await api.me());
+    return null;
+  }
+
+  async function completeLogin(challengeId: string, code: string, rememberDevice: boolean): Promise<void> {
+    await api.verifyLoginCode(challengeId, code, rememberDevice);
     setSession(await api.me());
   }
 
@@ -39,7 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(null);
   });
 
-  return <AuthContext.Provider value={{ session, loading, login, logout }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ session, loading, login, completeLogin, logout }}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth(): AuthContextValue {

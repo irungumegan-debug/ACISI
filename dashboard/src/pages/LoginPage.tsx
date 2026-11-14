@@ -2,12 +2,12 @@ import { FormEvent, useState } from 'react';
 import { takeIdleFlag } from '../lib/useIdleLogoff';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { ApiError } from '../lib/api';
+import { ApiError, LoginCodeChallenge } from '../lib/api';
 import { ArrowRight, ShieldCheck } from 'lucide-react';
 import { LogoMark, Watermark } from '../components/ui';
 
 export function LoginPage() {
-  const { session, login } = useAuth();
+  const { session, login, completeLogin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [staffCode, setStaffCode] = useState('');
@@ -16,6 +16,9 @@ export function LoginPage() {
   const [lockedOut, setLockedOut] = useState(false);
   const [idleLoggedOff] = useState(takeIdleFlag);
   const [submitting, setSubmitting] = useState(false);
+  const [challenge, setChallenge] = useState<LoginCodeChallenge | null>(null);
+  const [code, setCode] = useState('');
+  const [rememberDevice, setRememberDevice] = useState(true);
 
   if (session) {
     const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname ?? '/';
@@ -28,7 +31,12 @@ export function LoginPage() {
     setLockedOut(false);
     setSubmitting(true);
     try {
-      await login(staffCode, pin);
+      const needsCode = await login(staffCode, pin);
+      if (needsCode) {
+        setChallenge(needsCode);
+        setCode('');
+        return;
+      }
       // '/' sends doctors to their own queue and everyone else to the front-desk queue.
       navigate('/', { replace: true });
     } catch (err) {
@@ -36,6 +44,27 @@ export function LoginPage() {
         setLockedOut(true);
       } else {
         setError(err instanceof ApiError ? err.message : 'Something went wrong. Try again.');
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleCode(e: FormEvent): Promise<void> {
+    e.preventDefault();
+    if (!challenge) return;
+    setError(null);
+    setSubmitting(true);
+    try {
+      await completeLogin(challenge.challengeId, code, rememberDevice);
+      navigate('/', { replace: true });
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Something went wrong. Try again.';
+      setError(message);
+      // An expired or used-up code means starting again with the PIN.
+      if (err instanceof ApiError && /again/i.test(message) && !/check the sms/i.test(message)) {
+        setChallenge(null);
+        setPin('');
       }
     } finally {
       setSubmitting(false);
@@ -57,6 +86,55 @@ export function LoginPage() {
           </p>
           <h1 className="mb-1 font-display text-3xl font-bold tracking-tight text-white">Welcome back</h1>
           <p className="mb-6 text-[15px] text-slate-300">Sign in with your staff ID and PIN.</p>
+          {challenge ? (
+          <form onSubmit={(e) => void handleCode(e)} className="space-y-4">
+            <p className="rounded-xl border border-gold-400/40 bg-gold-400/10 px-3.5 py-2.5 text-sm text-gold-100" role="status">
+              We sent a 6-digit code by SMS to your phone ({challenge.phoneHint}). It expires in 5 minutes.
+            </p>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-300" htmlFor="loginCode">
+                Code from the SMS
+              </label>
+              <input
+                id="loginCode"
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                pattern="[0-9]{6}"
+                maxLength={6}
+                required
+                autoFocus
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+                className="min-h-12 w-full rounded-xl border border-white/15 bg-navy-950/50 px-3.5 py-3 text-center font-mono text-2xl tracking-[0.5em] text-white focus:border-gold-400 focus:outline-none"
+              />
+            </div>
+            <label className="flex items-start gap-3 text-sm text-slate-300">
+              <input type="checkbox" checked={rememberDevice} onChange={(e) => setRememberDevice(e.target.checked)} className="mt-0.5 h-5 w-5 accent-gold-400" />
+              Remember this device for 30 days (don&apos;t tick on a shared computer)
+            </label>
+            {error && (
+              <p className="rounded-xl border border-red-400/40 bg-red-500/10 px-3.5 py-2.5 text-sm text-red-100" role="alert">
+                {error}
+              </p>
+            )}
+            <button type="submit" disabled={submitting || code.length !== 6} className="btn-gold min-h-12 w-full px-4 py-3 text-base">
+              {submitting ? 'Checking…' : 'Verify and sign in'}
+              {!submitting && <ArrowRight size={18} aria-hidden />}
+            </button>
+            <button
+              type="button"
+              className="w-full text-center text-sm font-semibold text-gold-300 hover:underline"
+              onClick={() => {
+                setChallenge(null);
+                setPin('');
+                setError(null);
+              }}
+            >
+              Didn&apos;t get it? Start again
+            </button>
+          </form>
+          ) : (
           <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-300" htmlFor="staffCode">
@@ -111,6 +189,7 @@ export function LoginPage() {
               {!submitting && <ArrowRight size={18} aria-hidden />}
             </button>
           </form>
+          )}
           {/* The reset form lives on the main site's login page (web/), shared
               with patients — a full navigation, since it's a different app. */}
           <p className="mt-5 text-center text-sm text-slate-300">

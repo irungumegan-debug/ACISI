@@ -491,6 +491,14 @@ export interface PatientFileItem {
   uploadedAt: string;
 }
 
+/** Admins and doctors: after the PIN, a 6-digit code is sent by SMS. */
+export interface LoginCodeChallenge {
+  mfaRequired: true;
+  challengeId: string;
+  /** e.g. "••• 678" */
+  phoneHint: string;
+}
+
 export const api = {
   listPatientFiles(patientId: string) {
     return request<{ files: PatientFileItem[]; hiddenCount: number }>(`/files/patient/${encodeURIComponent(patientId)}`);
@@ -603,10 +611,18 @@ export const api = {
   getTodayCheckInCounts() {
     return request<{ walkIn: number; remote: number }>('/walk-in/stats/today');
   },
+  /** Either logged in, or (admins and doctors) a code was sent by SMS: then call verifyLoginCode. */
   login(staffCode: string, pin: string) {
-    return request<{ staffName: string; clinicName: string; role: string }>('/auth/login', {
+    return request<{ staffName: string; clinicName: string; role: string } | LoginCodeChallenge>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ staffCode, pin }),
+    });
+  },
+
+  verifyLoginCode(challengeId: string, code: string, rememberDevice: boolean) {
+    return request<{ staffName: string; clinicName: string; role: string }>('/auth/login/verify', {
+      method: 'POST',
+      body: JSON.stringify({ challengeId, code, rememberDevice }),
     });
   },
 

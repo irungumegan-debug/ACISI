@@ -324,6 +324,26 @@ the encrypted fields, so don't go back to it without help. The audit-log
 protection alone can be removed with
 `prisma/rollback/20261114120000_audit_log_tamper_resistant.down.sql`.
 
+## Turning on multi-factor login (admins and doctors)
+
+After the PIN, clinic admins and doctors get a 6-digit code by SMS (they can
+tick "Remember this device for 30 days"). It is **off** until real SMS works:
+with Africa's Talking in sandbox, codes never reach a phone and admins and
+doctors could not log in.
+
+1. Check SMS is live: `sudo grep '^AT_USERNAME=' /etc/acisi/acisi.env` must
+   **not** say `sandbox`. Then reset a test PIN by SMS on the website and
+   confirm the SMS arrives on a real phone.
+2. Turn it on and restart:
+   ```
+   echo 'STAFF_MFA_ENABLED=true' | sudo tee -a /etc/acisi/acisi.env >/dev/null
+   sudo systemctl restart acisi
+   ```
+3. Log in as a doctor: the code should arrive by SMS.
+
+To turn it off again: change the line to `STAFF_MFA_ENABLED=false` and restart.
+A PIN reset or deactivating a staff member forgets their remembered devices.
+
 ## Switching ACISI's M-Pesa to production (Buy Goods till)
 
 Do this only after the release that adds `MPESA_TILL_NUMBER` is deployed.
