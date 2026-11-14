@@ -24,6 +24,7 @@ const VISIT: VisitRecord = {
   consultedAt: new Date('2026-11-13T08:30:00Z'),
   visitReason: 'Fever for 3 days',
   diagnosis: 'Malaria (P. falciparum)',
+  diagnosisCodes: [{ code: '1F40.Z', title: 'Malaria due to Plasmodium falciparum, unspecified' }],
   prescription: 'Artemether-lumefantrine 80/480 twice daily for 3 days',
   clinicId: 'c-1',
   departmentName: 'General Consultation',
@@ -66,7 +67,27 @@ it("builds Patient/$everything: patient, clinic, doctor, visit, diagnosis, presc
   for (const r of refs) expect(ids.has(r)).toBe(true);
   const obs = b.entry!.filter((e) => e.resource!.resourceType === 'Observation').map((e) => e.resource as unknown as { valueString?: string; interpretation?: { coding: { code: string }[] }[] });
   expect(obs[1]).toMatchObject({ valueString: '10.2 g/dL', interpretation: [{ coding: [{ code: 'AA' }] }] });
-  expect(b.entry![4]!.resource).toMatchObject({ resourceType: 'Condition', code: { text: 'Malaria (P. falciparum)' } });
+  expect(b.entry![4]!.resource).toMatchObject({
+    resourceType: 'Condition',
+    code: { coding: [{ system: 'http://id.who.int/icd/release/11/mms', code: '1F40.Z', display: 'Malaria due to Plasmodium falciparum, unspecified' }] },
+    note: [{ text: 'Malaria (P. falciparum)' }],
+  });
+});
+
+it('sends one ICD-11 coded Condition per diagnosis code', () => {
+  const two = { ...VISIT, diagnosisCodes: [...VISIT.diagnosisCodes, { code: 'BA00', title: 'Essential hypertension' }] };
+  const b = patientEverythingBundle({ baseUrl: '', patient: PATIENT, clinics: [], visits: [two] });
+  const conds = b.entry!.filter((e) => e.resource!.resourceType === 'Condition').map((e) => e.resource as unknown as { id: string; code: { coding: { code: string }[] } });
+  expect(conds.map((c) => c.code.coding[0]!.code)).toEqual(['1F40.Z', 'BA00']);
+  expect(new Set(conds.map((c) => c.id)).size).toBe(2);
+});
+
+it('a visit recorded before ICD-11 coding is sent as a text-only Condition', () => {
+  const old = { ...VISIT, diagnosisCodes: [] };
+  const b = patientEverythingBundle({ baseUrl: '', patient: PATIENT, clinics: [], visits: [old] });
+  const cond = b.entry!.find((e) => e.resource!.resourceType === 'Condition')!.resource as unknown as Record<string, unknown>;
+  expect(cond.code).toEqual({ text: 'Malaria (P. falciparum)' });
+  expect(cond.note).toBeUndefined();
 });
 
 it('does not send results that are not signed yet', () => {

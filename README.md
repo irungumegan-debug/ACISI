@@ -323,3 +323,12 @@ yet, so it's safe on every start.
 and builds all three frontend SPAs as part of the same step, so a bare
 `npm install && npx prisma generate && npm run build` on the backend service
 is enough; there's no separate frontend service to deploy.
+
+## Third-party content
+
+- **ICD-11** (`src/assets/icd11/`): ICD-11 for Mortality and Morbidity
+  Statistics, release 2025-01, © World Health Organization, used under
+  [CC BY-ND 3.0 IGO](https://creativecommons.org/licenses/by-nd/3.0/igo/).
+  Codes and titles are reproduced unmodified from WHO's Simple Tabulation
+  (https://icd.who.int). Rebuild with `scripts/buildIcd11Data.py`.
+- **Dancing Script** font (`src/assets/fonts/`): see its licence file there.

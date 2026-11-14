@@ -4,6 +4,7 @@ import { AuthenticatedRequest } from '../dashboard/auth';
 import { loadDashboardSession, SESSION_COOKIE_NAME } from '../dashboard/session';
 import { staffPatientScopeWhere } from '../services/staffPatientScope';
 import { recordAuditEvent } from '../services/auditService';
+import { parseDiagnosisCodes } from '../services/icd11Service';
 import { capabilityStatement, patientEverythingBundle, toPatient, VisitRecord } from './mappers';
 
 /**
@@ -125,6 +126,7 @@ fhirRouter.get('/Patient/:id/\\$everything', async (req, res) => {
     consultedAt: e.consultedAt,
     visitReason: e.visitReason,
     diagnosis: e.diagnosis,
+    diagnosisCodes: parseDiagnosisCodes(e.diagnosisCodes),
     prescription: e.prescription,
     clinicId: e.clinicId,
     departmentName: e.checkIn.department.name,

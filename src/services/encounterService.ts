@@ -3,6 +3,7 @@ import { doctorQueueFilter } from './doctorScope';
 import { prisma } from '../db/prisma';
 import { recordAuditEvent } from './auditService';
 import { verifySigningPin } from './signingPin';
+import type { Icd11Entry } from './icd11Service';
 import { getLabOrdersForEncounter, LabOrderView } from './labService';
 import { AllergyView, listAllergiesForClinic } from './allergyService';
 
@@ -173,6 +174,9 @@ interface SubmitConsultationInput {
   /** The departments the signing doctor works in. */
   departmentIds: string[];
   staffId: string;
+  /** ICD-11 codes with WHO's titles (validated by the caller). */
+  diagnosisCodes: Icd11Entry[];
+  /** The doctor's own notes (may be empty). */
   diagnosis: string;
   prescription: string;
   /**
@@ -213,7 +217,8 @@ export async function submitConsultation(input: SubmitConsultationInput): Promis
     where: { id: encounter.id },
     data: {
       status: 'READY_FOR_CHECKOUT',
-      diagnosis: input.diagnosis,
+      diagnosis: input.diagnosis || null,
+      diagnosisCodes: JSON.stringify(input.diagnosisCodes),
       prescription: input.prescription,
       consultedByStaffId: input.staffId,
       consultedAt: new Date(),

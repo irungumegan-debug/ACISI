@@ -36,10 +36,10 @@ USSD-first clinic management platform for small clinics in Kenya. See
   tamper-resistant audit log, 15-min inactivity logoff, under-18 check,
   AES-256-GCM encryption at rest (fields + files); multi-factor login for
   admins and doctors (off until STAFF_MFA_ENABLED=true, see runbook).
-  ICD-11 list download from WHO was blocked in-session; owner may upload the
-  ICD-11 MMS Simple Tabulation file. Remaining, in order:
-  (3) ICD-11 coded diagnoses incl. MOH
-  notifiable diseases; (4) notifiable-disease alert + automatic weekly IDSR
+  ICD-11 coded diagnoses done 14 Nov (WHO MMS 2025-01 bundled in
+  src/assets/icd11/, doctors must pick 1-5 codes; FHIR Condition coded).
+  Remaining, in order: (3b) map MOH notifiable diseases to ICD-11 codes;
+  (4) notifiable-disease alert + automatic weekly IDSR
   report; (5-6) FHIR R4 interface: base built 14 Nov (src/fhir/, /fhir/r4); adapt to
   DHA's HIE spec (identifiers, profiles, auth, submission) after the owner's
   call with DHA; (7) retest, update

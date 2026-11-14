@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { api, ApiError, EncounterDetail } from '../lib/api';
+import { api, ApiError, EncounterDetail, Icd11Code } from '../lib/api';
+import { Icd11Picker } from '../components/Icd11Picker';
 import { useAuth } from '../context/AuthContext';
 import { ArrowLeft, Building2, FileText, Lock, NotebookPen, Phone, Pill, ShieldCheck, Stethoscope } from 'lucide-react';
 import { Avatar, btn, EmptyState, field, SkeletonList, StatusBadge } from '../components/ui';
@@ -27,6 +28,7 @@ export function DoctorEncounterPage() {
 
   const [encounter, setEncounter] = useState<EncounterDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [diagnosisCodes, setDiagnosisCodes] = useState<Icd11Code[]>([]);
   const [diagnosis, setDiagnosis] = useState('');
   const [prescription, setPrescription] = useState('');
   const [step, setStep] = useState<Step>('edit');
@@ -55,7 +57,11 @@ export function DoctorEncounterPage() {
 
   function handleContinueToSign(e: FormEvent): void {
     e.preventDefault();
-    if (!diagnosis.trim() || !prescription.trim()) return;
+    if (diagnosisCodes.length === 0) {
+      setError('Choose at least one ICD-11 diagnosis');
+      return;
+    }
+    if (!prescription.trim()) return;
     setError(null);
     setStep('sign');
   }
@@ -66,7 +72,7 @@ export function DoctorEncounterPage() {
     setSubmitting(true);
     setError(null);
     try {
-      await api.submitConsultation(id, diagnosis, prescription, pin);
+      await api.submitConsultation(id, diagnosisCodes.map((c) => c.code), diagnosis, prescription, pin);
       navigate('/doctor/queue', { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to submit consultation');
@@ -130,11 +136,23 @@ export function DoctorEncounterPage() {
                 {new Date(h.visitedAt).toLocaleDateString()} · {h.clinicName}
                 {!h.isOwnClinic && ' (shared)'}
               </p>
+              {h.diagnosisCodes && h.diagnosisCodes.length > 0 && (
+                <ul className="mt-2 space-y-0.5 text-sm text-ink-700">
+                  {h.diagnosisCodes.map((c) => (
+                    <li key={c.code} className="flex items-start gap-2">
+                      <Stethoscope size={15} aria-hidden className="mt-0.5 flex-none text-teal-700" />
+                      <span>
+                        <span className="font-mono font-semibold text-teal-800">{c.code}</span> {c.title}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
               {h.diagnosis && (
                 <p className="mt-2 flex items-start gap-2 text-sm text-ink-700">
                   <Stethoscope size={15} aria-hidden className="mt-0.5 flex-none text-teal-700" />
                   <span>
-                    <span className="font-semibold text-navy-900">Diagnosis:</span> {h.diagnosis}
+                    <span className="font-semibold text-navy-900">{h.diagnosisCodes?.length ? 'Notes:' : 'Diagnosis:'}</span> {h.diagnosis}
                   </span>
                 </p>
               )}
@@ -202,15 +220,26 @@ export function DoctorEncounterPage() {
             </h2>
             <form onSubmit={handleContinueToSign} className="space-y-5">
               <div>
+                <label className={field.label} htmlFor="icd11-search">
+                  Diagnosis (ICD-11)
+                </label>
+                <Icd11Picker
+                  value={diagnosisCodes}
+                  onChange={(c) => {
+                    setDiagnosisCodes(c);
+                    if (c.length) setError(null);
+                  }}
+                />
+              </div>
+              <div>
                 <label className={field.label} htmlFor="diagnosis">
-                  Diagnosis / notes
+                  Clinical notes (optional)
                 </label>
                 <textarea
                   id="diagnosis"
-                  required
                   value={diagnosis}
                   onChange={(e) => setDiagnosis(e.target.value)}
-                  placeholder="What did you find?"
+                  placeholder="Findings, history, anything the code doesn't say"
                   className={textarea}
                 />
               </div>
@@ -227,6 +256,11 @@ export function DoctorEncounterPage() {
                   className={textarea}
                 />
               </div>
+              {error && step === 'edit' && (
+                <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3.5 py-2.5 text-sm text-red-700">
+                  {error}
+                </p>
+              )}
               <button type="submit" className={`${btn.gold} w-full`}>
                 Continue to sign
               </button>
@@ -245,10 +279,17 @@ export function DoctorEncounterPage() {
             </p>
             <form onSubmit={(e) => void handleSign(e)} className="space-y-4">
               <div className="space-y-3 rounded-2xl bg-cream-100 p-4 text-sm">
-                <p className="flex items-start gap-2 text-ink-700">
-                  <Stethoscope size={15} aria-hidden className="mt-0.5 flex-none text-teal-700" />
-                  <span className="whitespace-pre-wrap">{diagnosis}</span>
-                </p>
+                <ul className="space-y-1 text-ink-700">
+                  {diagnosisCodes.map((c) => (
+                    <li key={c.code} className="flex items-start gap-2">
+                      <Stethoscope size={15} aria-hidden className="mt-0.5 flex-none text-teal-700" />
+                      <span>
+                        <span className="font-mono font-semibold text-teal-800">{c.code}</span> {c.title}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                {diagnosis.trim() && <p className="whitespace-pre-wrap pl-6 text-ink-700">{diagnosis}</p>}
                 <p className="flex items-start gap-2 text-ink-700">
                   <Pill size={15} aria-hidden className="mt-0.5 flex-none text-gold-700" />
                   <span className="whitespace-pre-wrap">{prescription}</span>

@@ -26,6 +26,7 @@ import {
   Stethoscope,
   UserRound,
   XCircle,
+  NotebookPen,
 } from 'lucide-react';
 
 const TABS: { key: Tab; label: string; short: string; icon: LucideIcon }[] = [
@@ -722,9 +723,20 @@ function RecordsPanel({ patientCode }: { patientCode: string }) {
                   <p className="t-line">
                     <Stethoscope size={15} aria-hidden />
                     <span>
-                      <b>Diagnosis / notes:</b> {h.diagnosis || 'Not recorded'}
+                      <b>Diagnosis{h.diagnosisCodes?.length ? '' : ' / notes'}:</b>{' '}
+                      {h.diagnosisCodes?.length
+                        ? h.diagnosisCodes.map((c) => `${c.title} (ICD-11 ${c.code})`).join('; ')
+                        : h.diagnosis || 'Not recorded'}
                     </span>
                   </p>
+                  {h.diagnosisCodes?.length && h.diagnosis ? (
+                    <p className="t-line">
+                      <NotebookPen size={15} aria-hidden />
+                      <span>
+                        <b>Doctor&apos;s notes:</b> {h.diagnosis}
+                      </span>
+                    </p>
+                  ) : null}
                   <p className="t-line">
                     <Pill size={15} aria-hidden />
                     <span>

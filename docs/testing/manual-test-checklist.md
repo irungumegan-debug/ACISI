@@ -90,6 +90,17 @@ code), and a **test patient** with a phone you can check.
 - [ ] **I3.** Patient portal → My records. *Expect:* "My allergies" lists current allergies.
 - [ ] **I4.** Front desk can't record allergies.
 
+## J. ICD-11 diagnoses (after the ICD-11 update is installed)
+
+- [ ] **J1.** Doctor → waiting patient → Diagnosis (ICD-11) → type "malaria". *Expect:* a list of WHO codes and titles; pick one, it appears as a chip.
+- [ ] **J2.** Type a code, e.g. "1A00". *Expect:* Cholera at the top.
+- [ ] **J3.** Try "Continue to sign" with no code. *Expect:* "Choose at least one ICD-11 diagnosis".
+- [ ] **J4.** Pick two codes, add a note, sign. *Expect:* signed; the sign screen listed both codes.
+- [ ] **J5.** Next visit of that patient (doctor view). *Expect:* history shows the codes and "Notes:".
+- [ ] **J6.** Front desk → patient page. *Expect:* no codes or notes on screen; the printed visit record shows "ICD-11 …" lines.
+- [ ] **J7.** Patient portal → My records (after checkout). *Expect:* diagnosis shown as "Title (ICD-11 code)".
+- [ ] **J8.** FHIR (as G2). *Expect:* each Condition has `"system":"http://id.who.int/icd/release/11/mms"` and the code.
+
 ---
 
 When everything is ticked, note the date. Anything that failed: send the

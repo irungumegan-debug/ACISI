@@ -129,6 +129,7 @@ describe('GET /records/:encounterId/download', () => {
       departmentName: 'General',
       visitedAt: new Date('2026-01-15'),
       diagnosis: 'Flu',
+      diagnosisCodes: [],
       prescription: 'Paracetamol',
       signature: { doctorName: 'Dr. Amani Wambui', doctorTitle: 'Doctor', signedAt },
       labResults: [],

@@ -404,8 +404,23 @@ free disk. Every upload and view is audit-logged with IDs only.
 `Patient/:id` (staff with the patient-page scope) and `Patient/:id/$everything`
 (doctors only, own queue, own clinic's visits). Values are decrypted by the
 database client like everywhere else. Still to come, per DHA's HIE spec:
-national identifier systems (Client Registry, KMHFL), ICD-11/LOINC codes,
-Kenyan profiles, and system-to-system authentication and submission to the HIE.
+national identifier systems (Client Registry, KMHFL), LOINC codes for lab
+tests, Kenyan profiles, and system-to-system authentication and submission to
+the HIE. Diagnoses are already coded (ICD-11, below).
+
+## ICD-11 diagnoses (`src/services/icd11Service.ts`)
+
+WHO ICD-11 MMS release 2025-01, chapters 01-25, ships as
+`src/assets/icd11/icd11-mms-2025-01.json` (built by
+`scripts/buildIcd11Data.py` from WHO's Simple Tabulation file; codes and
+titles unmodified, CC BY-ND 3.0 IGO). Loaded once and searched in memory by
+`GET /api/staff/doctor/icd11?q=` (doctors only). Signing a consultation
+requires 1-5 codes; the server validates them and stores
+`[{code, title}]` as JSON in `encounters.diagnosisCodes` (encrypted like
+`diagnosis`, which is now the doctor's optional notes). Visibility follows
+`diagnosis` exactly: doctors, the patient, and printed records only. A new WHO
+release means rebuilding the JSON with the script and changing
+`ICD11_RELEASE`.
 
 ## Two frontend SPAs, one origin
 

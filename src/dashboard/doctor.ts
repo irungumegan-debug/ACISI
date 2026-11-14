@@ -15,6 +15,7 @@ import { listDepartmentAppointmentsToday } from '../services/appointmentService'
 import { getDoctorDepartmentIds } from '../services/departmentService';
 import { listLabTests, requestLabTests } from '../services/labService';
 import { sendLabError } from './lab';
+import { ICD11_RELEASE, Icd11Entry, MAX_DIAGNOSIS_CODES, resolveDiagnosisCodes, searchIcd11 } from '../services/icd11Service';
 import { AllergyError, recordAllergy, removeAllergy } from '../services/allergyService';
 import { doctorQueueFilter } from '../services/doctorScope';
 import { prisma } from '../db/prisma';
@@ -93,7 +94,10 @@ doctorRouter.get('/encounters/:id', async (req, res) => {
 });
 
 const consultSchema = z.object({
-  diagnosis: z.string().min(1),
+  /** ICD-11 MMS codes picked from the list (1 to 5); titles come from WHO's file, never from the browser. */
+  diagnosisCodes: z.array(z.string().trim().min(1).max(20)).min(1).max(MAX_DIAGNOSIS_CODES),
+  /** The doctor's own notes (optional now that the diagnosis is coded). */
+  diagnosis: z.string().trim().max(2000).optional().default(''),
   prescription: z.string().min(1),
   // The doctor's own PIN, re-entered as the act of signing — required on
   // every submission, not optional. See encounterService.submitConsultation.
@@ -103,7 +107,15 @@ const consultSchema = z.object({
 doctorRouter.post('/encounters/:id/consult', async (req, res) => {
   const parsed = consultSchema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: 'Diagnosis, prescription, and your PIN are required' });
+    res.status(400).json({ error: 'An ICD-11 diagnosis, the prescription, and your PIN are required' });
+    return;
+  }
+
+  let codes: Icd11Entry[];
+  try {
+    codes = resolveDiagnosisCodes(parsed.data.diagnosisCodes);
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
     return;
   }
 
@@ -111,6 +123,7 @@ doctorRouter.post('/encounters/:id/consult', async (req, res) => {
 
   try {
     const encounter = await submitConsultation({
+      diagnosisCodes: codes,
       encounterId: req.params.id as string,
       clinicId,
       departmentIds: departmentsOf(res),
@@ -139,6 +152,12 @@ doctorRouter.post('/encounters/:id/consult', async (req, res) => {
     }
     throw err;
   }
+});
+
+/** ICD-11 diagnosis search for the consultation form (WHO's official codes and titles). */
+doctorRouter.get('/icd11', (req, res) => {
+  const q = typeof req.query.q === 'string' ? req.query.q.slice(0, 80) : '';
+  res.json({ results: searchIcd11(q, 20), release: ICD11_RELEASE });
 });
 
 /** The clinic's active lab tests, for the "Request lab tests" picker. */

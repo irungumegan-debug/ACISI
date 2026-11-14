@@ -17,6 +17,7 @@ export const ENCRYPTED_PREFIX = 'enc:v1:';
 /** Fields encrypted wherever they appear in a write (Encounter, LabOrder, LabOrderItem, Patient, PendingPatientSignup, PatientAllergy). */
 export const ENCRYPTED_FIELDS: ReadonlySet<string> = new Set([
   'diagnosis',
+  'diagnosisCodes',
   'prescription',
   'visitReason',
   'noteForLab',

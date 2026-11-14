@@ -28,6 +28,7 @@ const BASE_DATA = {
   departmentName: 'General',
   visitedAt: new Date('2026-01-15'),
   diagnosis: 'Seasonal flu',
+  diagnosisCodes: [{ code: '1E32', title: 'Influenza, virus not identified' }],
   prescription: 'Paracetamol 500mg, twice daily for 5 days',
   signature: null,
   labResults: [] as import('../../src/services/visitRecordDocument').VisitLabResult[],

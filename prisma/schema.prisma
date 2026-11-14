@@ -469,6 +469,10 @@ model Encounter {
   /// Set by the doctor's consultation submission — never by the doctor's
   /// mere viewing of the patient.
   diagnosis           String?
+  /// ICD-11 MMS coded diagnoses chosen by the doctor, as JSON
+  /// [{"code":"1F40.Z","title":"Malaria due to Plasmodium falciparum, unspecified"}].
+  /// Encrypted at rest. `diagnosis` holds the doctor's own notes.
+  diagnosisCodes      String?
   prescription        String?
   consultedByStaffId  String?
   consultedByStaff    Staff?          @relation("EncounterConsultedBy", fields: [consultedByStaffId], references: [id])

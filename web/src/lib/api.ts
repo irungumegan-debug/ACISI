@@ -402,6 +402,8 @@ export interface VisitHistoryEntry {
   departmentName: string;
   visitedAt: string;
   diagnosis: string | null;
+  /** ICD-11 coded diagnoses (WHO code and title); empty for older visits. */
+  diagnosisCodes?: { code: string; title: string }[];
   prescription: string | null;
   /** Signed lab results, shown once the visit is checked out. */
   labResults?: {

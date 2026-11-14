@@ -227,7 +227,7 @@ describe('POST /doctor/encounters/:id/consult', () => {
     const res = await withCookie(
       request(buildApp())
         .post('/doctor/encounters/enc-1/consult')
-        .send({ diagnosis: 'Flu', prescription: 'Paracetamol 500mg', pin: '1234' }),
+        .send({ diagnosisCodes: ['1F40.Z'], diagnosis: 'Flu', prescription: 'Paracetamol 500mg', pin: '1234' }),
     );
 
     expect(res.status).toBe(200);
@@ -250,7 +250,7 @@ describe('POST /doctor/encounters/:id/consult', () => {
     const res = await withCookie(
       request(buildApp())
         .post('/doctor/encounters/enc-1/consult')
-        .send({ diagnosis: 'Flu', prescription: 'Paracetamol 500mg', pin: 'wrong' }),
+        .send({ diagnosisCodes: ['1F40.Z'], diagnosis: 'Flu', prescription: 'Paracetamol 500mg', pin: 'wrong' }),
     );
 
     expect(res.status).toBe(401);
@@ -268,5 +268,34 @@ describe('doctors in several departments', () => {
     expect(res.status).toBe(200);
     expect(mockDoctorDepartments).toHaveBeenCalledWith('staff-1');
     expect(mockGetQueue).toHaveBeenCalledWith('clinic-1', ['dept-general', 'dept-braces'], 'staff-1');
+  });
+});
+
+describe('ICD-11 coded diagnosis', () => {
+  it('signing needs at least one ICD-11 code, and only real codes are accepted, with WHO titles from the server', async () => {
+    mockLoadSession.mockResolvedValue(DOCTOR_SESSION);
+    mockDoctorDepartments.mockResolvedValue(['dept-1']);
+    mockSubmitConsult.mockResolvedValue({ id: 'enc-1', status: 'READY_FOR_CHECKOUT' });
+    const send = (body: object) => withCookie(request(buildApp()).post('/doctor/encounters/enc-1/consult').send(body));
+
+    expect((await send({ diagnosisCodes: [], prescription: 'x', pin: '1' })).status).toBe(400);
+    const fake = await send({ diagnosisCodes: ['ZZ99'], prescription: 'x', pin: '1' });
+    expect(fake.status).toBe(400);
+    expect(fake.body.error).toContain('ZZ99');
+
+    const ok = await send({ diagnosisCodes: ['1f40.z', '1F40.Z', 'BA00'], prescription: 'AL', pin: '1' });
+    expect(ok.status).toBe(200);
+    expect(mockSubmitConsult.mock.lastCall[0].diagnosisCodes).toEqual([
+      { code: '1F40.Z', title: 'Malaria due to Plasmodium falciparum, unspecified' },
+      { code: 'BA00', title: 'Essential hypertension' },
+    ]);
+  });
+
+  it('searches the ICD-11 list', async () => {
+    mockLoadSession.mockResolvedValue(DOCTOR_SESSION);
+    mockDoctorDepartments.mockResolvedValue(['dept-1']);
+    const res = await withCookie(request(buildApp()).get('/doctor/icd11?q=cholera'));
+    expect(res.body.results[0]).toEqual({ code: '1A00', title: 'Cholera' });
+    expect(res.body.release).toBe('2025-01');
   });
 });
