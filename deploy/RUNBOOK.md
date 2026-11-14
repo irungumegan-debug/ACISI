@@ -346,6 +346,14 @@ does not. The disease list follows the IDSR Technical Guidelines, 3rd edition
 groups, MOH 505 rows, ICD-11 codes) and set `NOTIFIABLE_LIST_CONFIRMED` to the
 date it was checked.
 
+## Release 2026-11-14: structured prescriptions and allergy warning
+
+Normal update ("Updating the app"), after the usual backup. The migration adds
+one table (`prescription_items`) and runs on start. Check: `sudo ls -l
+/opt/acisi/app/dist/assets/dha/` shows `erx-terminology-0.1.0.json`; a doctor's
+consultation page shows "Medicine 1" with a medicine search, and typing
+"paracetamol" lists DHA medicines.
+
 ## Turning on multi-factor login (admins and doctors)
 
 After the PIN, clinic admins and doctors get a 6-digit code by SMS (they can

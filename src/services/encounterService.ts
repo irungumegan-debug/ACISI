@@ -2,6 +2,15 @@ import { Encounter, EncounterStatus } from '@prisma/client';
 import { doctorQueueFilter } from './doctorScope';
 import { prisma } from '../db/prisma';
 import { NotifiableAlert, notifyNotifiableCases, recordNotifiableCases } from './notifiableDiseaseService';
+import {
+  assertOverridesGiven,
+  checkPrescriptionAllergies,
+  formatPrescriptionText,
+  listMedications,
+  MedicationView,
+  ResolvedPrescriptionItem,
+  toPrescriptionRows,
+} from './prescriptionService';
 import { recordAuditEvent } from './auditService';
 import { verifySigningPin } from './signingPin';
 import type { Icd11Entry } from './icd11Service';
@@ -92,6 +101,8 @@ export interface EncounterDetail {
   allergies: AllergyView[];
   /** True when other clinics recorded allergies that aren't shown (no sharing consent). */
   allergiesHiddenElsewhere: boolean;
+  /** Medicines prescribed in the visits shown in `history` (same sharing rule), newest first; `active` = course not finished. */
+  medications: MedicationView[];
 }
 
 async function assertEncounterInDoctorQueue(encounterId: string, clinicId: string, departmentIds: string[], staffId: string): Promise<Encounter> {
@@ -157,6 +168,7 @@ export async function getEncounterForDoctor(
     hasHiddenHistoryElsewhere,
     labOrders: await getLabOrdersForEncounter(encounter.id),
     ...(await allergiesFor(encounter.patientId, clinicId)),
+    medications: await listMedications(history.map((h) => h.encounterId)),
   };
 }
 
@@ -179,7 +191,10 @@ interface SubmitConsultationInput {
   diagnosisCodes: Icd11Entry[];
   /** The doctor's own notes (may be empty). */
   diagnosis: string;
-  prescription: string;
+  /** One line per medicine, already checked by resolvePrescriptionItems. */
+  prescriptionItems: ResolvedPrescriptionItem[];
+  /** General advice for the patient, added after the medicine lines (optional). */
+  prescriptionAdvice?: string | null;
   /**
    * The doctor's own PIN, re-entered as the actual act of signing — the
    * same mechanism as login (staffService.comparePin), just triggered here
@@ -204,6 +219,11 @@ export async function submitConsultation(input: SubmitConsultationInput): Promis
     throw new EncounterNotConsultableError();
   }
 
+  // Allergy check before the PIN: a clashing medicine needs the doctor's
+  // reason (the screen asks for it; this is the server-side guarantee).
+  const conflicts = await checkPrescriptionAllergies(encounter.patientId, input.clinicId, input.prescriptionItems);
+  assertOverridesGiven(input.prescriptionItems, conflicts);
+
   // Same per-account wrong-PIN counter as login (see verifySigningPin).
   await verifySigningPin({
     staffId: input.staffId,
@@ -223,11 +243,12 @@ export async function submitConsultation(input: SubmitConsultationInput): Promis
         status: 'READY_FOR_CHECKOUT',
         diagnosis: input.diagnosis || null,
         diagnosisCodes: JSON.stringify(input.diagnosisCodes),
-        prescription: input.prescription,
+        prescription: formatPrescriptionText(input.prescriptionItems, input.prescriptionAdvice),
         consultedByStaffId: input.staffId,
         consultedAt,
       },
     });
+    await tx.prescriptionItem.createMany({ data: toPrescriptionRows(updated.id, input.prescriptionItems, conflicts) });
     const notifiable = await recordNotifiableCases(tx, {
       encounterId: updated.id,
       patientId: updated.patientId,
@@ -238,6 +259,19 @@ export async function submitConsultation(input: SubmitConsultationInput): Promis
     });
     return { updated, notifiable };
   });
+
+  if (conflicts.length > 0) {
+    await recordAuditEvent({
+      actorType: 'STAFF',
+      actorId: input.staffId,
+      staffId: input.staffId,
+      clinicId: input.clinicId,
+      action: 'PRESCRIPTION_ALLERGY_OVERRIDDEN',
+      entityType: 'Encounter',
+      entityId: updated.id,
+      metadata: { lines: [...new Set(conflicts.map((c) => c.index))].length, allergyIds: [...new Set(conflicts.map((c) => c.allergyId))] },
+    });
+  }
 
   // Audit and the 24-hour SMS alert run after the save and never undo it.
   void notifyNotifiableCases({ clinicId: input.clinicId, staffId: input.staffId, encounterId: updated.id, alerts: notifiable });

@@ -17,6 +17,18 @@ import { listLabTests, requestLabTests } from '../services/labService';
 import { sendLabError } from './lab';
 import { ICD11_RELEASE, Icd11Entry, MAX_DIAGNOSIS_CODES, resolveDiagnosisCodes, searchIcd11 } from '../services/icd11Service';
 import { AllergyError, recordAllergy, removeAllergy } from '../services/allergyService';
+import {
+  AllergyOverrideRequiredError,
+  checkPrescriptionAllergies,
+  DOSE_UNITS,
+  FREQUENCIES,
+  MAX_PRESCRIPTION_ITEMS,
+  prescriptionItemsSchema,
+  ResolvedPrescriptionItem,
+  resolvePrescriptionItems,
+  ROUTES,
+} from '../services/prescriptionService';
+import { dhaDisplay, dhaTerminologyList, searchProducts, suggestedDoseUnit, suggestedRoute } from '../services/dhaTerminology';
 import { doctorQueueFilter } from '../services/doctorScope';
 import { prisma } from '../db/prisma';
 
@@ -98,7 +110,10 @@ const consultSchema = z.object({
   diagnosisCodes: z.array(z.string().trim().min(1).max(20)).min(1).max(MAX_DIAGNOSIS_CODES),
   /** The doctor's own notes (optional now that the diagnosis is coded). */
   diagnosis: z.string().trim().max(2000).optional().default(''),
-  prescription: z.string().min(1),
+  /** One line per medicine (DHA-coded where picked from the list). */
+  prescriptionItems: prescriptionItemsSchema,
+  /** General advice for the patient, printed after the medicines (optional). */
+  prescriptionAdvice: z.string().trim().max(1000).nullish(),
   // The doctor's own PIN, re-entered as the act of signing — required on
   // every submission, not optional. See encounterService.submitConsultation.
   pin: z.string().min(1),
@@ -107,13 +122,15 @@ const consultSchema = z.object({
 doctorRouter.post('/encounters/:id/consult', async (req, res) => {
   const parsed = consultSchema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: 'An ICD-11 diagnosis, the prescription, and your PIN are required' });
+    res.status(400).json({ error: 'An ICD-11 diagnosis, at least one medicine (dose, how often, route), and your PIN are required' });
     return;
   }
 
   let codes: Icd11Entry[];
+  let items: ResolvedPrescriptionItem[];
   try {
     codes = resolveDiagnosisCodes(parsed.data.diagnosisCodes);
+    items = resolvePrescriptionItems(parsed.data.prescriptionItems);
   } catch (err) {
     res.status(400).json({ error: (err as Error).message });
     return;
@@ -129,7 +146,8 @@ doctorRouter.post('/encounters/:id/consult', async (req, res) => {
       departmentIds: departmentsOf(res),
       staffId,
       diagnosis: parsed.data.diagnosis,
-      prescription: parsed.data.prescription,
+      prescriptionItems: items,
+      prescriptionAdvice: parsed.data.prescriptionAdvice,
       pin: parsed.data.pin,
     });
     res.json({ encounterId: encounter.id, status: encounter.status, notifiable: encounter.notifiable });
@@ -150,8 +168,51 @@ doctorRouter.post('/encounters/:id/consult', async (req, res) => {
       res.status(429).json({ error: err.message });
       return;
     }
+    if (err instanceof AllergyOverrideRequiredError) {
+      res.status(409).json({ error: err.message, allergyConflicts: err.conflicts });
+      return;
+    }
     throw err;
   }
+});
+
+/** Medicine search for the prescription form: DHA's Kenya medicines list (Generic Products). */
+doctorRouter.get('/medicines', (req, res) => {
+  const q = typeof req.query.q === 'string' ? req.query.q.slice(0, 80) : '';
+  res.json({
+    results: searchProducts(q, 20).map((p) => ({ ...p, suggestedRoute: suggestedRoute(p.name), suggestedDoseUnit: suggestedDoseUnit(p.name) })),
+  });
+});
+
+/** The choices for a prescription line (DHA codes and names). */
+doctorRouter.get('/prescription-options', (_req, res) => {
+  res.json({
+    routes: ROUTES.map((code) => ({ code, name: dhaDisplay('routes', code) ?? code })),
+    doseUnits: Object.entries(DOSE_UNITS).map(([code, u]) => ({ code, name: u.many, one: u.one })),
+    frequencies: Object.entries(FREQUENCIES).map(([code, f]) => ({ code, name: f.label, perDay: f.perDay })),
+    instructions: dhaTerminologyList('instructions'),
+  });
+});
+
+const checkSchema = z.object({
+  items: z.array(z.object({ productCode: z.string().max(20).nullish(), drugName: z.string().max(120).nullish() })).max(MAX_PRESCRIPTION_ITEMS),
+});
+
+/** Live allergy check while the doctor writes the prescription (the same check runs again at signing). */
+doctorRouter.post('/encounters/:id/prescription-check', async (req, res) => {
+  const parsed = checkSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid medicines' });
+    return;
+  }
+  const patientId = await patientInMyQueue(req, res);
+  if (!patientId) {
+    res.status(404).json({ error: 'Patient not found in your queue' });
+    return;
+  }
+  const lines = parsed.data.items.map((i) => ({ drugName: (i.productCode && dhaDisplay('products', i.productCode)) || i.drugName || '' }));
+  const { clinicId } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  res.json({ allergyConflicts: await checkPrescriptionAllergies(patientId, clinicId, lines) });
 });
 
 /** ICD-11 diagnosis search for the consultation form (WHO's official codes and titles). */

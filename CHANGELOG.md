@@ -3,6 +3,22 @@
 Plain-language record of what changed in ACISI, which data each change
 touches, and who can use it. Newest first.
 
+## 2026-11-14: Structured prescriptions and allergy warning
+
+One database change, additive (`20261114200000_prescription_items`); undo
+script in `prisma/rollback/`. Shaped after the Digital Health Agency's
+**Kenya ePrescription FHIR guide** (ke.fhir.eprescription 0.1.0, CC-BY-4.0):
+medicines, routes, units and instructions use DHA's own code lists, bundled
+in `src/assets/dha/` (medicine names from the Pharmacy and Poisons Board).
+
+| # | What changed | Data it touches | Who |
+|---|---|---|---|
+| P1 | **One card per medicine:** search DHA's Kenya medicines list (3,019 products with strength and form, e.g. GE10177 Paracetamol 500 mg Oral Tablet), or type a medicine not on the list. Dose and unit, how often, for how many days, route (suggested from the form), quantity to give (worked out automatically), DHA's instructions (e.g. "Take with or after food") and a note. Optional advice for the patient. | New: prescription lines (medicine name, note and override reason encrypted at rest) | Doctors |
+| P2 | **Allergy warning:** while the doctor writes, each medicine is checked against the patient's recorded allergies: the same medicine or ingredient, brand names (Augmentin, Septrin...) and drug groups (penicillins, cephalosporins, sulfonamides, NSAIDs, fluoroquinolones, macrolides...). A clashing medicine can only be signed with the doctor's reason; the server checks again at signing. Overrides are audit-logged (IDs only). Not checked: cross-reactions between groups, allergies hidden at other clinics. | Prescription lines | Doctors |
+| P3 | **Current medicines and medication history** on the consultation page, from the visits the doctor may see (same sharing rule as visit history), with any allergy override shown. | — | Doctors |
+| P4 | The visit's prescription text (SMS, visit record PDF, portal, checkout) is now written from the lines, one medicine per line. Older visits are unchanged. | — | Patients, front desk |
+| P5 | **FHIR:** one MedicationRequest per medicine, coded with DHA's systems (Generic Products, route, unit, additional instruction), structured timing, dose and quantity to dispense. Independent FHIR R4 validator: 0 errors. | — | — |
+
 ## 2026-11-14: Notifiable disease alerts and weekly summary (IDSR)
 
 One database change, additive (`20261114180000_notifiable_disease_cases`);

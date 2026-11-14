@@ -1,6 +1,8 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { api, ApiError, EncounterDetail, Icd11Code, NotifiableAlert } from '../lib/api';
+import { AllergyConflict, api, ApiError, EncounterDetail, Icd11Code, NotifiableAlert } from '../lib/api';
+import { describeLine, DraftLine, emptyLine, lineProblem, PrescriptionEditor, toPrescriptionLine, usePrescriptionOptions } from '../components/PrescriptionEditor';
+import { Medications } from '../components/Medications';
 import { Icd11Picker } from '../components/Icd11Picker';
 import { useAuth } from '../context/AuthContext';
 import { AlertTriangle, ArrowLeft, Building2, FileText, Lock, NotebookPen, Phone, Pill, ShieldCheck, Stethoscope } from 'lucide-react';
@@ -30,7 +32,10 @@ export function DoctorEncounterPage() {
   const [loading, setLoading] = useState(true);
   const [diagnosisCodes, setDiagnosisCodes] = useState<Icd11Code[]>([]);
   const [diagnosis, setDiagnosis] = useState('');
-  const [prescription, setPrescription] = useState('');
+  const [lines, setLines] = useState<DraftLine[]>(() => [emptyLine()]);
+  const [advice, setAdvice] = useState('');
+  const [conflicts, setConflicts] = useState<AllergyConflict[]>([]);
+  const rxOptions = usePrescriptionOptions();
   const [step, setStep] = useState<Step>('edit');
   const [pin, setPin] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -62,7 +67,16 @@ export function DoctorEncounterPage() {
       setError('Choose at least one ICD-11 diagnosis');
       return;
     }
-    if (!prescription.trim()) return;
+    const problem = lines.map((l, i) => [i, lineProblem(l)] as const).find(([, p]) => p);
+    if (problem) {
+      setError(`Medicine ${problem[0] + 1}: ${problem[1]}`);
+      return;
+    }
+    const unexplained = conflicts.find((c) => !lines[c.index]?.allergyOverrideReason.trim());
+    if (unexplained) {
+      setError(`Medicine ${unexplained.index + 1} clashes with a recorded allergy (${unexplained.allergySubstance}): change it or give your reason`);
+      return;
+    }
     setError(null);
     setStep('sign');
   }
@@ -73,12 +87,20 @@ export function DoctorEncounterPage() {
     setSubmitting(true);
     setError(null);
     try {
-      const res = await api.submitConsultation(id, diagnosisCodes.map((c) => c.code), diagnosis, prescription, pin);
+      const res = await api.submitConsultation(id, {
+        diagnosisCodes: diagnosisCodes.map((c) => c.code),
+        diagnosis,
+        prescriptionItems: lines.map(toPrescriptionLine),
+        prescriptionAdvice: advice.trim(),
+        pin,
+      });
       if (res.notifiable && res.notifiable.length > 0) setNotifiable(res.notifiable);
       else navigate('/doctor/queue', { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to submit consultation');
       setPin('');
+      // An allergy clash found at signing (e.g. an allergy recorded meanwhile): back to the form to see it.
+      if (err instanceof ApiError && err.status === 409) setStep('edit');
     } finally {
       setSubmitting(false);
     }
@@ -121,6 +143,7 @@ export function DoctorEncounterPage() {
 
     <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
       <div className="order-2 lg:order-1">
+        <Medications items={encounter.medications ?? []} />
         <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-ink-700">
           <FileText size={16} aria-hidden className="text-gold-700" /> Visit history
         </h2>
@@ -247,16 +270,20 @@ export function DoctorEncounterPage() {
                 />
               </div>
               <div>
-                <label className={field.label} htmlFor="prescription">
-                  Prescription
+                <span className={field.label}>Prescription</span>
+                <PrescriptionEditor encounterId={encounter.encounterId} lines={lines} onChange={setLines} conflicts={conflicts} onConflicts={setConflicts} />
+              </div>
+              <div>
+                <label className={field.label} htmlFor="advice">
+                  Advice for the patient (optional)
                 </label>
                 <textarea
-                  id="prescription"
-                  required
-                  value={prescription}
-                  onChange={(e) => setPrescription(e.target.value)}
-                  placeholder="Medication, dosage, duration (sent to the patient by SMS, so no diagnosis here)"
-                  className={textarea}
+                  id="advice"
+                  value={advice}
+                  maxLength={1000}
+                  onChange={(e) => setAdvice(e.target.value)}
+                  placeholder="e.g. Drink plenty of fluids; come back if the fever continues after 3 days (sent by SMS, so no diagnosis here)"
+                  className={`${field.input} min-h-20 resize-y py-3`}
                 />
               </div>
               {error && step === 'edit' && (
@@ -293,10 +320,22 @@ export function DoctorEncounterPage() {
                   ))}
                 </ul>
                 {diagnosis.trim() && <p className="whitespace-pre-wrap pl-6 text-ink-700">{diagnosis}</p>}
-                <p className="flex items-start gap-2 text-ink-700">
-                  <Pill size={15} aria-hidden className="mt-0.5 flex-none text-gold-700" />
-                  <span className="whitespace-pre-wrap">{prescription}</span>
-                </p>
+                <ul className="space-y-1.5 text-ink-700">
+                  {lines.map((l, i) => (
+                    <li key={l.key} className="flex items-start gap-2">
+                      <Pill size={15} aria-hidden className="mt-0.5 flex-none text-gold-700" />
+                      <span>
+                        {describeLine(l, rxOptions)}
+                        {conflicts.some((c) => c.index === i) && (
+                          <span className="mt-0.5 block text-xs font-semibold text-red-700">
+                            Allergy override: {l.allergyOverrideReason.trim()}
+                          </span>
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                  {advice.trim() && <li className="whitespace-pre-wrap pl-6">{advice.trim()}</li>}
+                </ul>
                 <p className="border-t border-slate-200 pt-3 font-medium text-navy-900">I confirm this prescription is accurate and complete.</p>
               </div>
               <div>

@@ -488,9 +488,10 @@ model Encounter {
   checkedOutAt        DateTime?
   createdAt           DateTime        @default(now())
 
-  bill            Bill?
-  labOrders       LabOrder[]
-  notifiableCases NotifiableDiseaseCase[]
+  bill              Bill?
+  labOrders         LabOrder[]
+  notifiableCases   NotifiableDiseaseCase[]
+  prescriptionItems PrescriptionItem[]
 
   @@index([patientId])
   @@index([clinicId])
@@ -1211,4 +1212,42 @@ model NotifiableDiseaseCase {
   @@unique([encounterId, diseaseId])
   @@index([clinicId, diagnosedAt])
   @@map("notifiable_disease_cases")
+}
+
+/// One medicine on a visit's prescription (structured e-prescribing, shaped
+/// after DHA's Kenya ePrescription FHIR guide). The visit's `prescription`
+/// text is generated from these lines when the doctor signs, so SMS, PDF,
+/// portal and billing keep reading one text. Medicine name, instructions and
+/// any allergy-override reason are encrypted at rest. Never changed after
+/// signing.
+model PrescriptionItem {
+  id                    String    @id @default(cuid())
+  encounterId           String
+  encounter             Encounter @relation(fields: [encounterId], references: [id])
+  position              Int
+  /// DHA Generic Products code (e.g. "GE10177") when picked from the list, else null.
+  productCode           String?
+  /// The product's DHA name, or what the doctor typed for a medicine not on the list.
+  drugName              String
+  doseValue             Float
+  /// DHA Unit of Measure code (services/prescriptionService.ts DOSE_UNITS).
+  doseUnit              String
+  /// DHA Route of Administration code (services/prescriptionService.ts ROUTES).
+  route                 String
+  /// OD, BD, TDS, ... (services/prescriptionService.ts FREQUENCIES).
+  frequency             String
+  durationDays          Int?
+  /// Total to dispense, in `quantityUnit` (DHA unit code).
+  quantity              Float?
+  quantityUnit          String?
+  /// DHA Additional Instruction codes, comma-separated.
+  instructionCodes      String?
+  /// The doctor's own note for this medicine.
+  instructions          String?
+  /// Why the doctor prescribed it despite a recorded allergy.
+  allergyOverrideReason String?
+  createdAt             DateTime  @default(now())
+
+  @@index([encounterId])
+  @@map("prescription_items")
 }

@@ -331,6 +331,60 @@ export interface EncounterDetail {
   /** Current and removed allergies (same sharing rule as visit history). */
   allergies?: AllergyItem[];
   allergiesHiddenElsewhere?: boolean;
+  /** Medicines from the visits shown in `history`, newest first. Doctor view only. */
+  medications?: MedicationItem[];
+}
+
+export interface MedicationItem {
+  id: string;
+  encounterId: string;
+  productCode: string | null;
+  drugName: string;
+  text: string;
+  prescribedAt: string;
+  endsOn: string | null;
+  active: boolean;
+  clinicName: string;
+  prescribedBy: string | null;
+  allergyOverrideReason: string | null;
+}
+
+/** One medicine line as sent when signing (codes are DHA's). */
+export interface PrescriptionLine {
+  productCode: string | null;
+  drugName: string | null;
+  doseValue: number;
+  doseUnit: string;
+  route: string;
+  frequency: string;
+  durationDays: number | null;
+  quantity: number | null;
+  quantityUnit: string | null;
+  instructionCodes: string[];
+  instructions: string | null;
+  allergyOverrideReason: string | null;
+}
+
+export interface AllergyConflict {
+  index: number;
+  drugName: string;
+  allergyId: string;
+  allergySubstance: string;
+  reason: string;
+}
+
+export interface PrescriptionOptions {
+  routes: { code: string; name: string }[];
+  doseUnits: { code: string; name: string; one: string }[];
+  frequencies: { code: string; name: string; perDay: number | null }[];
+  instructions: { code: string; name: string }[];
+}
+
+export interface MedicineHit {
+  code: string;
+  name: string;
+  suggestedRoute: string | null;
+  suggestedDoseUnit: string | null;
 }
 
 export type AllergyCategory = 'MEDICATION' | 'FOOD' | 'ENVIRONMENT' | 'OTHER';
@@ -941,10 +995,30 @@ export const api = {
     return request<LabTestItem>(`/lab-tests/${encodeURIComponent(labTestId)}`, { method: 'PATCH', body: JSON.stringify(body) });
   },
 
-  submitConsultation(encounterId: string, diagnosisCodes: string[], diagnosis: string, prescription: string, pin: string) {
+  submitConsultation(
+    encounterId: string,
+    body: { diagnosisCodes: string[]; diagnosis: string; prescriptionItems: PrescriptionLine[]; prescriptionAdvice: string; pin: string },
+  ) {
     return request<{ encounterId: string; status: EncounterStatus; notifiable?: NotifiableAlert[] }>(`/doctor/encounters/${encounterId}/consult`, {
       method: 'POST',
-      body: JSON.stringify({ diagnosisCodes, diagnosis, prescription, pin }),
+      body: JSON.stringify(body),
+    });
+  },
+
+  /** DHA's Kenya medicines list (Generic Products). */
+  searchMedicines(q: string) {
+    return request<{ results: MedicineHit[] }>(`/doctor/medicines?q=${encodeURIComponent(q)}`);
+  },
+
+  prescriptionOptions() {
+    return request<PrescriptionOptions>('/doctor/prescription-options');
+  },
+
+  /** Live allergy check while writing the prescription (repeated by the server at signing). */
+  checkPrescription(encounterId: string, items: { productCode: string | null; drugName: string | null }[]) {
+    return request<{ allergyConflicts: AllergyConflict[] }>(`/doctor/encounters/${encounterId}/prescription-check`, {
+      method: 'POST',
+      body: JSON.stringify({ items }),
     });
   },
 

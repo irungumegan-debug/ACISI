@@ -26,6 +26,7 @@ const VISIT: VisitRecord = {
   diagnosis: 'Malaria (P. falciparum)',
   diagnosisCodes: [{ code: '1F40.Z', title: 'Malaria due to Plasmodium falciparum, unspecified' }],
   prescription: 'Artemether-lumefantrine 80/480 twice daily for 3 days',
+  prescriptionItems: [],
   clinicId: 'c-1',
   departmentName: 'General Consultation',
   doctor: DOCTOR,

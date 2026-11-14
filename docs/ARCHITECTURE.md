@@ -422,6 +422,19 @@ requires 1-5 codes; the server validates them and stores
 release means rebuilding the JSON with the script and changing
 `ICD11_RELEASE`.
 
+## Structured prescriptions (`src/services/prescriptionService.ts`)
+
+Each medicine is a `PrescriptionItem` (DHA Generic Products code or a typed
+name, dose value + DHA unit code, DHA route code, frequency, days, quantity,
+DHA instruction codes, note). DHA's code lists come from the Kenya
+ePrescription FHIR guide, bundled in `src/assets/dha/` (built by
+`scripts/buildDhaTerminology.py`, read by `dhaTerminology.ts`). The visit's
+`prescription` text is generated from the lines, so every existing reader
+keeps working. The allergy check (`medicines.ts`) maps each medicine's
+ingredients to drug groups and compares them with the patient's current
+medicine allergies; `submitConsultation` refuses a clash without a reason
+(`AllergyOverrideRequiredError`, HTTP 409) before checking the PIN.
+
 ## Notifiable diseases / IDSR (`src/services/notifiableDisease*.ts`)
 
 `notifiableDiseases.ts` holds the list from the Kenya IDSR Technical

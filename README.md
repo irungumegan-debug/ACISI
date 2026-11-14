@@ -331,4 +331,11 @@ is enough; there's no separate frontend service to deploy.
   [CC BY-ND 3.0 IGO](https://creativecommons.org/licenses/by-nd/3.0/igo/).
   Codes and titles are reproduced unmodified from WHO's Simple Tabulation
   (https://icd.who.int). Rebuild with `scripts/buildIcd11Data.py`.
+- **Kenya ePrescription terminology** (`src/assets/dha/`): medicines (Generic
+  Products), routes, units and additional instructions from the Kenya
+  ePrescription FHIR Implementation Guide 0.1.0, © Digital Health Agency,
+  Kenya, licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/);
+  medicine terminology from the Kenya Pharmacy and Poisons Board via Open
+  Concept Lab, subject to separate terms. Codes and names unmodified. Rebuild
+  with `scripts/buildDhaTerminology.py`.
 - **Dancing Script** font (`src/assets/fonts/`): see its licence file there.
