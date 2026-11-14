@@ -22,9 +22,10 @@ USSD-first clinic management platform for small clinics in Kenya. See
   when an action in its section 6 is completed.
 - **DHA self-attestation** (draft reference DHS-1793019691629-GXVFAJJTJ, not yet
   submitted or paid). Answers must be checked against the code, never assumed.
-  Remaining one-week plan, in order: (1) tamper-resistant audit log in the
-  database, inactivity logoff, under-18 check at portal signup; (2) AES-256
-  encryption of sensitive data at rest; (3) ICD-11 coded diagnoses incl. MOH
+  Done 14 Nov 2026 (on branch, deploy with the runbook "DHA fixes" release):
+  tamper-resistant audit log, 15-min inactivity logoff, under-18 check,
+  AES-256-GCM encryption at rest (fields + files). Remaining, in order:
+  (3) ICD-11 coded diagnoses incl. MOH
   notifiable diseases; (4) notifiable-disease alert + automatic weekly IDSR
   report; (5-6) FHIR R4 interface ready for the Kenya HIE; (7) retest, update
   the attestation, submit.

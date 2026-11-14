@@ -1,6 +1,9 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { encryptionKey } from '../utils/fieldCrypto';
 import PDFDocument from 'pdfkit';
 import { ActorType, PatientFile, PatientFileCategory } from '@prisma/client';
 import { prisma } from '../db/prisma';
@@ -159,9 +162,15 @@ async function storeAndRecord(
 ): Promise<PatientFile> {
   const storageName = crypto.randomBytes(24).toString('hex');
   const target = filePath(storageName);
-  await fs.promises.rename(tempFile, target);
+  // Size of the file itself (what a viewer downloads), before encryption.
+  const { size } = await fs.promises.stat(tempFile);
+  if (encryptionKey()) {
+    await encryptFile(tempFile, target);
+    await removeQuietly(tempFile);
+  } else {
+    await fs.promises.rename(tempFile, target);
+  }
   await fs.promises.chmod(target, 0o600).catch(() => undefined);
-  const { size } = await fs.promises.stat(target);
   try {
     const row = await prisma.patientFile.create({
       data: {
@@ -299,7 +308,7 @@ export async function listPatientFiles(patientId: string, viewer: FileViewer): P
 }
 
 /** Throws "not found" unless the viewer may open this file: never says it exists otherwise. */
-export async function openPatientFile(fileId: string, viewer: FileViewer): Promise<{ file: PatientFile; stream: fs.ReadStream }> {
+export async function openPatientFile(fileId: string, viewer: FileViewer): Promise<{ file: PatientFile; stream: Readable }> {
   const file = await prisma.patientFile.findUnique({ where: { id: fileId } });
   const notFound = new PatientFileError('File not found', 404);
   if (!file) throw notFound;
@@ -329,18 +338,81 @@ export async function openPatientFile(fileId: string, viewer: FileViewer): Promi
     entityId: file.id,
     metadata: viewer.kind === 'staff' ? { patientId: file.patientId, ownClinicFile: file.clinicId === viewer.clinicId, basis } : { patientId: file.patientId },
   });
-  return { file, stream: fs.createReadStream(full) };
+  return { file, stream: await openStoredBytes(full) };
 }
 
 /** Opens a stored file's bytes; "not found" if they're missing. Callers decide who may see it and audit the view. */
-export async function streamStoredFile(file: PatientFile): Promise<fs.ReadStream> {
+export async function streamStoredFile(file: PatientFile): Promise<Readable> {
   const full = filePath(file.storageName);
   try {
     await fs.promises.access(full, fs.constants.R_OK);
   } catch {
     throw new PatientFileError('File not found', 404);
   }
-  return fs.createReadStream(full);
+  return openStoredBytes(full);
+}
+
+// --- Encryption at rest -------------------------------------------------------
+// Stored files are AES-256-GCM encrypted with DATA_ENCRYPTION_KEY:
+// "ACISIENC1" | 12-byte IV | ciphertext | 16-byte tag. Files stored before
+// encryption was switched on have no such header and are served as they are.
+
+const FILE_MAGIC = Buffer.from('ACISIENC1', 'latin1');
+const IV_BYTES = 12;
+const TAG_BYTES = 16;
+
+async function encryptFile(source: string, target: string): Promise<void> {
+  const key = encryptionKey()!;
+  const iv = crypto.randomBytes(IV_BYTES);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const out = fs.createWriteStream(target, { mode: 0o600 });
+  out.write(Buffer.concat([FILE_MAGIC, iv]));
+  try {
+    await pipeline(fs.createReadStream(source), cipher, out, { end: false });
+    await new Promise<void>((resolve, reject) => out.end(cipher.getAuthTag(), (err?: Error | null) => (err ? reject(err) : resolve())));
+  } catch (err) {
+    out.destroy();
+    await removeQuietly(target);
+    throw err;
+  }
+}
+
+/** The stored bytes as the original file: decrypted when encrypted, as-is for older files. */
+async function openStoredBytes(full: string): Promise<Readable> {
+  const head = await readHead(full);
+  if (head.length < FILE_MAGIC.length || !head.subarray(0, FILE_MAGIC.length).equals(FILE_MAGIC)) return fs.createReadStream(full);
+  const key = encryptionKey();
+  if (!key) throw new Error('Encrypted file found but DATA_ENCRYPTION_KEY is not set');
+  const { size } = await fs.promises.stat(full);
+  const fh = await fs.promises.open(full, 'r');
+  const iv = Buffer.alloc(IV_BYTES);
+  const tag = Buffer.alloc(TAG_BYTES);
+  try {
+    await fh.read(iv, 0, IV_BYTES, FILE_MAGIC.length);
+    await fh.read(tag, 0, TAG_BYTES, size - TAG_BYTES);
+  } finally {
+    await fh.close();
+  }
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+  decipher.setAuthTag(tag);
+  const start = FILE_MAGIC.length + IV_BYTES;
+  const end = size - TAG_BYTES - 1;
+  if (end < start) {
+    decipher.end();
+    return decipher;
+  }
+  return fs.createReadStream(full, { start, end }).pipe(decipher);
+}
+
+/** Encrypts a file stored before encryption was switched on (scripts/encryptExistingData.ts). Returns false if already encrypted. */
+export async function encryptStoredFileInPlace(storageName: string): Promise<boolean> {
+  const full = filePath(storageName);
+  const head = await readHead(full);
+  if (head.subarray(0, FILE_MAGIC.length).equals(FILE_MAGIC)) return false;
+  const tmp = `${full}.enc-tmp`;
+  await encryptFile(full, tmp);
+  await fs.promises.rename(tmp, full);
+  return true;
 }
 
 /** A safe download name: "X-ray 2026-03-15.jpg". Never the uploader's original name. */

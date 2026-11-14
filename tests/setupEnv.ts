@@ -9,6 +9,8 @@ process.env.MPESA_CONSUMER_SECRET ??= 'test-consumer-secret';
 process.env.MPESA_SHORTCODE ??= '174379';
 process.env.MPESA_PASSKEY ??= 'test-passkey';
 process.env.MPESA_CALLBACK_URL ??= 'https://example.com/api/mpesa/callback';
+// A fixed test key (never used anywhere real), so encryption runs in tests.
+process.env.DATA_ENCRYPTION_KEY ??= Buffer.alloc(32, 7).toString('base64');
 
 // The inactivity logoff needs Redis. Route tests fake the session itself, so
 // by default every session counts as active; tests/services/idleTimeout.test.ts

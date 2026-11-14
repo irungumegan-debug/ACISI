@@ -95,6 +95,17 @@ const envSchema = z.object({
   /** Uploads are refused when the disk has less free space than this (MB), so files can never fill it. */
   FILE_UPLOAD_MIN_FREE_MB: z.coerce.number().int().min(0).default(2048),
 
+  /**
+   * AES-256 key for health data and ID documents at rest (32 bytes, base64:
+   * `openssl rand -base64 32`). Required on a live server. Keep a copy
+   * offline with the backup key: without it encrypted data can't be read.
+   */
+  DATA_ENCRYPTION_KEY: z
+    .string()
+    .trim()
+    .optional()
+    .refine((v) => !v || Buffer.from(v, 'base64').length === 32, 'DATA_ENCRYPTION_KEY must be 32 bytes, base64-encoded (openssl rand -base64 32)'),
+
   STAFF_PIN_SALT_ROUNDS: z.coerce.number().int().min(4).max(15).default(10),
 
   USSD_SESSION_TTL_SECONDS: z.coerce.number().int().positive().default(170),
@@ -135,10 +146,16 @@ export function productionMpesaProblems(e: Env): string[] {
   return problems;
 }
 
+/** A live server never stores health data unencrypted. */
+export function productionEncryptionProblems(e: Env): string[] {
+  if (e.NODE_ENV !== 'production' || e.DATA_ENCRYPTION_KEY) return [];
+  return ['DATA_ENCRYPTION_KEY: required when NODE_ENV=production (create one with: openssl rand -base64 32)'];
+}
+
 export function parseEnv(source: NodeJS.ProcessEnv): Env {
   const parsed = envSchema.safeParse(source);
   const issues = parsed.success
-    ? productionMpesaProblems(parsed.data)
+    ? [...productionMpesaProblems(parsed.data), ...productionEncryptionProblems(parsed.data)]
     : parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`);
   if (issues.length > 0) {
     throw new Error(`Invalid environment configuration:\n${issues.map((i) => `  - ${i}`).join('\n')}`);
