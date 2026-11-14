@@ -178,10 +178,18 @@ export const api = {
     });
   },
 
+  /** Logged in, or (admins and doctors) a 6-digit code was sent by SMS: then call staffVerifyLoginCode. */
   staffLogin(staffCode: string, pin: string) {
-    return request<StaffSessionSummary>('/staff/auth/login', {
+    return request<StaffSessionSummary | { mfaRequired: true; challengeId: string; phoneHint: string }>('/staff/auth/login', {
       method: 'POST',
       body: JSON.stringify({ staffCode, pin }),
+    });
+  },
+
+  staffVerifyLoginCode(challengeId: string, code: string, rememberDevice: boolean) {
+    return request<StaffSessionSummary>('/staff/auth/login/verify', {
+      method: 'POST',
+      body: JSON.stringify({ challengeId, code, rememberDevice }),
     });
   },
 

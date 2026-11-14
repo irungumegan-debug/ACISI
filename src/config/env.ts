@@ -96,6 +96,16 @@ const envSchema = z.object({
   FILE_UPLOAD_MIN_FREE_MB: z.coerce.number().int().min(0).default(2048),
 
   /**
+   * Multi-factor login (SMS code) for clinic admins and doctors. Off until
+   * real SMS delivery is confirmed (with Africa's Talking in sandbox, codes
+   * would never reach a phone and admins and doctors would be locked out).
+   */
+  STAFF_MFA_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+
+  /**
    * AES-256 key for health data and ID documents at rest (32 bytes, base64:
    * `openssl rand -base64 32`). Required on a live server. Keep a copy
    * offline with the backup key: without it encrypted data can't be read.

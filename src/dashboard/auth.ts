@@ -21,6 +21,19 @@ import {
 } from './session';
 import { markSessionActive } from '../services/idleTimeout';
 import { logger } from '../utils/logger';
+import { Clinic, Staff } from '@prisma/client';
+import { recordAuditEvent } from '../services/auditService';
+import {
+  isTrustedDevice,
+  MfaError,
+  mfaRequiredFor,
+  phoneHint,
+  rememberDevice,
+  startLoginChallenge,
+  TRUSTED_DEVICE_COOKIE,
+  TRUSTED_DEVICE_DAYS,
+  verifyLoginCode,
+} from '../services/staffMfaService';
 
 export interface AuthenticatedRequest extends Request {
   dashboardSession: DashboardSession;
@@ -62,6 +75,26 @@ authRouter.post('/login', async (req, res) => {
 
   await clearLockout(subject);
 
+  // Admins and doctors: a code by SMS as well, unless this device was remembered.
+  if (mfaRequiredFor(staff.role) && !(await isTrustedDevice(staff.id, req.cookies?.[TRUSTED_DEVICE_COOKIE] as string | undefined))) {
+    try {
+      const challengeId = await startLoginChallenge(staff);
+      res.json({ mfaRequired: true, challengeId, phoneHint: phoneHint(staff.phoneNumber) });
+    } catch (err) {
+      if (err instanceof MfaError) {
+        res.status(err.status).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
+    return;
+  }
+
+  await issueStaffSession(staff, req, res);
+});
+
+/** Creates the console session and its cookie, and answers the login request. */
+async function issueStaffSession(staff: Staff & { clinic: Clinic }, req: Request, res: Response): Promise<void> {
   const token = await createDashboardSession({
     staffId: staff.id,
     staffCode: staff.staffCode,
@@ -84,6 +117,59 @@ authRouter.post('/login', async (req, res) => {
   });
 
   res.json({ staffName: staff.name, clinicName: staff.clinic.name, role: staff.role });
+}
+
+const verifyCodeSchema = z.object({
+  challengeId: z.string().min(1).max(100),
+  code: z.string().trim().regex(/^\d{6}$/, 'The code is 6 digits'),
+  rememberDevice: z.boolean().optional(),
+});
+
+/** Second step of an admin's or doctor's login: the 6-digit code from the SMS. */
+authRouter.post('/login/verify', async (req, res) => {
+  const parsed = verifyCodeSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Enter the 6-digit code' });
+    return;
+  }
+  let who: { staffId: string; staffCode: string };
+  try {
+    who = await verifyLoginCode(parsed.data.challengeId, parsed.data.code);
+  } catch (err) {
+    if (err instanceof MfaError) {
+      res.status(err.status).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
+  const staff = await findActiveStaffWithClinicByCode(who.staffCode);
+  if (!staff || staff.id !== who.staffId) {
+    res.status(401).json({ error: 'Log in again' });
+    return;
+  }
+  if (await isLockedOut(`staff:${staff.id}`)) {
+    res.status(429).json({ error: lockoutMessage() });
+    return;
+  }
+  await recordAuditEvent({
+    actorType: 'STAFF',
+    actorId: staff.id,
+    staffId: staff.id,
+    clinicId: staff.clinicId,
+    action: 'STAFF_LOGIN_CODE_VERIFIED',
+    entityType: 'Staff',
+    entityId: staff.id,
+    metadata: { rememberDevice: parsed.data.rememberDevice === true },
+  });
+  if (parsed.data.rememberDevice) {
+    res.cookie(TRUSTED_DEVICE_COOKIE, await rememberDevice(staff.id), {
+      httpOnly: true,
+      secure: req.secure,
+      sameSite: 'lax',
+      maxAge: TRUSTED_DEVICE_DAYS * 24 * 60 * 60 * 1000,
+    });
+  }
+  await issueStaffSession(staff, req, res);
 });
 
 authRouter.post('/logout', async (req, res) => {

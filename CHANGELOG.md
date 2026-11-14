@@ -3,6 +3,15 @@
 Plain-language record of what changed in ACISI, which data each change
 touches, and who can use it. Newest first.
 
+## 2026-11-14: Multi-factor login for clinic admins and doctors
+
+After the right staff ID and PIN, clinic admins and doctors enter a 6-digit
+code sent by SMS to their own phone (5 minutes, 5 tries, one use). "Remember
+this device for 30 days" skips it on that browser; a PIN reset or deactivation
+forgets remembered devices. If the SMS can't be sent, nobody gets in. Codes
+and device tokens are stored only hashed. Off until `STAFF_MFA_ENABLED=true`
+(see the runbook: only once real SMS delivery works). No database change.
+
 ## 2026-11-14: DHA fixes: encryption at rest, tamper-proof audit log, inactivity logoff, adults-only signup
 
 One database change, additive (`20261114120000_audit_log_tamper_resistant`);

@@ -277,6 +277,23 @@ function StaffLoginForm({
   const [error, setError] = useState<string | null>(null);
   const [lockedOut, setLockedOut] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [challenge, setChallenge] = useState<{ challengeId: string; phoneHint: string } | null>(null);
+  const [code, setCode] = useState('');
+  const [rememberDevice, setRememberDevice] = useState(true);
+
+  async function handleCode(e: FormEvent): Promise<void> {
+    e.preventDefault();
+    if (!challenge) return;
+    setError(null);
+    setSubmitting(true);
+    try {
+      const session = await api.staffVerifyLoginCode(challenge.challengeId, code, rememberDevice);
+      window.location.href = session.role === 'DOCTOR' ? '/console/doctor/queue' : '/console/queue';
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.');
+      setSubmitting(false);
+    }
+  }
 
   async function handleSubmit(e: FormEvent): Promise<void> {
     e.preventDefault();
@@ -284,7 +301,14 @@ function StaffLoginForm({
     setLockedOut(false);
     setSubmitting(true);
     try {
-      const session = await api.staffLogin(staffCode, pin);
+      const result = await api.staffLogin(staffCode, pin);
+      if ('mfaRequired' in result) {
+        setChallenge({ challengeId: result.challengeId, phoneHint: result.phoneHint });
+        setCode('');
+        setSubmitting(false);
+        return;
+      }
+      const session = result;
       // Separate SPA bundle (dashboard/) served at /console — a full
       // navigation is correct here, not client-side routing, since the
       // session cookie set by the fetch above is all it needs to pick up.
@@ -297,6 +321,41 @@ function StaffLoginForm({
       }
       setSubmitting(false);
     }
+  }
+
+  if (challenge) {
+    return (
+      <form className="auth-form" onSubmit={(e) => void handleCode(e)}>
+        <button type="button" className="auth-back" onClick={() => { setChallenge(null); setPin(''); setError(null); }}>
+          &larr; Start again
+        </button>
+        <h1 className="auth-h1">Enter your login code</h1>
+        <p className="auth-sub">We sent a 6-digit code by SMS to your phone ({challenge.phoneHint}). It expires in 5 minutes.</p>
+        <div className="field">
+          <label htmlFor="staff-login-code">Code from the SMS</label>
+          <input
+            id="staff-login-code"
+            type="text"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            pattern="[0-9]{6}"
+            maxLength={6}
+            required
+            autoFocus
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+          />
+        </div>
+        <label className="legal-check">
+          <input type="checkbox" checked={rememberDevice} onChange={(e) => setRememberDevice(e.target.checked)} />
+          <span>Remember this device for 30 days (don&apos;t tick on a shared computer)</span>
+        </label>
+        {error && <p className="auth-error">{error}</p>}
+        <button className="auth-submit" type="submit" disabled={submitting || code.length !== 6}>
+          {submitting ? 'Checking…' : 'Verify and log in'}
+        </button>
+      </form>
+    );
   }
 
   return (

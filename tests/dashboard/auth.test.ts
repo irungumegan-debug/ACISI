@@ -8,6 +8,11 @@ function isExpired(entry?: { value: string; expiresAt?: number }): boolean {
   return !!entry?.expiresAt && entry.expiresAt < Date.now();
 }
 
+// Multi-factor login has its own tests (tests/dashboard/staffMfa.test.ts); here every device counts as remembered.
+jest.mock('../../src/services/staffMfaService', () => ({
+  ...jest.requireActual('../../src/services/staffMfaService'),
+  isTrustedDevice: jest.fn(async () => true),
+}));
 jest.mock('../../src/config/redis', () => ({
   redis: {
     get: jest.fn(async (key: string) => {
