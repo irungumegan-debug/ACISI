@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { queuePositionFor } from '../services/queueStatusService';
 import { Router } from 'express';
 import { getFeeStatus } from '../services/feeService';
 import { z } from 'zod';
@@ -61,35 +62,6 @@ async function findActiveCheckInToday(patientId: string, clinicId: string) {
   });
 }
 
-/**
- * How many patients are ahead of this visit: WAITING encounters at the same
- * clinic and department that started earlier and could go to the same
- * doctor. Null once the patient is no longer waiting (or has no visit yet).
- */
-async function queuePositionFor(
-  encounter: {
-    id: string;
-    clinicId: string;
-    status: string;
-    assignedDoctorId: string | null;
-    createdAt: Date;
-  },
-  departmentId: string,
-) {
-  if (encounter.status !== 'WAITING') return null;
-  const ahead = await prisma.encounter.count({
-    where: {
-      clinicId: encounter.clinicId,
-      status: 'WAITING',
-      createdAt: { lt: encounter.createdAt },
-      checkIn: { departmentId },
-      ...(encounter.assignedDoctorId
-        ? { OR: [{ assignedDoctorId: encounter.assignedDoctorId }, { assignedDoctorId: null }] }
-        : {}),
-    },
-  });
-  return ahead + 1;
-}
 
 /** What the portal shows for one of the patient's own check-ins; null if it isn't theirs. */
 async function describeOwnCheckIn(checkInId: string, patientId: string) {

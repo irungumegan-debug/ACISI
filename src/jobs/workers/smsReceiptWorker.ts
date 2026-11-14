@@ -3,6 +3,7 @@ import { redisQueueConnection } from '../../config/redis';
 import { prisma } from '../../db/prisma';
 import { sendPatientSms } from '../../services/smsService';
 import { buildCheckInFeeSms } from '../../services/smsTemplates';
+import { queuePositionFor } from '../../services/queueStatusService';
 import { logger } from '../../utils/logger';
 import { SmsReceiptJobData } from '../queue';
 
@@ -12,7 +13,11 @@ export function startSmsReceiptWorker(): Worker<SmsReceiptJobData> {
     async (job) => {
       const checkIn = await prisma.checkIn.findUnique({
         where: { id: job.data.checkInId },
-        include: { patient: true, clinic: true },
+        include: {
+          patient: true,
+          clinic: true,
+          encounter: { select: { id: true, clinicId: true, status: true, assignedDoctorId: true, createdAt: true } },
+        },
       });
 
       if (!checkIn) {
@@ -25,7 +30,9 @@ export function startSmsReceiptWorker(): Worker<SmsReceiptJobData> {
         return;
       }
 
-      const message = buildCheckInFeeSms({ clinicName: checkIn.clinic.name, amountKes: Number(checkIn.amountKes), paid: job.data.succeeded });
+      // Place in the queue, when the patient is already waiting (remote check-in paid).
+      const queuePosition = checkIn.encounter ? await queuePositionFor(checkIn.encounter, checkIn.departmentId) : null;
+      const message = buildCheckInFeeSms({ clinicName: checkIn.clinic.name, amountKes: Number(checkIn.amountKes), paid: job.data.succeeded, queuePosition });
 
       // Not essential: respects "does not want SMS" (C13).
       const outcome = await sendPatientSms(checkIn.patient, message, { purpose: 'CHECK_IN_FEE_RECEIPT' });

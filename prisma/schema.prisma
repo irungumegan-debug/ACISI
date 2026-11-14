@@ -486,6 +486,9 @@ model Encounter {
   checkedOutByStaffId String?
   checkedOutByStaff   Staff?          @relation("EncounterCheckedOutBy", fields: [checkedOutByStaffId], references: [id])
   checkedOutAt        DateTime?
+  /// When the "you're nearly next" SMS was sent (or skipped as not needed),
+  /// so it goes at most once per visit (services/queueStatusService.ts).
+  nearlyNextSmsAt     DateTime?
   createdAt           DateTime        @default(now())
 
   bill              Bill?

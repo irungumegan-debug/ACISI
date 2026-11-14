@@ -256,6 +256,29 @@
 .patient-portal .panel + .panel {
   margin-top: 16px;
 }
+.patient-portal .visit-today {
+  margin-bottom: 16px;
+  border-color: var(--gold-500, #d4a83f);
+}
+.patient-portal .visit-today h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.patient-portal .visit-place {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0 6px;
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--navy-900);
+}
+.patient-portal .visit-updated {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--ink-500, #64748b);
+}
 .patient-portal .field {
   margin-bottom: 20px;
 }

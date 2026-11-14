@@ -5,6 +5,7 @@ import { legalBoxSatisfied, PRIVACY_PATH, TERMS_PATH } from '../lib/legal';
 import { EMPTY_IDENTITY, IdentityFields } from '../components/IdentityFields';
 import { RecordRequestsNotice, SharingPanel } from '../components/RecordSharing';
 import { FeeNotice } from '../components/FeeNotice';
+import { VisitTodayCard } from '../components/VisitToday';
 import { MyFiles } from '../components/MyFiles';
 import { MyAllergies } from '../components/MyAllergies';
 import type { PatientIdentity } from '../lib/api';
@@ -136,6 +137,7 @@ export function PatientHomePage() {
         ))}
       </nav>
 
+      <VisitTodayCard />
       <FeeNotice />
       <RecordRequestsNotice />
 
