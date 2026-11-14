@@ -1,6 +1,20 @@
 import { Queue } from 'bullmq';
 import { redisQueueConnection } from '../config/redis';
 
+/**
+ * How many finished jobs each queue keeps in Redis. Without this BullMQ keeps
+ * every finished job forever: the once-a-minute payment sweep alone added
+ * ~1,440 a day and filled Redis's 64 MB cap (13 Nov 2026), which stops logins
+ * and the queue. Recent ones stay for troubleshooting; older ones are deleted
+ * as new jobs finish (which also trims any backlog left from before).
+ */
+export const JOB_RETENTION = {
+  removeOnComplete: { count: 200, age: 7 * 24 * 60 * 60 },
+  removeOnFail: { count: 1000, age: 30 * 24 * 60 * 60 },
+} as const;
+
+const queueOptions = { connection: redisQueueConnection, defaultJobOptions: JOB_RETENTION };
+
 export interface SmsReceiptJobData {
   checkInId: string;
   patientId: string;
@@ -19,26 +33,18 @@ export interface VisitSummaryEmailJobData {
   encounterId: string;
 }
 
-export const smsReceiptQueue = new Queue<SmsReceiptJobData>('sms-receipts', {
-  connection: redisQueueConnection,
-});
+export const smsReceiptQueue = new Queue<SmsReceiptJobData>('sms-receipts', queueOptions);
 
-export const stkStatusCheckQueue = new Queue<StkStatusCheckJobData>('stk-status-check', {
-  connection: redisQueueConnection,
-});
+export const stkStatusCheckQueue = new Queue<StkStatusCheckJobData>('stk-status-check', queueOptions);
 
 export interface ClinicStkStatusCheckJobData {
   paymentId: string;
 }
 
 /** Checkout payments to the clinic's till — separate from ACISI's own stk-status-check queue. */
-export const clinicStkStatusCheckQueue = new Queue<ClinicStkStatusCheckJobData>('clinic-stk-status-check', {
-  connection: redisQueueConnection,
-});
+export const clinicStkStatusCheckQueue = new Queue<ClinicStkStatusCheckJobData>('clinic-stk-status-check', queueOptions);
 
-export const visitSummaryEmailQueue = new Queue<VisitSummaryEmailJobData>('visit-summary-email', {
-  connection: redisQueueConnection,
-});
+export const visitSummaryEmailQueue = new Queue<VisitSummaryEmailJobData>('visit-summary-email', queueOptions);
 
 export async function enqueueSmsReceipt(data: SmsReceiptJobData): Promise<void> {
   await smsReceiptQueue.add('send-receipt', data, {
@@ -66,7 +72,7 @@ export async function enqueueVisitSummaryEmail(data: VisitSummaryEmailJobData): 
  * jobs/workers/stkStatusWorker.ts and checkInService.sweepPendingCheckInPayments.
  */
 export async function scheduleCheckInPaymentSweep(): Promise<void> {
-  await stkStatusCheckQueue.upsertJobScheduler('check-in-payment-sweep', { every: 60_000 }, { name: 'sweep', data: {} });
+  await stkStatusCheckQueue.upsertJobScheduler('check-in-payment-sweep', { every: 60_000 }, { name: 'sweep', data: {}, opts: JOB_RETENTION });
 }
 
 /**
@@ -82,9 +88,7 @@ export async function scheduleClinicStkStatusCheck(data: ClinicStkStatusCheckJob
 export type MaintenanceJobData = Record<string, never>;
 
 /** Hourly housekeeping: appointment reminders, expired pending signups, unpaid-fee notices (see maintenanceWorker). */
-export const maintenanceQueue = new Queue<MaintenanceJobData>('maintenance', {
-  connection: redisQueueConnection,
-});
+export const maintenanceQueue = new Queue<MaintenanceJobData>('maintenance', queueOptions);
 
 /**
  * Starts (or keeps — an idempotent upsert, safe on every boot) the hourly
@@ -92,5 +96,5 @@ export const maintenanceQueue = new Queue<MaintenanceJobData>('maintenance', {
  * reminders go out at 09:00.
  */
 export async function scheduleHourlyMaintenance(): Promise<void> {
-  await maintenanceQueue.upsertJobScheduler('hourly-maintenance', { pattern: '0 * * * *', tz: 'Africa/Nairobi' }, { name: 'hourly', data: {} });
+  await maintenanceQueue.upsertJobScheduler('hourly-maintenance', { pattern: '0 * * * *', tz: 'Africa/Nairobi' }, { name: 'hourly', data: {}, opts: JOB_RETENTION });
 }

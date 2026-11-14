@@ -3,6 +3,13 @@
 Plain-language record of what changed in ACISI, which data each change
 touches, and who can use it. Newest first.
 
+## 2026-11-14: Background jobs no longer fill Redis
+
+Every job queue now keeps only its newest 200 finished jobs (1,000 failed),
+deleting older ones as new jobs finish. Before, every finished job was kept:
+the once-a-minute payment sweep had stored about 45,000 and filled Redis's
+64 MB cap, which stops logins. No database change.
+
 ## 2026-11-14: Lab orders
 
 Doctors can request lab tests; the lab enters and signs the results; the
