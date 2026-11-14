@@ -614,6 +614,11 @@ export const api = {
     return request<void>('/auth/logout', { method: 'POST' });
   },
 
+  /** Real activity (typing, clicking): keeps the session from the inactivity logoff. */
+  pingActivity() {
+    return request<void>('/auth/activity', { method: 'POST' });
+  },
+
   me() {
     return request<StaffSession>('/auth/me');
   },

@@ -25,7 +25,9 @@
     "reset-staff-pin": "ts-node scripts/resetStaffPin.ts",
     "create-owner": "ts-node scripts/createOwner.ts",
     "redact-payment-phones": "ts-node scripts/redactPaymentPhones.ts",
-    "demo:seed-avyora": "ts-node scripts/seedAvyoraDemo.ts"
+    "demo:seed-avyora": "ts-node scripts/seedAvyoraDemo.ts",
+    "verify-audit-log": "ts-node --transpile-only scripts/verifyAuditLog.ts",
+    "encrypt-existing-data": "ts-node --transpile-only scripts/encryptExistingData.ts"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"

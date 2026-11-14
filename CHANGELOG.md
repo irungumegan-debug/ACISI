@@ -3,6 +3,19 @@
 Plain-language record of what changed in ACISI, which data each change
 touches, and who can use it. Newest first.
 
+## 2026-11-14: DHA fixes: encryption at rest, tamper-proof audit log, inactivity logoff, adults-only signup
+
+One database change, additive (`20261114120000_audit_log_tamper_resistant`);
+undo script in `prisma/rollback/`. A new required setting on live servers:
+`DATA_ENCRYPTION_KEY` (see the runbook release steps).
+
+| # | What changed | Data it touches | Who |
+|---|---|---|---|
+| S1 | **Encryption at rest (AES-256-GCM):** diagnoses, prescriptions, reasons for visit, lab notes and results, ID numbers and next-of-kin details are stored encrypted in the database; uploaded files are encrypted on disk. Changed or damaged ciphertext is refused, not shown. The app decrypts only for people allowed to see the data. Names and phone numbers stay unencrypted because they are used to search. `npm run encrypt-existing-data` encrypts what was stored before. | Visits, lab requests and results, patients, pending signups, files | — |
+| S2 | **Tamper-proof audit log:** the database refuses any change, deletion or truncation of audit records, and chains every record to the previous one with a SHA-256 hash, so any alteration shows up in `npm run verify-audit-log`. | Audit log (two new columns) | — |
+| S3 | **Automatic logoff after 15 minutes without activity** for staff and patients, enforced by the server; the login page says why. Background screen refreshes do not count as activity. The 8-hour (staff) and 6-hour (admin) limits stay. | Sessions | Everyone |
+| S4 | **Portal signup is for adults:** date of birth is required and anyone under 18 is refused ("A parent or guardian can check a child in at the clinic"), as the Terms already said. | Pending signups | Patients |
+
 ## 2026-11-14: Background jobs no longer fill Redis
 
 Every job queue now keeps only its newest 200 finished jobs (1,000 failed),

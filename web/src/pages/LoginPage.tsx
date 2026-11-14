@@ -1,4 +1,5 @@
 import { FormEvent, useState } from 'react';
+import { takeIdleFlag } from '../lib/useIdleLogoff';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 import { usePatientAuth } from '../context/PatientAuthContext';
@@ -23,9 +24,15 @@ function initialStep(): Step {
 
 export function LoginPage() {
   const [step, setStep] = useState<Step>(initialStep);
+  const [idleLoggedOff] = useState(takeIdleFlag);
 
   return (
     <AuthShell>
+        {idleLoggedOff && (
+          <p className="auth-notice" role="status">
+            You were logged out after 15 minutes without activity. Log in again to continue.
+          </p>
+        )}
 
         {step.kind === 'picker' && <RolePicker onPick={(kind) => setStep({ kind } as Step)} />}
         {step.kind === 'patient' && (

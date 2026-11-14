@@ -81,3 +81,17 @@ describe('a live server (MPESA_ENV=production) refuses to start unless M-Pesa is
     ).toBe('');
   });
 });
+
+describe('encryption key on a live server', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { productionEncryptionProblems } = require('../../src/config/env') as typeof import('../../src/config/env');
+  const base = { NODE_ENV: 'production' } as import('../../src/config/env').Env;
+
+  it('refuses to start without DATA_ENCRYPTION_KEY', () => {
+    expect(productionEncryptionProblems({ ...base, DATA_ENCRYPTION_KEY: undefined })).toEqual([expect.stringContaining('DATA_ENCRYPTION_KEY')]);
+  });
+  it('starts with one, and development does not need one', () => {
+    expect(productionEncryptionProblems({ ...base, DATA_ENCRYPTION_KEY: Buffer.alloc(32).toString('base64') })).toEqual([]);
+    expect(productionEncryptionProblems({ ...base, NODE_ENV: 'development', DATA_ENCRYPTION_KEY: undefined })).toEqual([]);
+  });
+});

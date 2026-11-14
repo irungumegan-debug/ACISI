@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { api, PatientSession } from '../lib/api';
+import { useIdleLogoff } from '../lib/useIdleLogoff';
 
 interface PatientAuthContextValue {
   session: PatientSession | null;
@@ -49,6 +50,12 @@ export function PatientAuthProvider({ children }: { children: ReactNode }) {
     await api.patientLogout();
     setSession(null);
   }
+
+  // Automatic logoff after 15 minutes without activity.
+  useIdleLogoff(session !== null, api.patientPingActivity, () => {
+    void api.patientLogout().catch(() => undefined);
+    setSession(null);
+  });
 
   return (
     <PatientAuthContext.Provider value={{ session, loading, login, setSession, logout }}>

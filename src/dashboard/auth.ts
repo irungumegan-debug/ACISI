@@ -19,6 +19,7 @@ import {
   DashboardSession,
   SESSION_COOKIE_NAME,
 } from './session';
+import { markSessionActive } from '../services/idleTimeout';
 import { logger } from '../utils/logger';
 
 export interface AuthenticatedRequest extends Request {
@@ -91,6 +92,14 @@ authRouter.post('/logout', async (req, res) => {
     await destroyDashboardSession(token);
   }
   res.clearCookie(SESSION_COOKIE_NAME);
+  res.status(204).send();
+});
+
+/**
+ * The console pings this when someone actually types, clicks or scrolls
+ * (at most once a minute), keeping the session from the inactivity logoff.
+ */
+authRouter.post('/activity', requireStaffSession, (_req, res) => {
   res.status(204).send();
 });
 
@@ -210,6 +219,8 @@ export async function requireStaffSession(req: Request, res: Response, next: Nex
       return;
     }
     (req as AuthenticatedRequest).dashboardSession = session;
+    // A change made by the person counts as activity; background reads don't.
+    if (req.method !== 'GET') await markSessionActive('staff', token);
     next();
   } catch (err) {
     logger.error({ err }, 'Failed to validate dashboard session');

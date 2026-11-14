@@ -873,6 +873,13 @@ model AuditLog {
   clinicId   String?
   metadata   Json?
   createdAt  DateTime  @default(now())
+  /// Tamper evidence, filled by the database (trigger audit_logs_chain), never
+  /// by the app: hash = SHA-256 of the previous row's hash and this row's
+  /// content. Changing or removing any earlier row breaks every later hash
+  /// (npm run verify-audit-log). UPDATE, DELETE and TRUNCATE on this table
+  /// are refused by the database (see migration 20261114120000).
+  prevHash   String?
+  hash       String?
 
   @@index([entityType, entityId])
   @@index([clinicId, createdAt])

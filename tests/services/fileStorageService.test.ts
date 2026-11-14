@@ -42,7 +42,15 @@ import {
   savePatientFile,
   savePhotosAsPdf,
   storageUsage,
+  streamStoredFile,
+  encryptStoredFileInPlace,
 } from '../../src/services/fileStorageService';
+
+async function readAll(stream: NodeJS.ReadableStream): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const c of stream) chunks.push(Buffer.from(c as Buffer));
+  return Buffer.concat(chunks);
+}
 
 /** A real w×h RGB PNG. */
 function png(w: number, h: number): Buffer {
@@ -128,7 +136,7 @@ describe('storage', () => {
     const photos = [await incoming(png(30, 40)), await incoming(png(40, 30)), await incoming(png(20, 20))];
     const row = await savePhotosAsPdf(photos, 'patient-1', { documentDate: META.documentDate, note: 'Old card' }, CLINIC_A);
     expect(row).toMatchObject({ category: 'PREVIOUS_RECORDS', mimeType: 'application/pdf', pageCount: 3, note: 'Old card' });
-    const pdf = fs.readFileSync(path.join(dir, row.storageName as string), 'latin1');
+    const pdf = (await readAll(await streamStoredFile(row as never))).toString('latin1');
     expect(pdf.startsWith('%PDF-')).toBe(true);
     expect(pdf.match(/\/Type \/Page\b/g)).toHaveLength(3);
     for (const p of photos) expect(fs.existsSync(p)).toBe(false);
@@ -208,5 +216,44 @@ describe('disk space guard', () => {
     } finally {
       env.FILE_UPLOAD_MIN_FREE_MB = before;
     }
+  });
+});
+
+describe('encryption at rest (AES-256-GCM)', () => {
+  const PDF = Buffer.from('%PDF-1.4\nPatient: Jane Wanjiru. Malaria positive.\n%%EOF\n');
+
+  it('stores only ciphertext on disk, and gives the original back when opened', async () => {
+    const tmp = path.join(incomingDir(), 'enc-test');
+    await ensureStorageDirs();
+    fs.writeFileSync(tmp, PDF);
+    const row = await savePatientFile(tmp, 'patient-1', META, CLINIC_A);
+    const onDisk = fs.readFileSync(path.join(dir, row.storageName));
+    expect(onDisk.subarray(0, 9).toString('latin1')).toBe('ACISIENC1');
+    expect(onDisk.toString('latin1')).not.toContain('Malaria');
+    expect(onDisk.toString('latin1')).not.toContain('%PDF');
+    expect(row.sizeBytes).toBe(PDF.length);
+    expect((await readAll(await streamStoredFile(row))).equals(PDF)).toBe(true);
+  });
+
+  it('a file changed on disk is refused, not served', async () => {
+    const tmp = path.join(incomingDir(), 'enc-test-2');
+    fs.writeFileSync(tmp, PDF);
+    const row = await savePatientFile(tmp, 'patient-1', META, CLINIC_A);
+    const full = path.join(dir, row.storageName);
+    const bytes = fs.readFileSync(full);
+    bytes[30] = bytes[30]! ^ 0xff;
+    fs.writeFileSync(full, bytes);
+    await expect(readAll(await streamStoredFile(row))).rejects.toThrow();
+  });
+
+  it('older plaintext files are still served, and can be encrypted in place', async () => {
+    const name = 'b'.repeat(48);
+    fs.writeFileSync(path.join(dir, name), PDF);
+    const legacy = { storageName: name } as never;
+    expect((await readAll(await streamStoredFile(legacy))).equals(PDF)).toBe(true);
+    expect(await encryptStoredFileInPlace(name)).toBe(true);
+    expect(fs.readFileSync(path.join(dir, name)).toString('latin1')).not.toContain('Malaria');
+    expect((await readAll(await streamStoredFile(legacy))).equals(PDF)).toBe(true);
+    expect(await encryptStoredFileInPlace(name)).toBe(false);
   });
 });

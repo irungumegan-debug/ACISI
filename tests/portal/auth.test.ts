@@ -106,7 +106,7 @@ beforeEach(() => {
 });
 
 describe('POST /patients/register (C3: phone verified before the account exists)', () => {
-  const BODY = { firstName: 'Jane', lastName: 'Wanjiru', phoneNumber: '0712345678', acceptLegal: true };
+  const BODY = { firstName: 'Jane', lastName: 'Wanjiru', phoneNumber: '0712345678', dateOfBirth: '1990-04-12', acceptLegal: true };
 
   it('asks for NO PIN: the PIN is chosen only after the phone is verified', async () => {
     mockStartPending.mockResolvedValue({ pendingId: 'pend-1', smsSent: true });
@@ -362,5 +362,37 @@ describe('POST /patients/reset-pin', () => {
     expect(res.body.error).toMatch(/looks like a date/);
     expect(mockVerifyOtp).not.toHaveBeenCalled();
     expect(mockSetPin).not.toHaveBeenCalled();
+  });
+});
+
+describe('portal signup is for adults (18 and over)', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { parseSignupDateOfBirth } = require('../../src/portal/auth') as typeof import('../../src/portal/auth');
+  const today = new Date('2026-11-14T09:00:00Z');
+
+  it('needs a date of birth', () => {
+    expect(parseSignupDateOfBirth(undefined, today)).toEqual({ ok: false, error: 'Enter your date of birth' });
+    expect(parseSignupDateOfBirth('', today)).toMatchObject({ ok: false });
+  });
+
+  it('refuses impossible and future dates', () => {
+    expect(parseSignupDateOfBirth('2001-02-30', today)).toMatchObject({ ok: false, error: 'Enter a real date of birth' });
+    expect(parseSignupDateOfBirth('2027-01-01', today)).toMatchObject({ ok: false, error: 'Enter a real date of birth' });
+  });
+
+  it('refuses anyone under 18, by a single day', () => {
+    expect(parseSignupDateOfBirth('2008-11-15', today)).toMatchObject({ ok: false, error: expect.stringContaining('18 or older') });
+    expect(parseSignupDateOfBirth('2008-11-14', today)).toMatchObject({ ok: true });
+    expect(parseSignupDateOfBirth('1980-01-01', today)).toMatchObject({ ok: true });
+  });
+
+  it('the server refuses an under-18 signup before anything is stored', async () => {
+    mockStartPending.mockClear();
+    const res = await request(buildApp())
+      .post('/patients/register')
+      .send({ firstName: 'Kid', lastName: 'K', phoneNumber: '0712345678', dateOfBirth: new Date().toISOString().slice(0, 10), acceptLegal: true });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('18 or older');
+    expect(mockStartPending).not.toHaveBeenCalled();
   });
 });

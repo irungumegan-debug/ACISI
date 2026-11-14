@@ -231,6 +231,11 @@ export const api = {
     });
   },
 
+  /** Real activity (typing, clicking): keeps the session from the inactivity logoff. */
+  patientPingActivity() {
+    return request<void>('/patients/activity', { method: 'POST' });
+  },
+
   patientLogout() {
     return request<void>('/patients/logout', { method: 'POST' });
   },

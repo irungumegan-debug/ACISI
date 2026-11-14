@@ -14,7 +14,7 @@ repository, in a chat, or in a support ticket.**
 | Server | HostAfrica VPS, Kenya data centre, `102.68.86.176`, Ubuntu 24.04, 1 vCPU / 1 GB RAM / 2 GB swap |
 | Login | `ssh acisi` as `acisiadmin` with your SSH key. Root and password logins are off. Emergency: HostAfrica client area → VNC console (root password) |
 | App | `/opt/acisi/app` (a git clone of `main`), runs as the `acisi` user under systemd: `acisi.service` (reference copy: `deploy/systemd/acisi.service`) |
-| Settings | `/etc/acisi/acisi.env`, readable by root only. Never committed. |
+| Settings | `/etc/acisi/acisi.env`, readable by root only. Never committed. Holds `DATA_ENCRYPTION_KEY` (also kept offline with the backup key). |
 | Database | PostgreSQL 18, localhost only, database and user `acisi` |
 | Redis | localhost only, 64 MB cap, `noeviction`, saved to disk (`appendonly`) |
 | Web front door | Nginx + Let's Encrypt for `acisi.co.ke` (reference copy: `deploy/nginx/acisi.conf`) |
@@ -280,6 +280,49 @@ sudo -u postgres psql acisi -c "DELETE FROM _prisma_migrations WHERE migration_n
 Lab tests, lab requests and results are deleted; visits at the lab go back to
 "with the doctor"; lab technicians are deactivated. Printouts stay on the
 patient's record as files.
+
+## Release 2026-11-14 (DHA fixes): encryption at rest, tamper-proof audit log, inactivity logoff, adults-only signup
+
+See `CHANGELOG.md`. Do the steps in order; step 2 must be done **before** the
+update, or the app will refuse to start.
+
+1. **Backup first:** `sudo systemctl start acisi-backup && sudo journalctl -u acisi-backup -n 5 --no-pager`
+2. **Create the encryption key** and add it to the settings (only once, ever):
+   ```
+   grep -q '^DATA_ENCRYPTION_KEY=' /etc/acisi/acisi.env && echo "already set: do NOT make a new one" || echo "DATA_ENCRYPTION_KEY=$(openssl rand -base64 32)" | sudo tee -a /etc/acisi/acisi.env >/dev/null
+   ```
+   Then **save a copy offline now**, next to the backup private key (password
+   manager plus a printed copy). Show it once with
+   `sudo grep DATA_ENCRYPTION_KEY /etc/acisi/acisi.env`, copy it, then clear the
+   screen. **Without this key the encrypted records cannot be read**, even from
+   backups. Never change or remove it.
+3. **Update the app** (runs migration `20261114120000_audit_log_tamper_resistant`):
+   ```
+   sudo -u acisi -H bash -c 'cd /opt/acisi/app && git pull && npm ci && npm run build'
+   sudo systemctl restart acisi
+   sleep 15; curl -s https://acisi.co.ke/healthz; echo
+   sudo journalctl -u acisi -n 30 --no-pager | grep -i -E "migration|error|DATA_ENCRYPTION_KEY" || true
+   ```
+   Everyone is logged out once (sessions now track inactivity).
+4. **Encrypt the data already stored** (preview, then apply):
+   ```
+   sudo bash -c 'set -a; . /etc/acisi/acisi.env; set +a; cd /opt/acisi/app && npm run -s encrypt-existing-data'
+   sudo bash -c 'set -a; . /etc/acisi/acisi.env; set +a; cd /opt/acisi/app && npm run -s encrypt-existing-data -- --apply'
+   ```
+   Running the preview again afterwards should show 0 everywhere.
+5. **Check the audit log chain:**
+   ```
+   sudo bash -c 'set -a; . /etc/acisi/acisi.env; set +a; cd /opt/acisi/app && npm run -s verify-audit-log'
+   ```
+   It should say "Audit log chain intact".
+6. **Check in the app:** open a patient's visit as a doctor (diagnosis readable),
+   print a visit record at the front desk, open an uploaded file. Leave a console
+   tab untouched for 15 minutes: it logs out and says why.
+
+**Undo:** after step 4, the previous version of the app can no longer read
+the encrypted fields, so don't go back to it without help. The audit-log
+protection alone can be removed with
+`prisma/rollback/20261114120000_audit_log_tamper_resistant.down.sql`.
 
 ## Switching ACISI's M-Pesa to production (Buy Goods till)
 
