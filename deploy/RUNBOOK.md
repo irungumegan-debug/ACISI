@@ -334,7 +334,7 @@ code is refused. Older visits still show their text diagnosis.
 
 If the server says it can't find `icd11-mms-2025-01.json`, the build copied
 the assets to the wrong place (fixed in this release); check with
-`ls /opt/acisi/app/dist/assets/icd11/`.
+`sudo ls -l /opt/acisi/app/dist/assets/icd11/`.
 
 ## Turning on multi-factor login (admins and doctors)
 
