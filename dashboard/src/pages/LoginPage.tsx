@@ -1,4 +1,5 @@
 import { FormEvent, useState } from 'react';
+import { takeIdleFlag } from '../lib/useIdleLogoff';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ApiError } from '../lib/api';
@@ -13,6 +14,7 @@ export function LoginPage() {
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [lockedOut, setLockedOut] = useState(false);
+  const [idleLoggedOff] = useState(takeIdleFlag);
   const [submitting, setSubmitting] = useState(false);
 
   if (session) {
@@ -85,6 +87,11 @@ export function LoginPage() {
                 className="min-h-12 w-full rounded-xl border border-white/15 bg-navy-950/50 px-3.5 py-3 text-base text-white focus:border-gold-400 focus:outline-none"
               />
             </div>
+            {idleLoggedOff && (
+              <p className="rounded-xl border border-gold-400/40 bg-gold-400/10 px-3.5 py-2.5 text-sm text-gold-100" role="status">
+                You were logged out after 15 minutes without activity. Log in again to continue.
+              </p>
+            )}
             {lockedOut && (
               <p className="rounded-xl border border-red-400/40 bg-red-500/10 px-3.5 py-2.5 text-sm text-red-100" role="alert">
                 Too many wrong PINs, so login is paused for up to 15 minutes. Forgot your PIN?{' '}

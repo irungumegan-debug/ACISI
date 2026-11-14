@@ -3,6 +3,7 @@ import { redis } from '../config/redis';
 import { DASHBOARD_SESSION_TTL_SECONDS } from '../config/constants';
 import { logger } from '../utils/logger';
 import { isSessionRevoked } from '../services/sessionRevocation';
+import { clearSessionActivity, isSessionIdle, markSessionActive } from '../services/idleTimeout';
 
 const SESSION_KEY_PREFIX = 'portal:session:';
 
@@ -25,6 +26,7 @@ function key(token: string): string {
 export async function createPatientSession(session: PatientSession): Promise<string> {
   const token = crypto.randomBytes(32).toString('hex');
   await redis.set(key(token), JSON.stringify({ ...session, issuedAt: Date.now() }), 'EX', DASHBOARD_SESSION_TTL_SECONDS);
+  await markSessionActive('patient', token);
   return token;
 }
 
@@ -44,9 +46,15 @@ export async function loadPatientSession(token: string): Promise<PatientSession 
     await redis.del(key(token));
     return null;
   }
+  // Logged off after IDLE_LOGOFF_SECONDS without activity.
+  if (await isSessionIdle('patient', token)) {
+    await redis.del(key(token));
+    return null;
+  }
   return session;
 }
 
 export async function destroyPatientSession(token: string): Promise<void> {
   await redis.del(key(token));
+  await clearSessionActivity('patient', token);
 }

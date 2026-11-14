@@ -30,6 +30,9 @@ export const DASHBOARD_SESSION_TTL_SECONDS = 8 * 60 * 60;
 /** Clinic admins (role ADMIN) see payments, staff and settings, so their sessions are shorter. */
 export const CLINIC_ADMIN_SESSION_TTL_SECONDS = 6 * 60 * 60;
 
+/** Staff and patients are logged off after this long with no activity (see services/idleTimeout.ts). */
+export const IDLE_LOGOFF_SECONDS = 15 * 60;
+
 /**
  * Owner site session lifetime — deliberately much shorter than a staff
  * shift, since an owner session can read and delete every record on the

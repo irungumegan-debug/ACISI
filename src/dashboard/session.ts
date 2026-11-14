@@ -3,6 +3,7 @@ import { redis } from '../config/redis';
 import { CLINIC_ADMIN_SESSION_TTL_SECONDS, DASHBOARD_SESSION_TTL_SECONDS } from '../config/constants';
 import { logger } from '../utils/logger';
 import { isSessionRevoked } from '../services/sessionRevocation';
+import { clearSessionActivity, isSessionIdle, markSessionActive } from '../services/idleTimeout';
 
 const SESSION_KEY_PREFIX = 'dashboard:session:';
 
@@ -44,6 +45,7 @@ export function dashboardSessionTtlSeconds(role: string): number {
 export async function createDashboardSession(session: DashboardSession): Promise<string> {
   const token = crypto.randomBytes(32).toString('hex');
   await redis.set(key(token), JSON.stringify({ ...session, issuedAt: Date.now() }), 'EX', dashboardSessionTtlSeconds(session.role));
+  await markSessionActive('staff', token);
   return token;
 }
 
@@ -61,9 +63,15 @@ export async function loadDashboardSession(token: string): Promise<DashboardSess
     await redis.del(key(token));
     return null;
   }
+  // Logged off after IDLE_LOGOFF_SECONDS without activity.
+  if (await isSessionIdle('staff', token)) {
+    await redis.del(key(token));
+    return null;
+  }
   return session;
 }
 
 export async function destroyDashboardSession(token: string): Promise<void> {
   await redis.del(key(token));
+  await clearSessionActivity('staff', token);
 }

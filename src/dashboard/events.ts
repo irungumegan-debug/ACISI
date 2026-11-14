@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireStaffSession, AuthenticatedRequest, isFrontDeskRole } from './auth';
 import { subscribeCheckInPaid } from '../services/realtimeEvents';
+import { loadDashboardSession, SESSION_COOKIE_NAME } from './session';
 
 export const eventsRouter = Router();
 
@@ -32,8 +33,21 @@ eventsRouter.get('/', (req, res) => {
 
   // Keeps the connection alive through proxies/load balancers that would
   // otherwise time out an idle HTTP connection.
+  // Every heartbeat also re-checks the session, so a screen logged off for
+  // inactivity (or a deactivated account) stops receiving the live queue.
+  const token = req.cookies?.[SESSION_COOKIE_NAME] as string | undefined;
   const heartbeat = setInterval(() => {
-    res.write(': heartbeat\n\n');
+    void (token ? loadDashboardSession(token) : Promise.resolve(null))
+      .then((still) => {
+        if (!still) {
+          clearInterval(heartbeat);
+          unsubscribe();
+          res.end();
+          return;
+        }
+        res.write(': heartbeat\n\n');
+      })
+      .catch(() => res.write(': heartbeat\n\n'));
   }, 25_000);
 
   req.on('close', () => {

@@ -29,6 +29,7 @@ import {
   PatientSession,
   PATIENT_SESSION_COOKIE_NAME,
 } from './session';
+import { markSessionActive } from '../services/idleTimeout';
 import { logger } from '../utils/logger';
 
 export interface AuthenticatedPatientRequest extends Request {
@@ -408,6 +409,11 @@ portalAuthRouter.post('/account/delete', requirePatientSession, async (req, res)
   res.status(204).send();
 });
 
+/** The portal pings this when the patient actually types, clicks or scrolls, keeping the session from the inactivity logoff. */
+portalAuthRouter.post('/activity', (req, res, next) => {
+  requirePatientSession(req, res, () => res.status(204).send()).catch(next);
+});
+
 export async function requirePatientSession(req: Request, res: Response, next: NextFunction): Promise<void> {
   const token = req.cookies?.[PATIENT_SESSION_COOKIE_NAME] as string | undefined;
   if (!token) {
@@ -422,6 +428,8 @@ export async function requirePatientSession(req: Request, res: Response, next: N
       return;
     }
     (req as AuthenticatedPatientRequest).patientSession = session;
+    // A change made by the patient counts as activity; background reads don't.
+    if (req.method !== 'GET') await markSessionActive('patient', token);
     next();
   } catch (err) {
     logger.error({ err }, 'Failed to validate patient session');

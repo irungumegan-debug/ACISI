@@ -9,3 +9,12 @@ process.env.MPESA_CONSUMER_SECRET ??= 'test-consumer-secret';
 process.env.MPESA_SHORTCODE ??= '174379';
 process.env.MPESA_PASSKEY ??= 'test-passkey';
 process.env.MPESA_CALLBACK_URL ??= 'https://example.com/api/mpesa/callback';
+
+// The inactivity logoff needs Redis. Route tests fake the session itself, so
+// by default every session counts as active; tests/services/idleTimeout.test.ts
+// unmocks this to test the real logic.
+jest.mock('../src/services/idleTimeout', () => ({
+  markSessionActive: jest.fn(async () => undefined),
+  isSessionIdle: jest.fn(async () => false),
+  clearSessionActivity: jest.fn(async () => undefined),
+}));
