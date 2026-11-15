@@ -48,7 +48,7 @@ export const staffEnterPin: UssdStateHandler = async (session, input) => {
     return { response: 'END Too many incorrect PIN attempts. Please try again later.', continueSession: false };
   }
 
-  return { response: `CON Incorrect PIN. Enter your PIN (${MAX_STAFF_PIN_ATTEMPTS - attempts} attempts left):`, continueSession: true };
+  return { response: `CON Incorrect PIN. Enter your PIN (${MAX_STAFF_PIN_ATTEMPTS - attempts} ${MAX_STAFF_PIN_ATTEMPTS - attempts === 1 ? 'attempt' : 'attempts'} left):`, continueSession: true };
 };
 
 export const staffMenu: UssdStateHandler = async (_session, input) => {

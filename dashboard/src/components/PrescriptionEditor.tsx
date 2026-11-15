@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { AlertTriangle, Plus, Search, Trash2, X } from 'lucide-react';
 import { AllergyConflict, api, MedicineHit, PrescriptionLine, PrescriptionOptions } from '../lib/api';
 import { btn, field } from './ui';
+import { plural } from '../lib/plural';
 
 export const MAX_LINES = 15;
 
@@ -52,7 +53,7 @@ export function describeLine(l: DraftLine, options: PrescriptionOptions | null):
   const days = positive(l.durationDays);
   const qty = positive(l.quantity);
   const notes = [...l.instructionCodes.map((c) => options?.instructions.find((i) => i.code === c)?.name ?? c), l.instructions.trim()].filter(Boolean);
-  return `${l.drugName}: ${l.doseValue} ${unit} ${freq}${days ? ` for ${days} days` : ''}${route && l.route !== 'RT10025' ? ` (${route})` : ''}${qty ? `, give ${qty}` : ''}${notes.length ? `. ${notes.join('. ')}` : ''}`;
+  return `${l.drugName}: ${l.doseValue} ${unit} ${freq}${days ? ` for ${plural(days, 'day')}` : ''}${route && l.route !== 'RT10025' ? ` (${route})` : ''}${qty ? `, give ${qty}` : ''}${notes.length ? `. ${notes.join('. ')}` : ''}`;
 }
 
 let nextKey = 1;

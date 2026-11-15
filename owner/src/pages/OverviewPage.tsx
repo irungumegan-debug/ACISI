@@ -76,11 +76,11 @@ function formatBytes(bytes: number): string {
 
 /** "3.0 GB · 120 files · server disk 62% full, 18.4 GB free". Amber once the disk is 80% full. */
 function storageStat(s: { filesBytes: number; fileCount: number; disk: { totalBytes: number; freeBytes: number } | null }) {
-  if (!s.disk) return { value: formatBytes(s.filesBytes), detail: `${s.fileCount.toLocaleString()} files · disk size unknown`, tone: 'teal' as const };
+  if (!s.disk) return { value: formatBytes(s.filesBytes), detail: `${s.fileCount.toLocaleString()} ${s.fileCount === 1 ? 'file' : 'files'} · disk size unknown`, tone: 'teal' as const };
   const usedPct = Math.round(((s.disk.totalBytes - s.disk.freeBytes) / s.disk.totalBytes) * 100);
   return {
     value: formatBytes(s.filesBytes),
-    detail: `${s.fileCount.toLocaleString()} files · server disk ${usedPct}% full, ${formatBytes(s.disk.freeBytes)} free${usedPct >= 80 ? '. Time to free space or upgrade the disk' : ''}`,
+    detail: `${s.fileCount.toLocaleString()} ${s.fileCount === 1 ? 'file' : 'files'} · server disk ${usedPct}% full, ${formatBytes(s.disk.freeBytes)} free${usedPct >= 80 ? '. Time to free space or upgrade the disk' : ''}`,
     tone: usedPct >= 80 ? ('amber' as const) : ('teal' as const),
   };
 }

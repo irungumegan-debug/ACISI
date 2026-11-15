@@ -826,7 +826,7 @@ export async function resendCheckInPrompt(
     const waitMs = sentAt.getTime() + PROMPT_RESEND_WAIT_SECONDS * 1000 - now.getTime();
     if (waitMs > 0) {
       throw new PromptResendError(
-        `The last prompt was sent less than a minute ago. Check your phone, or try again in ${Math.ceil(waitMs / 1000)} seconds.`,
+        `The last prompt was sent less than a minute ago. Check your phone, or try again in ${Math.ceil(waitMs / 1000)} ${Math.ceil(waitMs / 1000) === 1 ? 'second' : 'seconds'}.`,
         429,
       );
     }

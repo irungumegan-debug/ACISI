@@ -26,6 +26,7 @@ import { useAuth } from '../context/AuthContext';
 import { Avatar, Badge, btn, Card, EmptyState, SkeletonList, StatCard, StatusBadge, WalkInBadge } from '../components/ui';
 import { ChangeDoctorDialog } from '../components/ChangeDoctorDialog';
 import { ConfirmFeeDialog } from '../components/ConfirmFeeDialog';
+import { plural } from '../lib/plural';
 
 /** Payment isn't resolved (still pending, failed, or unknown and awaiting a manual check) — the encounter, if any, hasn't started yet. */
 function isUnresolvedPayment(item: QueueItem): boolean {
@@ -252,7 +253,7 @@ export function QueuePage() {
           <StatCard label="Waiting" value={count('WAITING')} icon={Hourglass} tone="warning" />
           <StatCard label="In consultation" value={count('IN_CONSULTATION')} icon={Stethoscope} tone="info" />
           <StatCard label="Ready for checkout" value={count('READY_FOR_CHECKOUT')} icon={Wallet} tone="blue" />
-          <StatCard label="Paid today" value={paidToday} icon={ReceiptText} tone="success" hint={`${count('DONE')} visits done`} />
+          <StatCard label="Paid today" value={paidToday} icon={ReceiptText} tone="success" hint={`${plural(count('DONE'), 'visit')} done`} />
         </div>
       )}
 

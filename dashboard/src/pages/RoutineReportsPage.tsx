@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Activity, Download, FileBarChart, FlaskConical, Pill, ShieldAlert, Stethoscope, UsersRound } from 'lucide-react';
 import { api, ApiError, CountRow, RoutineReport } from '../lib/api';
 import { btn, Card, field, SkeletonList, StatCard } from '../components/ui';
+import { plural } from '../lib/plural';
 
 type Period = 'MONTH' | 'QUARTER' | 'YEAR';
 
@@ -170,7 +171,7 @@ export function RoutineReportsPage() {
               </ol>
             )}
             {report.visitsWithoutCodes > 0 && (
-              <p className="mt-2 text-xs text-ink-500">{report.visitsWithoutCodes} visits were signed before ICD-11 coding and aren&apos;t counted here.</p>
+              <p className="mt-2 text-xs text-ink-500">{report.visitsWithoutCodes === 1 ? '1 visit was' : `${report.visitsWithoutCodes} visits were`} signed before ICD-11 coding and aren&apos;t counted here.</p>
             )}
           </Card>
 
@@ -219,7 +220,7 @@ export function RoutineReportsPage() {
           <div className="grid gap-6 lg:grid-cols-3">
             <Card title="Prescriptions" icon={Pill}>
               <p className="mb-2 text-sm text-ink-700">
-                {report.prescriptions.visitsWithPrescription} visits with a prescription · {report.prescriptions.medicineLines} medicine lines
+                {plural(report.prescriptions.visitsWithPrescription, 'visit')} with a prescription · {plural(report.prescriptions.medicineLines, 'medicine line')}
               </p>
               <List rows={report.prescriptions.topMedicines} empty="No structured prescriptions in this period." />
             </Card>
@@ -231,7 +232,7 @@ export function RoutineReportsPage() {
             </Card>
             <Card title="Public health events" icon={ShieldAlert}>
               <p className="mb-2 text-sm text-ink-700">
-                {report.events.total} events · {report.events.cases} affected · {report.events.deaths} deaths
+                {plural(report.events.total, 'event')} · {report.events.cases} affected · {plural(report.events.deaths, 'death')}
               </p>
               <List rows={report.events.byType} empty="None in this period." />
             </Card>

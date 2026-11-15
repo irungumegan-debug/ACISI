@@ -128,7 +128,7 @@ export function DoctorEncounterPage() {
         <Avatar name={encounter.patientName} size="lg" className="ring-2 ring-gold-400/60" />
         <div className="min-w-0 flex-1">
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-300">Now seeing</p>
-          <h1 className="truncate font-display text-2xl font-bold tracking-tight">{encounter.patientName}</h1>
+          <h1 className="break-words font-display text-2xl font-bold tracking-tight">{encounter.patientName}</h1>
           <p className="mt-0.5 flex flex-wrap items-center gap-x-3 text-sm text-slate-300">
             {encounter.patientCode}
             <span className="inline-flex items-center gap-1.5">
