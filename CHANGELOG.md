@@ -3,6 +3,13 @@
 Plain-language record of what changed in ACISI, which data each change
 touches, and who can use it. Newest first.
 
+## 2026-11-16: Owner password minimum 6 characters
+
+No database change. The owner site password may now be 6 characters or more
+(was 12), the same length as staff PINs, at the owner's request. Wrong
+passwords still lock the account for 5 minutes. Set or reset it on the server
+with `npm run create-owner` (runbook / README).
+
 ## 2026-11-14: Routine reports and public health events
 
 One database change, additive (`20261114230000_public_health_events`); undo

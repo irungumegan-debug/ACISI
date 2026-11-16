@@ -40,8 +40,8 @@ export const IDLE_LOGOFF_SECONDS = 15 * 60;
  */
 export const OWNER_SESSION_TTL_SECONDS = 2 * 60 * 60;
 
-/** Minimum length for the owner's password (set via scripts/createOwner.ts). */
-export const OWNER_PASSWORD_MIN_LENGTH = 12;
+/** Minimum length for the owner's password (set via scripts/createOwner.ts): 6, the owner's choice (16 Nov 2026), same as staff PINs. Wrong tries are locked out (pinLockout). */
+export const OWNER_PASSWORD_MIN_LENGTH = 6;
 
 /**
  * The one setting for wrong-PIN lockout (and the owner's wrong passwords):
