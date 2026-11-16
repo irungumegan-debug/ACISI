@@ -241,7 +241,7 @@ one of two ways — either way only a bcrypt hash of the password is stored,
 never the password itself, and nothing about it is in the code:
 
 **Option A — environment variables (no shell needed; easiest on Railway).**
-Add `OWNER_EMAIL`, `OWNER_NAME` and `OWNER_PASSWORD` (12+ characters) to the
+Add `OWNER_EMAIL`, `OWNER_NAME` and `OWNER_PASSWORD` (6+ characters) to the
 service's variables and let it redeploy. On startup, if no owner exists for
 that email, one is created; the deploy log says "Owner account created from
 environment variables". Then **delete `OWNER_PASSWORD`** from the variables.
