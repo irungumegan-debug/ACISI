@@ -61,24 +61,27 @@ export async function requestPinResetOtp(patient: Patient): Promise<void> {
 export async function verifyPinResetOtp(patientId: string, code: string): Promise<'SMS_CODE' | 'IN_PERSON_CODE' | null> {
   // Either the SMS code, or a setup code front desk showed after ringing the
   // patient's phone in front of them (issueInPersonSetupCode).
-  const otp = await prisma.otp.findFirst({
-    where: { patientId, purpose: { in: ['PIN_RESET', 'IN_PERSON_SETUP'] }, consumedAt: null, expiresAt: { gt: new Date() } },
-    orderBy: { createdAt: 'desc' },
-  });
+  // The newest code of EACH kind is checked: pressing "Forgot PIN" after the
+  // front desk gave a setup code makes a newer SMS code, and that must not
+  // hide the setup code the patient is holding (SMS may never arrive).
+  const now = new Date();
+  const candidates = (
+    await Promise.all(
+      (['IN_PERSON_SETUP', 'PIN_RESET'] as const).map((purpose) =>
+        prisma.otp.findFirst({ where: { patientId, purpose, consumedAt: null, expiresAt: { gt: now } }, orderBy: { createdAt: 'desc' } }),
+      ),
+    )
+  ).filter((o): o is NonNullable<typeof o> => o !== null && o.attempts < OTP_MAX_VERIFY_ATTEMPTS);
 
-  if (!otp || otp.attempts >= OTP_MAX_VERIFY_ATTEMPTS) {
-    return null;
+  for (const otp of candidates) {
+    if (await bcrypt.compare(code, otp.codeHash)) {
+      await prisma.otp.update({ where: { id: otp.id }, data: { consumedAt: new Date() } });
+      return otp.purpose === 'IN_PERSON_SETUP' ? 'IN_PERSON_CODE' : 'SMS_CODE';
+    }
   }
-
-  const isValid = await bcrypt.compare(code, otp.codeHash);
-
-  if (isValid) {
-    await prisma.otp.update({ where: { id: otp.id }, data: { consumedAt: new Date() } });
-  } else {
-    await prisma.otp.update({ where: { id: otp.id }, data: { attempts: { increment: 1 } } });
-  }
-
-  return isValid ? (otp.purpose === 'IN_PERSON_SETUP' ? 'IN_PERSON_CODE' : 'SMS_CODE') : null;
+  // A wrong guess counts against every live code, so two codes don't double the tries.
+  for (const otp of candidates) await prisma.otp.update({ where: { id: otp.id }, data: { attempts: { increment: 1 } } });
+  return null;
 }
 
 /**
