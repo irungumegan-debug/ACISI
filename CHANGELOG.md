@@ -3,6 +3,14 @@
 Plain-language record of what changed in ACISI, which data each change
 touches, and who can use it. Newest first.
 
+## 2026-11-17: Front-desk setup code always accepted
+
+No database change. A patient holding a setup code from the front desk
+(phone confirmed in person because no SMS arrived) could be told "Invalid or
+expired code" if they had pressed "Forgot PIN" after the code was made: only
+the newest code was checked, and that was the SMS one. Now the newest code of
+each kind is checked; wrong guesses still count against the limit.
+
 ## 2026-11-16: Owner password minimum 6 characters
 
 No database change. The owner site password may now be 6 characters or more
