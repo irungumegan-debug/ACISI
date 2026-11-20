@@ -208,7 +208,7 @@ export const api = {
 
   /** Logged in, or (admins and doctors) a 6-digit code was sent by SMS: then call staffVerifyLoginCode. */
   staffLogin(staffCode: string, pin: string) {
-    return request<StaffSessionSummary | { mfaRequired: true; challengeId: string; phoneHint: string }>('/staff/auth/login', {
+    return request<StaffSessionSummary | { mfaRequired: true; challengeId: string; method?: 'authenticator' | 'setup' | 'sms'; phoneHint?: string }>('/staff/auth/login', {
       method: 'POST',
       body: JSON.stringify({ staffCode, pin }),
     });
