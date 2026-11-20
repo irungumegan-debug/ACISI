@@ -78,6 +78,12 @@ USSD-first clinic management platform for small clinics in Kenya. See
   certification, if DHA ever answers: automatic IDSR/KHIS submission (G3) and
   connecting the FHIR interface (src/fhir/, /fhir/r4) to the HIE (G2).
   Goal (owner, 20 Nov): raise the attestation score from ~53% to at least 70%
-  ("ready to launch") by building the unticked items. Waiting for the owner's
-  screenshots of the portal form to list every unticked item; MFA (G1) built
-  first.
+  ("ready to launch"). Owner pasted sections 3, 4 and 6 (not yet 1, 2, 5, 7).
+  Built 20-21 Nov for them: service orders, vital signs + warnings, problem
+  list, critical lab alerts, quality measures, fuller visit record + care
+  plan, residence, family history, dispensing, on-screen surveillance banner,
+  IHR flag, emailed SCDSC reports, LOINC lab codes. What to tick once
+  deployed: end of docs/compliance/DHA-self-attestation-answers-2026-11-20.md.
+  Score estimate (formula reverse-engineered from section 4: component on =
+  half, feature share = half, "Required" components weigh double): ~70-75%
+  overall; the HIE critical gap needs DHA credentials regardless.

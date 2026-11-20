@@ -113,3 +113,54 @@ device; no automated diagnosis.
 4. Pay and submit. Write the submission date and receipt number here:
    ______________
 5. Tell Claude, so `CLAUDE.md` and the checklist can be updated.
+
+---
+
+## Update 21 Nov 2026: what becomes tickable once this release is installed
+
+Built 20-21 Nov 2026 (see `CHANGELOG.md`). **Tick only after the update is
+installed on acisi.co.ke and you have seen each feature work** (test
+checklist). Not yet live on the day of writing.
+
+### Section 3: Functionality
+
+| Component | Tick | Feature in ACISI |
+|---|---|---|
+| Demographics | + Residence/Address | County, sub-county, ward, village on the patient page and walk-in |
+| CPOE | + Medications | Structured prescriptions (already live) |
+| CPOE | + Dispensing | Checkout: "Given" (quantity) / "Buying elsewhere" |
+| CPOE | + Radiology, Physiotherapy, Occupational Therapy, Nutrition/Dietetics, Social Work, Counselling | Consultation: Other orders |
+| CPOE | + Family History | Consultation: Family history |
+| CPOE | + Vital Signs, BMI/Growth Charts | Vital signs (triage or doctor), BMI, weight-over-time chart, MUAC for children |
+| CPOE | MCH Encounter: **leave unticked** | Not built |
+| Problem list | + Can Update Problems | Problem list: resolve, active again, note, entered in error, history |
+| Problem list | KNHTS: **leave unticked** | Needs the HIE Terminology Service (DHA credentials) |
+| Medication management | + Active Medication List, Medication History | Already live (doctor's page) |
+| Medication management | HPT Registry / HPT Allergy Integration: **leave unticked** | Not integrated |
+| Clinical decision support | **Switch on**; + Uses Problem List, Uses Allergy List, Uses Demographics, Uses Lab Results, Uses Vital Signs | Allergy warning at prescribing; notifiable-disease alert from diagnoses; age-adjusted vital-sign warnings; critical lab result alerts |
+| Clinical decision support | Evidence-Based Interventions: judgement call | Warnings use WHO cut-offs (IMCI, MUAC, BMI); no treatment guidance. Leave unticked unless DHA's definition is just "evidence-based alerts" |
+| Clinical decision support | Uses HPT Registry: **leave unticked** | |
+| Clinical summary | + Includes Biodata, Includes Medications, Includes Care Plan | Visit record: date of birth, sex, ID; other current medicines; plan / follow-up |
+| Clinical summary | Kenya HIE Exchangeable: **after DHA connection** | |
+| Electronic prescribing | + Includes Diagnostic Tests, Includes Problem List, Includes Medication Lists | The visit record with the prescription carries diagnoses, lab results and current medicines |
+| Electronic prescribing | Electronic Transmission: **after DHA connection** | |
+| Quality measures | **Switch on**; + Capture, Calculate, Export | Routine reports → Quality measures, CSV |
+| Quality measures | Import, Electronic Submission: **leave unticked** | |
+
+### Section 4: Reporting
+
+| Component | Tick | Feature |
+|---|---|---|
+| Routine Reporting | **Switch on**; Monthly, Quarterly, Annual | Already live |
+| Public Health Events | **Switch on**; Event Detection (live), Alert Mechanism (on-screen banner, new) | |
+| Events of International Concern | **Switch on**; IHR Compliant | IHR flag on notifiable diseases |
+| Immediate | + Real-Time Reporting | Only once the coordinator's email is set (Settings) **and** email works on the server |
+| IDSR Weekly | + Weekly Submission | Same condition: Monday email of MOH 505 |
+
+### Section 6: Interoperability
+
+| Field | Answer |
+|---|---|
+| LOINC | **Yes** once lab tests have LOINC codes in Settings (vital signs are LOINC-coded already) |
+| Other terminology | Also add: "WHO ICD-11 MMS 2025-01; SNOMED CT categories for service orders" (only if you also tick SNOMED: leave SNOMED unticked) |
+| Level 4, Able to connect to Kenya HIE | **After** the first successful test with DHA's credentials |
