@@ -65,7 +65,14 @@ export interface NotifiableAlert {
   reporting: NotifiableReporting;
   icd11Code: string;
   note?: string;
+  /** International Health Regulations flag. */
+  ihr?: 'ALWAYS' | 'ASSESS';
 }
+
+export const IHR_TEXT = {
+  ALWAYS: 'IHR: always notifiable internationally. Report immediately; the Sub-County passes it to the national IHR focal point.',
+  ASSESS: 'IHR: may be an event of international concern. Report immediately; the Sub-County assesses it for the national IHR focal point.',
+} as const;
 
 export interface NotifiableCase {
   id: string;
@@ -82,6 +89,7 @@ export interface NotifiableCase {
   reportedAt: string | null;
   reportedBy: string | null;
   reportNote: string | null;
+  ihr?: 'ALWAYS' | 'ASSESS' | null;
 }
 
 export interface HealthEvent {

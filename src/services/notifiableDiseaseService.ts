@@ -24,6 +24,8 @@ export interface NotifiableAlert {
   icd11Code: string;
   /** e.g. "reported by testing laboratories only". */
   note?: string;
+  /** International Health Regulations flag (see notifiableDiseases.ts). */
+  ihr?: 'ALWAYS' | 'ASSESS';
 }
 
 type Tx = Prisma.TransactionClient;
@@ -55,6 +57,7 @@ export async function recordNotifiableCases(
     reporting: disease.reporting,
     icd11Code: code,
     ...(disease.note ? { note: disease.note } : {}),
+    ...(disease.ihr ? { ihr: disease.ihr } : {}),
   }));
 }
 
@@ -115,6 +118,7 @@ export interface NotifiableCaseView {
   reportedAt: Date | null;
   reportedBy: string | null;
   reportNote: string | null;
+  ihr: 'ALWAYS' | 'ASSESS' | null;
 }
 
 /** The clinic's cases, newest first: doctors only (names a patient and a diagnosis). */
@@ -144,6 +148,7 @@ export async function listNotifiableCases(clinicId: string, options: { unreporte
     reportedAt: r.reportedAt,
     reportedBy: r.reportedByStaff?.name ?? null,
     reportNote: r.reportNote,
+    ihr: NOTIFIABLE_DISEASES.find((d) => d.id === r.diseaseId)?.ihr ?? null,
   }));
 }
 

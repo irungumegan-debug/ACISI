@@ -455,7 +455,7 @@ describe('notifiable diseases at signing', () => {
         skipDuplicates: true,
       }),
     );
-    expect(result.notifiable).toEqual([{ diseaseId: 'cholera', name: 'Cholera', reporting: 'IMMEDIATE', icd11Code: '1A00' }]);
+    expect(result.notifiable).toEqual([{ diseaseId: 'cholera', name: 'Cholera', reporting: 'IMMEDIATE', icd11Code: '1A00', ihr: 'ASSESS' }]);
     expect(notifyNotifiableCases).toHaveBeenCalledWith(expect.objectContaining({ clinicId: 'clinic-A', encounterId: 'enc-n' }));
   });
 

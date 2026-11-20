@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Download, ShieldAlert, TableProperties } from 'lucide-react';
-import { api, ApiError, NotifiableCase, WeeklySurveillance } from '../lib/api';
+import { api, ApiError, NotifiableCase, WeeklySurveillance, IHR_TEXT } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { btn, Card, EmptyState, field, SkeletonList } from '../components/ui';
 import { HealthEvents } from '../components/HealthEvents';
@@ -144,11 +144,18 @@ function Cases() {
                     Diagnosed {dateTime(c.diagnosedAt)} by {c.diagnosedBy}
                   </p>
                 </div>
-                {c.reporting === 'IMMEDIATE' ? (
-                  <span className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700 ring-1 ring-red-200">Report within 24 hours</span>
-                ) : (
-                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-ink-700">Weekly report</span>
-                )}
+                <span className="flex shrink-0 flex-wrap items-center gap-1.5">
+                  {c.ihr && (
+                    <span className="rounded-full bg-red-700 px-2.5 py-1 text-xs font-semibold text-white" title={IHR_TEXT[c.ihr]}>
+                      IHR
+                    </span>
+                  )}
+                  {c.reporting === 'IMMEDIATE' ? (
+                    <span className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700 ring-1 ring-red-200">Report within 24 hours</span>
+                  ) : (
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-ink-700">Weekly report</span>
+                  )}
+                </span>
               </div>
               {c.reportedAt ? (
                 <p className="mt-2 flex items-start gap-1.5 text-sm text-emerald-700">
@@ -158,6 +165,7 @@ function Cases() {
                 </p>
               ) : c.reporting === 'IMMEDIATE' ? (
                 <div className="mt-2">
+                  {c.ihr && <p className="mb-2 text-xs font-semibold text-red-800">{IHR_TEXT[c.ihr]}</p>}
                   <ReportedForm c={c} onDone={load} />
                 </div>
               ) : null}

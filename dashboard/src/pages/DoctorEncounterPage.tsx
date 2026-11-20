@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { AllergyConflict, api, ApiError, EncounterDetail, Icd11Code, NotifiableAlert } from '../lib/api';
+import { AllergyConflict, api, ApiError, EncounterDetail, Icd11Code, IHR_TEXT, NotifiableAlert } from '../lib/api';
 import { describeLine, DraftLine, emptyLine, lineProblem, PrescriptionEditor, toPrescriptionLine, usePrescriptionOptions } from '../components/PrescriptionEditor';
 import { Medications } from '../components/Medications';
 import { Icd11Picker } from '../components/Icd11Picker';
@@ -448,6 +448,7 @@ function NotifiableNotice({ alerts, onDone }: { alerts: NotifiableAlert[]; onDon
               {a.reporting === 'IMMEDIATE' ? 'report within 24 hours' : 'counted in the weekly report'}
             </span>
             {a.note && <span className="basis-full text-xs text-ink-500">{a.note}</span>}
+            {a.ihr && <span className="basis-full text-xs font-semibold text-red-800">{IHR_TEXT[a.ihr]}</span>}
           </li>
         ))}
       </ul>

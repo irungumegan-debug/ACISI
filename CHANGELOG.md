@@ -3,6 +3,15 @@
 Plain-language record of what changed in ACISI, which data each change
 touches, and who can use it. Newest first.
 
+## 2026-11-21: Public health alerts on screen, IHR flag
+
+No database change.
+
+| What | Who |
+|---|---|
+| **On-screen alert on every page** while an immediately reportable case (doctors) or public health event (doctors, clinic admins) hasn't been marked reported to the Sub-County: "Report within 24 hours", with a link to Disease surveillance. Works without SMS (the SMS reminders still go once real SMS is live). | Doctors, clinic admins |
+| **IHR flag** (International Health Regulations 2005, Annex 2) on the notifiable disease list: always notifiable internationally (smallpox, wild polio/AFP, new influenza subtype, SARS) or to be assessed (cholera, plague, yellow fever, viral haemorrhagic fevers, dengue, Rift Valley fever, meningococcal disease, MERS, any event of international concern). Shown when the doctor signs and on Disease surveillance: report immediately; the Sub-County passes it to the national IHR focal point. | Doctors |
+
 ## 2026-11-21: Residence, family history, dispensing
 
 One database change, additive (`20261121130000_residence_family_history_dispensing`:

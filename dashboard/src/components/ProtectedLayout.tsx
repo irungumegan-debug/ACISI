@@ -102,6 +102,29 @@ function useUnreportedCount(role: string | undefined, pathname: string): number 
   return role === 'DOCTOR' || role === 'ADMIN' ? count : 0;
 }
 
+/**
+ * On-screen alert on every page while an immediately reportable case or
+ * public health event hasn't been reported to the Sub-County (doctors see
+ * cases and events, clinic admins events). Works without SMS.
+ */
+function ReportNowBanner() {
+  const { session } = useAuth();
+  const { pathname } = useLocation();
+  const count = useUnreportedCount(session?.role, pathname);
+  if (count === 0 || pathname === '/surveillance') return null;
+  return (
+    <div role="alert" className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900 print:hidden">
+      <p className="flex items-center gap-2 font-semibold">
+        <ShieldAlert size={18} aria-hidden className="flex-none" />
+        {count} immediately reportable {count === 1 ? 'case or event is' : 'cases or events are'} not yet reported to the Sub-County. Report within 24 hours.
+      </p>
+      <NavLink to="/surveillance" className="rounded-full bg-red-700 px-4 py-1.5 text-sm font-semibold text-white hover:bg-red-800">
+        Open disease surveillance
+      </NavLink>
+    </div>
+  );
+}
+
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const { session, logout } = useAuth();
   const { pathname } = useLocation();
@@ -434,7 +457,10 @@ export function ProtectedLayout() {
         </header>
         <main id="main" className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8 print:max-w-none print:p-0">
           {termsStatus === 'accepted' ? (
-            <Outlet />
+            <>
+              <ReportNowBanner />
+              <Outlet />
+            </>
           ) : termsStatus === 'required' ? (
             <AcceptTermsCard legal={legal} onAccepted={() => setTermsStatus('accepted')} />
           ) : termsStatus === 'error' ? (
