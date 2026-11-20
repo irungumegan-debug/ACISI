@@ -26,6 +26,19 @@ function visibleToStaffWhere(req: AuthenticatedRequest): Promise<Prisma.PatientW
  * clinic shouldn't be able to browse patients it has no relationship with,
  * even though patient records are portable once a relationship exists.
  */
+/**
+ * Phone numbers are stored as +2547XXXXXXXX, but staff type them the way
+ * patients say them: "0712 345 678", "254712...". Spaces and dashes are
+ * dropped and a leading 0 or 254 becomes the stored form, so a full or
+ * partial number typed either way is found.
+ */
+export function phoneSearchFragment(query: string): string {
+  const digits = query.replace(/[\s-]/g, '');
+  if (/^0[17]\d*$/.test(digits)) return `+254${digits.slice(1)}`;
+  if (/^254[17]\d*$/.test(digits)) return `+${digits}`;
+  return digits;
+}
+
 patientsRouter.get('/', async (req, res) => {
   const query = typeof req.query.q === 'string' ? req.query.q.trim() : '';
 
@@ -40,7 +53,7 @@ patientsRouter.get('/', async (req, res) => {
         await visibleToStaffWhere(req as AuthenticatedRequest),
         {
           OR: [
-            { phoneNumber: { contains: query } },
+            { phoneNumber: { contains: phoneSearchFragment(query) } },
             { firstName: { contains: query, mode: 'insensitive' } },
             { lastName: { contains: query, mode: 'insensitive' } },
           ],

@@ -254,3 +254,16 @@ describe('Request records at the front desk (C4)', () => {
     expect((await withCookie(request(buildApp()).post('/patients/patient-1/record-requests/verify').send({ code: '123456' }))).status).toBe(403);
   });
 });
+
+describe('phoneSearchFragment', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { phoneSearchFragment } = require('../../src/dashboard/patients') as typeof import('../../src/dashboard/patients');
+  it('finds numbers typed the way patients say them', () => {
+    expect(phoneSearchFragment('0712 345 678')).toBe('+254712345678');
+    expect(phoneSearchFragment('0712')).toBe('+254712');
+    expect(phoneSearchFragment('254712345678')).toBe('+254712345678');
+    expect(phoneSearchFragment('+254712345678')).toBe('+254712345678');
+    expect(phoneSearchFragment('345 678')).toBe('345678');
+    expect(phoneSearchFragment('Amina')).toBe('Amina');
+  });
+});
