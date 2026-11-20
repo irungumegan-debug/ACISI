@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response, Router } from 'express';
 import { z } from 'zod';
+import { suggestLoinc } from '../services/loinc';
 import { prisma } from '../db/prisma';
 import { requireStaffSession, requireAdmin, AuthenticatedRequest } from './auth';
 import {
@@ -168,7 +169,7 @@ labTestsAdminRouter.get('/', async (req, res) => {
   res.json({ tests: await listLabTests(session(req).clinicId, { includeInactive: true }) });
 });
 
-const newTestSchema = z.object({ name: z.string(), priceKes: z.coerce.number() });
+const newTestSchema = z.object({ name: z.string(), priceKes: z.coerce.number(), loincCode: z.string().max(12).nullish() });
 
 labTestsAdminRouter.post('/', async (req, res) => {
   const parsed = newTestSchema.safeParse(req.body);
@@ -178,13 +179,19 @@ labTestsAdminRouter.post('/', async (req, res) => {
   }
   const { clinicId, staffId } = session(req);
   try {
-    res.status(201).json(await createLabTest({ clinicId, staffId, name: parsed.data.name, priceKes: parsed.data.priceKes }));
+    res.status(201).json(await createLabTest({ clinicId, staffId, name: parsed.data.name, priceKes: parsed.data.priceKes, loincCode: parsed.data.loincCode }));
   } catch (err) {
     if (!sendLabError(err, res)) throw err;
   }
 });
 
-const patchTestSchema = z.object({ name: z.string().optional(), priceKes: z.coerce.number().optional(), isActive: z.boolean().optional() });
+const patchTestSchema = z.object({ name: z.string().optional(), priceKes: z.coerce.number().optional(), isActive: z.boolean().optional(), loincCode: z.string().max(12).nullish() });
+
+/** LOINC suggestions for a test name (common primary-care tests). */
+labTestsAdminRouter.get('/loinc-suggestions', (req, res) => {
+  const name = typeof req.query.name === 'string' ? req.query.name.slice(0, 100) : '';
+  res.json({ suggestions: suggestLoinc(name) });
+});
 
 labTestsAdminRouter.patch('/:id', async (req, res) => {
   const parsed = patchTestSchema.safeParse(req.body);

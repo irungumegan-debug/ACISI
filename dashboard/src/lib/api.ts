@@ -254,6 +254,7 @@ export interface LabTestItem {
   name: string;
   priceKes: number;
   isActive: boolean;
+  loincCode?: string | null;
 }
 
 export interface LabResultInput {
@@ -1303,7 +1304,11 @@ export const api = {
     return request<LabTestItem>('/lab-tests', { method: 'POST', body: JSON.stringify(body) });
   },
 
-  updateLabTest(labTestId: string, body: { name?: string; priceKes?: number; isActive?: boolean }) {
+  loincSuggestions(name: string) {
+    return request<{ suggestions: { code: string; name: string }[] }>(`/lab-tests/loinc-suggestions?name=${encodeURIComponent(name)}`);
+  },
+
+  updateLabTest(labTestId: string, body: { name?: string; priceKes?: number; isActive?: boolean; loincCode?: string | null }) {
     return request<LabTestItem>(`/lab-tests/${encodeURIComponent(labTestId)}`, { method: 'PATCH', body: JSON.stringify(body) });
   },
 

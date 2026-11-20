@@ -3,6 +3,16 @@
 Plain-language record of what changed in ACISI, which data each change
 touches, and who can use it. Newest first.
 
+## 2026-11-21: LOINC codes for lab tests
+
+One database change, additive (`20261121150000_lab_loinc`: one empty column
+on lab tests and on ordered tests); undo script in `prisma/rollback/`.
+
+| What | Who |
+|---|---|
+| Settings → Lab tests → Edit: **LOINC code** per test, with "Suggest a code" for 24 common tests (Hb, CBC, malaria smear, blood sugar, HbA1c, creatinine, urinalysis, pregnancy test, blood group...). Codes are checked with LOINC's check digit, so typing mistakes are refused. | Clinic admins |
+| The code is copied onto each test when ordered, and lab requests and results go to FHIR (and the national Shared Health Record) LOINC-coded. Vital signs were already LOINC-coded. | |
+
 ## 2026-11-21: Reports emailed to the Sub-County surveillance coordinator
 
 One database change, additive (`20261121140000_surveillance_email`: two empty

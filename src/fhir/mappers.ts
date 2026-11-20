@@ -177,7 +177,7 @@ export interface VisitRecord {
     requestedBy: { id: string; name: string; staffCode: string };
     noteForLab: string | null;
     completedAt: Date | null;
-    items: { id: string; testName: string; resultValue: string | null; resultUnit: string | null; resultFlag: LabResultFlag | null; resultComment: string | null }[];
+    items: { id: string; testName: string; loincCode?: string | null; resultValue: string | null; resultUnit: string | null; resultFlag: LabResultFlag | null; resultComment: string | null }[];
   }[];
   /** The doctor's plan / follow-up. */
   carePlan?: string | null;
@@ -322,6 +322,11 @@ const LAB_CATEGORY: fhir4.CodeableConcept = {
   coding: [{ system: 'http://terminology.hl7.org/CodeSystem/observation-category', code: 'laboratory', display: 'Laboratory' }],
 };
 
+/** The test as a CodeableConcept: LOINC-coded when the clinic set a LOINC code for it, otherwise text only. */
+function labCode(item: { testName: string; loincCode?: string | null }): fhir4.CodeableConcept {
+  return item.loincCode ? { coding: [{ system: 'http://loinc.org', code: item.loincCode, display: item.testName }], text: item.testName } : { text: item.testName };
+}
+
 /** One ServiceRequest per test requested, and one Observation per signed result. */
 export function toLabResources(v: VisitRecord, patientId: string): (fhir4.ServiceRequest | fhir4.Observation)[] {
   const out: (fhir4.ServiceRequest | fhir4.Observation)[] = [];
@@ -333,7 +338,7 @@ export function toLabResources(v: VisitRecord, patientId: string): (fhir4.Servic
         status: order.status === 'RESULTS_READY' ? 'completed' : 'active',
         intent: 'order',
         category: [{ coding: [{ system: 'http://snomed.info/sct', code: '108252007', display: 'Laboratory procedure' }] }],
-        code: { text: item.testName },
+        code: labCode(item),
         subject: ref('Patient', patientId),
         encounter: ref('Encounter', v.id),
         authoredOn: order.requestedAt.toISOString(),
@@ -346,7 +351,7 @@ export function toLabResources(v: VisitRecord, patientId: string): (fhir4.Servic
           id: `${item.id}-result`,
           status: 'final',
           category: [LAB_CATEGORY],
-          code: { text: item.testName },
+          code: labCode(item),
           subject: ref('Patient', patientId),
           encounter: ref('Encounter', v.id),
           basedOn: [ref('ServiceRequest', item.id)],

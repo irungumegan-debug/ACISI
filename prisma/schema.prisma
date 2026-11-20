@@ -1104,6 +1104,8 @@ model LabTest {
   nameKey   String
   /// Whole KES.
   priceKes  Int
+  /// LOINC code for the test (international lab coding), e.g. "718-7" for haemoglobin. Optional.
+  loincCode String?
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1174,6 +1176,8 @@ model LabOrderItem {
   /// Copied from the test when ordered, so a later rename or price change
   /// never alters an existing order or bill.
   testName      String
+  /// LOINC code copied from the test when ordered.
+  loincCode     String?
   priceKes      Int
   position      Int
   resultValue   String?

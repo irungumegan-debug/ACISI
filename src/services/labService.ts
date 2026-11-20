@@ -1,3 +1,4 @@
+import { isValidLoinc } from './loinc';
 import { sendSms } from './smsService';
 import { LabOrderStatus, LabResultFlag, Prisma, Sex } from '@prisma/client';
 import { prisma } from '../db/prisma';
@@ -53,6 +54,16 @@ export interface LabTestItem {
   name: string;
   priceKes: number;
   isActive: boolean;
+  /** LOINC code, e.g. "718-7". */
+  loincCode: string | null;
+}
+
+/** Empty clears; anything else must be a valid LOINC code (check digit included). */
+function cleanLoinc(raw: string | null | undefined): string | null {
+  const code = raw?.trim() ?? '';
+  if (!code) return null;
+  if (!isValidLoinc(code)) throw new LabError('That is not a valid LOINC code (e.g. 718-7). Check the digits.');
+  return code;
 }
 
 function cleanTestName(raw: string): string {
@@ -70,15 +81,16 @@ export async function listLabTests(clinicId: string, options: { includeInactive?
     where: { clinicId, ...(options.includeInactive ? {} : { isActive: true }) },
     orderBy: [{ isActive: 'desc' }, { name: 'asc' }],
   });
-  return rows.map((t) => ({ id: t.id, name: t.name, priceKes: t.priceKes, isActive: t.isActive }));
+  return rows.map((t) => ({ id: t.id, name: t.name, priceKes: t.priceKes, isActive: t.isActive, loincCode: t.loincCode }));
 }
 
-export async function createLabTest(input: { clinicId: string; staffId: string; name: string; priceKes: number }): Promise<LabTestItem> {
+export async function createLabTest(input: { clinicId: string; staffId: string; name: string; priceKes: number; loincCode?: string | null }): Promise<LabTestItem> {
   const name = cleanTestName(input.name);
   if (name.length < 2 || name.length > LAB_TEST_NAME_MAX) throw new LabError(`Enter a test name (2 to ${LAB_TEST_NAME_MAX} characters)`);
   checkPrice(input.priceKes);
   try {
-    const row = await prisma.labTest.create({ data: { clinicId: input.clinicId, name, nameKey: name.toLowerCase(), priceKes: input.priceKes } });
+    const loincCode = cleanLoinc(input.loincCode);
+    const row = await prisma.labTest.create({ data: { clinicId: input.clinicId, name, nameKey: name.toLowerCase(), priceKes: input.priceKes, loincCode } });
     await recordAuditEvent({
       actorType: 'STAFF',
       actorId: input.staffId,
@@ -89,7 +101,7 @@ export async function createLabTest(input: { clinicId: string; staffId: string; 
       entityId: row.id,
       metadata: { priceKes: row.priceKes },
     });
-    return { id: row.id, name: row.name, priceKes: row.priceKes, isActive: row.isActive };
+    return { id: row.id, name: row.name, priceKes: row.priceKes, isActive: row.isActive, loincCode: row.loincCode };
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') throw new LabError('Your clinic already has a test with that name', 409);
     throw err;
@@ -103,6 +115,7 @@ export async function updateLabTest(input: {
   name?: string;
   priceKes?: number;
   isActive?: boolean;
+  loincCode?: string | null;
 }): Promise<LabTestItem> {
   const existing = await prisma.labTest.findFirst({ where: { id: input.labTestId, clinicId: input.clinicId } });
   if (!existing) throw new LabError('Test not found', 404);
@@ -118,6 +131,7 @@ export async function updateLabTest(input: {
     data.priceKes = input.priceKes;
   }
   if (input.isActive !== undefined) data.isActive = input.isActive;
+  if (input.loincCode !== undefined) data.loincCode = cleanLoinc(input.loincCode);
   try {
     const row = await prisma.labTest.update({ where: { id: existing.id }, data });
     await recordAuditEvent({
@@ -130,7 +144,7 @@ export async function updateLabTest(input: {
       entityId: row.id,
       metadata: { priceKes: row.priceKes, isActive: row.isActive, labelChanged: input.name !== undefined && row.name !== existing.name },
     });
-    return { id: row.id, name: row.name, priceKes: row.priceKes, isActive: row.isActive };
+    return { id: row.id, name: row.name, priceKes: row.priceKes, isActive: row.isActive, loincCode: row.loincCode };
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') throw new LabError('Your clinic already has a test with that name', 409);
     throw err;
@@ -197,7 +211,7 @@ export async function requestLabTests(input: RequestLabTestsInput): Promise<{ la
         items: {
           create: ids.map((id, position) => {
             const t = byId.get(id)!;
-            return { labTestId: t.id, testName: t.name, priceKes: t.priceKes, position };
+            return { labTestId: t.id, testName: t.name, loincCode: t.loincCode, priceKes: t.priceKes, position };
           }),
         },
       },
