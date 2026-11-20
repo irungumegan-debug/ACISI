@@ -108,7 +108,7 @@ describe('PATCH /patients/:id/details (ID document and next of kin)', () => {
         .send({ idType: 'NATIONAL_ID', idNumber: '1234 5678', nextOfKinName: 'Peter Otieno', nextOfKinPhone: '0722000111' }),
     );
     expect(res.status).toBe(200);
-    expect(res.body).toEqual(STORED);
+    expect(res.body).toEqual({ ...STORED, hie: { crId: null, verifiedAt: null, canLookUp: true } });
     expect(mockUpdate).toHaveBeenCalledWith({ where: { id: 'patient-1' }, data: STORED });
     const audit = (recordAuditEvent as jest.Mock).mock.calls[0][0];
     expect(audit).toMatchObject({ action: 'PATIENT_DETAILS_UPDATED', entityId: 'patient-1' });

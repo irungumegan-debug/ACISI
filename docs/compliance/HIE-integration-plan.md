@@ -43,6 +43,13 @@ Security labels: `GET /shr/security-labels` (N/R confidentiality; HIV, PSY, SUD 
 
 ## What ACISI needs to build (can start before credentials)
 
+**Done 20 Nov 2026 (off until credentials): steps 1-4** (`src/hie/`,
+console page "National HIE", patient page Client Registry lookup). To check
+in DHA's development environment: the exact `identification_type` strings
+(the docs show both "National ID" and "NATIONAL ID"), where the PUID and CR ID
+sit in real answers, and whether the token goes in `Authorization: Bearer`.
+
+
 1. **HIE client** (`src/hie/`): token caching, facility headers, error
    handling, every call logged in the audit log. Off until `HIE_ENABLED=true`
    with credentials in the server settings.

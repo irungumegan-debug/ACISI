@@ -274,6 +274,45 @@ export interface PatientIdentityRecord {
   nextOfKinPhone: string | null;
 }
 
+/** The patient's national Client Registry ID (DHA HIE), only while it matches their current ID document. */
+export interface PatientHie {
+  crId: string | null;
+  verifiedAt: string | null;
+  /** They have an ID document the Client Registry can search (not a passport). */
+  canLookUp: boolean;
+}
+
+export interface HieFacility {
+  frCode: string;
+  officialName: string;
+  facilityType: string | null;
+  kephLevel: string | null;
+  county: string | null;
+  subCounty: string | null;
+  licenceStatus: string | null;
+  registrationNumber: string | null;
+}
+
+export interface HiePractitioner {
+  regulator: string | null;
+  registrationNumber: string | null;
+  practitionerId: string | null;
+  registeredName: string | null;
+  licenceEnd: string | null;
+  licenceCurrent: boolean | null;
+  verifiedAt: string | null;
+}
+
+export interface HieStatus {
+  connected: boolean;
+  facility: { frCode: string; name: string | null; verifiedAt: string | null } | null;
+  practitioner: HiePractitioner | null;
+}
+
+export type ClientRegistryLookup =
+  | { result: 'saved'; crId: string }
+  | { result: 'check'; registry: { firstName: string | null; middleName: string | null; lastName: string | null; dateOfBirth: string | null; sex: 'MALE' | 'FEMALE' | null } };
+
 export interface PatientDetail extends PatientIdentityRecord {
   id: string;
   firstName: string;
@@ -282,6 +321,7 @@ export interface PatientDetail extends PatientIdentityRecord {
   dateOfBirth: string | null;
   sex: string;
   smsOptOut: boolean;
+  hie: PatientHie;
   history: VisitHistoryEntry[];
   hasHiddenHistoryElsewhere: boolean;
   /** How this clinic may see other clinics' visits right now, or null (own visits only). */
@@ -791,8 +831,33 @@ export const api = {
     return request<{ ok: true }>('/clinic/payment-settings', { method: 'PUT', body: JSON.stringify(body) });
   },
   /** Saves the ID document and next of kin; fields sent empty are cleared. */
+  getHieStatus() {
+    return request<HieStatus>('/hie/status');
+  },
+
+  searchHieFacilities(q: { name?: string; identifier?: string; identifierType?: string }) {
+    const params = new URLSearchParams(Object.entries(q).filter(([, v]) => v) as [string, string][]);
+    return request<{ facilities: HieFacility[] }>(`/hie/facilities?${params.toString()}`);
+  },
+
+  setHieFacility(frCode: string) {
+    return request<{ frCode: string; name: string }>('/hie/facility', { method: 'PUT', body: JSON.stringify({ frCode }) });
+  },
+
+  verifyMyPractitionerRecord(regulator: string, registrationNumber: string) {
+    return request<HiePractitioner>('/hie/me/practitioner', { method: 'PUT', body: JSON.stringify({ regulator, registrationNumber }) });
+  },
+
+  lookUpPatientInClientRegistry(patientId: string) {
+    return request<ClientRegistryLookup>(`/hie/patients/${encodeURIComponent(patientId)}/client-registry`, { method: 'POST' });
+  },
+
+  confirmClientRegistryMatch(patientId: string) {
+    return request<{ crId: string }>(`/hie/patients/${encodeURIComponent(patientId)}/client-registry/confirm`, { method: 'POST' });
+  },
+
   updatePatientDetails(patientId: string, identity: PatientIdentity) {
-    return request<PatientIdentityRecord>(`/patients/${encodeURIComponent(patientId)}/details`, {
+    return request<PatientIdentityRecord & { hie: PatientHie }>(`/patients/${encodeURIComponent(patientId)}/details`, {
       method: 'PATCH',
       body: JSON.stringify(identity),
     });

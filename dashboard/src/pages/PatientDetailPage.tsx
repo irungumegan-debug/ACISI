@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Link, useParams } from 'react-router-dom';
-import { api, ApiError, PatientDetail, PatientIdentity, PatientIdentityRecord } from '../lib/api';
+import { api, ApiError, ClientRegistryLookup, PatientDetail, PatientHie, PatientIdentity, PatientIdentityRecord } from '../lib/api';
 import { ArrowLeft, Building2, CalendarDays, FileText, IdCard, Lock, MessageSquareOff, Phone, Pill, Printer, Stethoscope } from 'lucide-react';
 import { Avatar, btn, Card, EmptyState, SkeletonList } from '../components/ui';
 import { ID_TYPE_LABEL, IdentityFields } from '../components/IdentityFields';
@@ -190,7 +190,7 @@ const toForm = (r: PatientIdentityRecord): PatientIdentity => ({
 });
 
 /** ID document and next of kin: everyone can see them; front desk can edit (emptying a field removes it). */
-function IdentityCard({ patient, onSaved }: { patient: PatientDetail; onSaved: (saved: PatientIdentityRecord) => void }) {
+function IdentityCard({ patient, onSaved }: { patient: PatientDetail; onSaved: (saved: PatientIdentityRecord & { hie?: PatientHie }) => void }) {
   const { session } = useAuth();
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<PatientIdentity>(toForm(patient));
@@ -229,6 +229,7 @@ function IdentityCard({ patient, onSaved }: { patient: PatientDetail; onSaved: (
               {row('Next of kin', patient.nextOfKinName)}
               {row('Next of kin phone', patient.nextOfKinPhone)}
             </dl>
+            <ClientRegistryRow patient={patient} canLookUp={canEdit} onSaved={(crId) => onSaved({ ...patient, hie: { ...patient.hie, crId, verifiedAt: new Date().toISOString() } })} />
             {canEdit && (
               <button
                 type="button"
@@ -262,6 +263,104 @@ function IdentityCard({ patient, onSaved }: { patient: PatientDetail; onSaved: (
           </form>
         )}
     </Card>
+  );
+}
+
+/**
+ * The patient's national Client Registry ID (DHA HIE). Front desk looks
+ * them up with the ID document on file; a clear match is saved straight
+ * away, otherwise the registry's details are shown to compare first.
+ */
+function ClientRegistryRow({ patient, canLookUp, onSaved }: { patient: PatientDetail; canLookUp: boolean; onSaved: (crId: string) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [check, setCheck] = useState<Extract<ClientRegistryLookup, { result: 'check' }>['registry'] | null>(null);
+  const hie = patient.hie;
+
+  async function lookUp(): Promise<void> {
+    setBusy(true);
+    setError(null);
+    setCheck(null);
+    try {
+      const res = await api.lookUpPatientInClientRegistry(patient.id);
+      if (res.result === 'saved') onSaved(res.crId);
+      else setCheck(res.registry);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'The lookup failed. Try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmMatch(): Promise<void> {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await api.confirmClientRegistryMatch(patient.id);
+      setCheck(null);
+      onSaved(res.crId);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not save. Try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const sexLabel = (s: string | null) => (s === 'MALE' ? 'Male' : s === 'FEMALE' ? 'Female' : 'Not given');
+
+  return (
+    <div className="mt-4 border-t border-slate-100 pt-4 text-sm">
+      <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-3">
+        <dt className="w-40 flex-none text-ink-500">National Client Registry</dt>
+        <dd className="font-medium text-navy-900">
+          {hie.crId ? <span className="font-mono">{hie.crId}</span> : <span className="font-normal text-ink-400">Not looked up</span>}
+        </dd>
+      </div>
+      {canLookUp && !hie.crId && !check && (
+        <div className="mt-2">
+          {hie.canLookUp ? (
+            <button type="button" className={btn.secondary} disabled={busy} onClick={() => void lookUp()}>
+              {busy ? 'Looking up…' : 'Look up in the national Client Registry'}
+            </button>
+          ) : (
+            <p className="text-xs text-ink-500">Add a national ID, alien ID or birth certificate to look the patient up (passports can&apos;t be searched).</p>
+          )}
+        </div>
+      )}
+      {check && (
+        <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3.5 text-amber-950" role="status">
+          <p className="font-semibold">The registry&apos;s details differ from this record. Is this the same person?</p>
+          <dl className="mt-2 grid grid-cols-[auto_1fr_1fr] gap-x-4 gap-y-1">
+            <span />
+            <span className="text-xs font-semibold uppercase text-amber-800">ACISI</span>
+            <span className="text-xs font-semibold uppercase text-amber-800">Registry</span>
+            <dt>Name</dt>
+            <dd>{patient.firstName} {patient.lastName}</dd>
+            <dd>{[check.firstName, check.middleName, check.lastName].filter(Boolean).join(' ') || 'Not given'}</dd>
+            <dt>Born</dt>
+            <dd>{patient.dateOfBirth ? patient.dateOfBirth.slice(0, 10) : 'Not given'}</dd>
+            <dd>{check.dateOfBirth ?? 'Not given'}</dd>
+            <dt>Sex</dt>
+            <dd>{sexLabel(patient.sex)}</dd>
+            <dd>{sexLabel(check.sex)}</dd>
+          </dl>
+          <p className="mt-2 text-xs">Check with the patient and their ID. If it is not them, check the ID number on the record.</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" className={btn.primary} disabled={busy} onClick={() => void confirmMatch()}>
+              Yes, same person: save
+            </button>
+            <button type="button" className={btn.secondary} disabled={busy} onClick={() => setCheck(null)}>
+              No, don&apos;t save
+            </button>
+          </div>
+        </div>
+      )}
+      {error && (
+        <p role="alert" className="mt-2 text-sm text-red-700">
+          {error}
+        </p>
+      )}
+    </div>
   );
 }
 

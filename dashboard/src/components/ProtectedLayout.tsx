@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import { Navigate, NavLink, Outlet, useLocation } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
-import { BarChart3, CalendarDays, FileBarChart, ClipboardList, FlaskConical, LogOut, Menu, ScrollText, Settings, ShieldAlert, UserRound, UsersRound, X } from 'lucide-react';
+import { BarChart3, CalendarDays, FileBarChart, ClipboardList, FlaskConical, LogOut, Menu, Network, ScrollText, Settings, ShieldAlert, UserRound, UsersRound, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api, ApiError, LegalStatus } from '../lib/api';
 import { CONFIDENTIALITY_UNDERTAKING_PATH, legalBoxSatisfied, PRIVACY_PATH, TERMS_PATH } from '../lib/legal';
@@ -25,6 +25,7 @@ function navFor(role: string): NavItem[] {
       { to: '/doctor/appointments', label: 'Appointments', icon: CalendarDays },
       { to: '/surveillance', label: 'Disease surveillance', icon: ShieldAlert },
       { to: '/reports/routine', label: 'Routine reports', icon: FileBarChart },
+      { to: '/national-hie', label: 'National HIE', icon: Network },
     ];
   }
   const items: NavItem[] = [
@@ -37,9 +38,11 @@ function navFor(role: string): NavItem[] {
       { to: '/reports/daily', label: 'Daily summary', icon: BarChart3 },
       { to: '/reports/routine', label: 'Routine reports', icon: FileBarChart },
       { to: '/surveillance', label: 'Disease surveillance', icon: ShieldAlert },
+      { to: '/national-hie', label: 'National HIE', icon: Network },
       { to: '/settings', label: 'Settings', icon: Settings },
     );
   }
+  if (role === 'CLINICIAN') items.push({ to: '/national-hie', label: 'National HIE', icon: Network });
   return items;
 }
 
@@ -59,6 +62,7 @@ const PAGE_TITLES: [string, string][] = [
   ['/patients', 'Patients'],
   ['/appointments', 'Appointments'],
   ['/settings', 'Settings'],
+  ['/national-hie', 'National HIE'],
   ['/surveillance', 'Disease surveillance'],
   ['/doctor/queue', 'My queue'],
   ['/doctor/appointments', 'Appointments'],

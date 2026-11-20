@@ -172,6 +172,13 @@ model Clinic {
   /// SMS a month included in the plan; above it, each SMS is charged
   /// SMS_OVERAGE_KES. Starts at the plan's amount, can be changed per clinic.
   smsMonthlyAllowance Int        @default(500)
+  /// DHA Health Information Exchange: the clinic's Facility Registry code
+  /// (FR code, e.g. "FID-47-115307-8"), set by the clinic admin after a
+  /// Facility Registry lookup. Sent as X-Facility-Id on HIE calls.
+  hieFacilityId         String?
+  /// Official name the Facility Registry returned, shown to confirm the match.
+  hieFacilityName       String?
+  hieFacilityVerifiedAt DateTime?
   createdAt           DateTime   @default(now())
   updatedAt           DateTime   @updatedAt
 
@@ -263,6 +270,16 @@ model Staff {
   /// clinic admin resets it (lost phone).
   totpSecret         String?
   totpEnabledAt      DateTime?
+  /// DHA Health Worker Registry: regulator (KMPDC, COC, NCK, PPB) and
+  /// registration number the clinician entered, and what the registry
+  /// returned: the Practitioner Unique Identifier (PUID) used on HIE calls,
+  /// the registered name, and when the current licence ends.
+  hieRegulator          String?
+  hieRegistrationNumber String?
+  hiePractitionerId     String?
+  hieRegisteredName     String?
+  hieLicenceEnd         DateTime?
+  hieVerifiedAt         DateTime?
   role               StaffRole              @default(RECEPTIONIST)
   /// A doctor's "home" department (the one they signed up to), kept in sync
   /// as their first department for display. Scoping and assignment use
@@ -362,6 +379,13 @@ model Patient {
   idType             PatientIdType?
   /// Normalised: upper case, no spaces (see services/patientIdentity.ts).
   idNumber           String?
+  /// DHA Client Registry ID (CR ID, e.g. "CR9795515286992-5"), the national
+  /// patient identifier used on HIE calls. Encrypted at rest. Only valid
+  /// while hieCrSourceHash matches the current idType/idNumber (a changed ID
+  /// document means looking the patient up again); see hie/patientRegistry.ts.
+  hieCrId            String?
+  hieCrSourceHash    String?
+  hieCrVerifiedAt    DateTime?
   /// Optional next of kin, so the clinic can reach someone on the patient's
   /// behalf. Phone is E.164. Wiped on account deletion.
   nextOfKinName      String?

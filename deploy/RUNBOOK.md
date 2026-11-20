@@ -410,6 +410,38 @@ and restart. Saved app setups are kept, so turning it back on doesn't need a
 new QR scan. A PIN reset, deactivation or authenticator reset forgets
 remembered devices.
 
+## Connecting to the national HIE (DHA)
+
+Only once DHA has issued ACISI's HIE **development** credentials (request:
+afyaconnect.dha@gmail.com). Production credentials come only after DHA's UAT
+demo and certification; until then `HIE_BASE_URL` stays on DHA's development
+server (the default) and **no real patients are looked up**: use test
+patients and the test identifiers DHA gives.
+
+1. Install the release with migration `20261120150000_hie_registries`.
+2. Add the credentials (from DHA; never in chat or email to others):
+   ```
+   sudo nano /etc/acisi/acisi.env
+   ```
+   ```
+   HIE_ENABLED=true
+   HIE_CLIENT_ID=<from DHA>
+   HIE_CLIENT_SECRET=<from DHA>
+   ```
+   then `sudo systemctl restart acisi`. The app refuses to start with
+   `HIE_ENABLED=true` and no credentials.
+3. As clinic admin: National HIE → find the clinic → "This is our clinic".
+4. As a doctor: National HIE → regulator + registration number → Verify.
+5. Front desk: a TEST patient with a national ID → patient page → "Look up
+   in the national Client Registry".
+6. `sudo journalctl -u acisi -n 50 --no-pager | grep -i hie` shows each call's
+   status (never patient details).
+
+Before **production** credentials: update the Privacy Notice, DPIA and ODPC
+record (DHA/HIE becomes a recipient of patient data).
+
+To switch off: `HIE_ENABLED=false` and restart. Saved codes and IDs stay.
+
 ## Switching ACISI's M-Pesa to production (Buy Goods till)
 
 Do this only after the release that adds `MPESA_TILL_NUMBER` is deployed.

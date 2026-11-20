@@ -3,6 +3,25 @@
 Plain-language record of what changed in ACISI, which data each change
 touches, and who can use it. Newest first.
 
+## 2026-11-20: National HIE registries (facility, health workers, patients)
+
+One database change, additive (`20261120150000_hie_registries`: empty
+columns on clinics, staff and patients); undo script in `prisma/rollback/`.
+**Off** until DHA issues ACISI's HIE credentials (`HIE_ENABLED`, runbook
+"Connecting to the national HIE"); until then the pages say "not connected yet".
+
+| What | Data | Who |
+|---|---|---|
+| **National HIE** page. Clinic admin finds the clinic in DHA's Facility Registry (by name, MFL code or FR code) and saves its FR code; every HIE call then carries it. | Clinic: FR code, official name | Clinic admins |
+| Doctors and clinical officers enter their regulator (KMPDC, COC, NCK, PPB) and registration number once; ACISI looks them up in the Health Worker Registry and keeps their practitioner ID (PUID), registered name and licence end date. Expired licence shown in red. | Staff: regulator, registration number, PUID, name, licence end | Doctors, clinical officers |
+| Patient page: "Look up in the national Client Registry" using the ID document on file (national ID, alien ID, birth certificate; not passports). A clear name and date-of-birth match saves the CR ID; otherwise both sets of details are shown side by side to compare, and it's saved only if staff confirm. A changed ID document makes the saved CR ID stop counting. | Patient: CR ID (encrypted), when it was checked | Front desk, clinic admins, clinicians |
+| Only the CR ID, names, date of birth and sex are read from the Client Registry's answer; everything else it returns (income, employer, KRA PIN...) is dropped. | | |
+
+Audit log: `HIE_FACILITY_SET`, `HIE_PRACTITIONER_VERIFIED`,
+`HIE_CLIENT_REGISTRY_LOOKUP` (result only), `HIE_CLIENT_REGISTRY_CONFIRMED`.
+Next (after credentials): Shared Health Record consent, sending visits,
+reading records from other facilities (`docs/compliance/HIE-integration-plan.md`).
+
 ## 2026-11-20: Multi-factor login with an authenticator app
 
 One database change, additive (`20261120120000_staff_authenticator`: two

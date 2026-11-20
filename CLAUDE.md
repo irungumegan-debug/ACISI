@@ -55,7 +55,11 @@ USSD-first clinic management platform for small clinics in Kenya. See
   docs at hie-docs.dha.go.ke; credentials and UAT via afyaconnect.dha@gmail.com
   (interoperability@dha.go.ke bounces). Plan and API summary:
   docs/compliance/HIE-integration-plan.md (hosts hie-docs, ilm-dev and
-  hie-test .dha.go.ke allowed in the ACISI environment).
+  hie-test .dha.go.ke allowed in the ACISI environment). Steps 1-4 built
+  20 Nov (src/hie/, src/dashboard/hie.ts, console "National HIE" page; off
+  until HIE_ENABLED=true with DHA's credentials, runbook "Connecting to the
+  national HIE"). Owner has no facility codes yet: admins find the clinic by
+  name or MFL code on that page.
   Routine reports (monthly/quarterly/annual, IDSR monthly table) and public
   health events (event-based surveillance, fill MOH 505 event and death rows)
   built 14 Nov (src/services/{routineReportService,publicHealthEventService}.ts).

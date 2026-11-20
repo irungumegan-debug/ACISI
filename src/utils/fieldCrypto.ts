@@ -40,6 +40,8 @@ export const ENCRYPTED_FIELDS: ReadonlySet<string> = new Set([
   'allergyOverrideReason',
   // staff: authenticator-app secret
   'totpSecret',
+  // patients: national Client Registry ID (HIE)
+  'hieCrId',
 ]);
 
 let cachedKey: Buffer | null | undefined;

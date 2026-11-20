@@ -8,6 +8,7 @@ import { requireStaffSession, AuthenticatedRequest, isFrontDeskRole } from './au
 import { getScopedHistory } from '../services/patientService';
 import { recordAuditEvent } from '../services/auditService';
 import { z } from 'zod';
+import { patientCrView } from '../hie/registryService';
 import { identityView, patientIdentityInputSchema, PatientIdentityError, preparePatientIdentity } from '../services/patientIdentity';
 
 export const patientsRouter = Router();
@@ -100,6 +101,7 @@ patientsRouter.get('/:id', async (req, res) => {
     sex: patient.sex,
     smsOptOut: patient.smsOptOut,
     ...identityView(patient),
+    hie: patientCrView(patient),
     history,
     hasHiddenHistoryElsewhere,
     crossClinicBasis,
@@ -194,7 +196,7 @@ patientsRouter.patch('/:id/details', async (req, res) => {
     entityId: patient.id,
     metadata: { fields: Object.keys(update), clinicId },
   });
-  res.json(identityView(updated));
+  res.json({ ...identityView(updated), hie: patientCrView(updated) });
 });
 
 /**
