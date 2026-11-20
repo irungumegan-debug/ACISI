@@ -96,11 +96,21 @@ const envSchema = z.object({
   FILE_UPLOAD_MIN_FREE_MB: z.coerce.number().int().min(0).default(2048),
 
   /**
-   * Multi-factor login (SMS code) for clinic admins and doctors. Off until
-   * real SMS delivery is confirmed (with Africa's Talking in sandbox, codes
-   * would never reach a phone and admins and doctors would be locked out).
+   * Multi-factor login for clinic admins and doctors: after the PIN, a
+   * 6-digit code from an authenticator app (set up at their first login).
+   * Needs no SMS, so it works while SMS is still in sandbox.
    */
   STAFF_MFA_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+
+  /**
+   * With STAFF_MFA_ENABLED: also allow the login code by SMS, for staff who
+   * haven't set up an authenticator app. Off until real SMS delivery is
+   * confirmed (with Africa's Talking in sandbox, codes never reach a phone).
+   */
+  STAFF_MFA_SMS_ENABLED: z
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),

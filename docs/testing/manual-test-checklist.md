@@ -111,13 +111,17 @@ enough.
 - [ ] **E7. Encryption complete.** On the server, `npm run -s encrypt-existing-data` (preview, same style as E6). *Expect:* 0 everywhere.
 - [ ] **E8. Wrong PIN lockout.** Enter a wrong PIN 5 times at the console login. *Expect:* "Too many wrong PINs. Try again in 5 minutes."; the right PIN works after 5 minutes.
 
-## F. Multi-factor login (only after it's switched on, once real SMS works)
+## F. Multi-factor login (after STAFF_MFA_ENABLED=true, runbook "Turning on multi-factor login")
 
-- [ ] **F1.** Doctor logs in → asked for a 6-digit SMS code → enters it → in.
-- [ ] **F2.** Wrong code 5 times → must start again.
-- [ ] **F3.** "Remember this device" ticked → next login on that browser needs no code.
-- [ ] **F4.** Front desk login → no code asked.
-- [ ] **F5.** Reset a doctor's PIN → their remembered device asks for a code again.
+You need Google Authenticator or Microsoft Authenticator on your phone.
+
+- [ ] **F1. Setup.** Test doctor logs in (ID + PIN) → a QR code is shown → scan it with the app → type the code → in.
+- [ ] **F2. Next login.** Log out, log in again (untick "Remember this device" the first time) → asked for the app code, not a QR code → in.
+- [ ] **F3. Wrong code.** Type a wrong code 5 times. *Expect:* "Too many wrong codes. Try again in 5 minutes."; logging in with the right PIN is also refused for those 5 minutes.
+- [ ] **F4. Remember this device.** Tick it → next login on that browser needs no code.
+- [ ] **F5. Front desk and lab.** Log in → no code asked.
+- [ ] **F6. Lost phone.** As clinic admin: Settings → Staff → the doctor → "Reset authenticator app". *Expect:* the doctor is logged out; at the next login a new QR code is shown. Delete the old ACISI entry in the app and scan the new one.
+- [ ] **F7. Reset PIN.** Reset a doctor's PIN → their remembered device asks for a code again.
 
 ## G. FHIR interface
 

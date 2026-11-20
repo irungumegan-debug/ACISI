@@ -20,9 +20,14 @@ USSD-first clinic management platform for small clinics in Kenya. See
   arrive: add the provider in `src/services/smsService.ts` (all SMS go through
   `sendSms`), confirm where message content is stored (must stay in Kenya;
   update the Privacy Notice, DPIA and ODPC records if the processor changes),
-  test real delivery, then turn on multi-factor login (`STAFF_MFA_ENABLED=true`,
-  runbook "Turning on multi-factor login"). Until then MFA stays OFF and the
-  DHA "Multi-Factor Authentication" box stays unticked.
+  test real delivery, then optionally allow SMS login codes as well
+  (`STAFF_MFA_SMS_ENABLED=true`, runbook "Turning on multi-factor login").
+- **Multi-factor login (authenticator app), built 20 Nov 2026:** admins and
+  doctors use an authenticator app (TOTP, `src/utils/totp.ts`,
+  `src/services/staffMfaService.ts`); needs no SMS. Live only once deployed
+  AND `STAFF_MFA_ENABLED=true` on the server (runbook "Turning on
+  multi-factor login"). Tick the DHA "Multi-Factor Authentication" box only
+  after the owner confirms both, then mark DPIA action A2 done (new version).
 
 ## Compliance documents
 
@@ -35,7 +40,8 @@ USSD-first clinic management platform for small clinics in Kenya. See
   Done 14 Nov 2026 (on branch, deploy with the runbook "DHA fixes" release):
   tamper-resistant audit log, 15-min inactivity logoff, under-18 check,
   AES-256-GCM encryption at rest (fields + files); multi-factor login for
-  admins and doctors (off until STAFF_MFA_ENABLED=true, see runbook).
+  admins and doctors (authenticator app since 20 Nov; off until
+  STAFF_MFA_ENABLED=true, see runbook).
   ICD-11 coded diagnoses done 14 Nov (WHO MMS 2025-01 bundled in
   src/assets/icd11/, doctors must pick 1-5 codes; FHIR Condition coded).
   Notifiable-disease alerts + weekly summary built 14 Nov
@@ -56,3 +62,7 @@ USSD-first clinic management platform for small clinics in Kenya. See
   docs/compliance/DHA-self-attestation-answers-2026-11-20.md. After
   certification, if DHA ever answers: automatic IDSR/KHIS submission (G3) and
   connecting the FHIR interface (src/fhir/, /fhir/r4) to the HIE (G2).
+  Goal (owner, 20 Nov): raise the attestation score from ~53% to at least 70%
+  ("ready to launch") by building the unticked items. Waiting for the owner's
+  screenshots of the portal form to list every unticked item; MFA (G1) built
+  first.

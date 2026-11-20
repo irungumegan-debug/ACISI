@@ -3,6 +3,25 @@
 Plain-language record of what changed in ACISI, which data each change
 touches, and who can use it. Newest first.
 
+## 2026-11-20: Multi-factor login with an authenticator app
+
+One database change, additive (`20261120120000_staff_authenticator`: two
+empty columns on staff); undo script in `prisma/rollback/`. New dependency:
+`qrcode` (draws the setup QR code on the server).
+
+| What | Data | Who |
+|---|---|---|
+| After the PIN, clinic admins and doctors enter a 6-digit code from an authenticator app (Google Authenticator, Microsoft Authenticator...). **Needs no SMS**, so it can be switched on now. | Per person: the app's secret, AES-256-GCM encrypted | Admins, doctors |
+| **First login after switch-on:** a QR code to scan, then the first code from the app. Nothing is saved until that code is right. | | Admins, doctors |
+| "Remember this device for 30 days" as before. A PIN reset, deactivation or authenticator reset forgets remembered devices. | | |
+| 5 wrong codes lock the account for 5 minutes (counted separately from PINs: a correct PIN does not reset it). A code can't be used twice. | | |
+| **Lost phone:** Settings → Staff → "Reset authenticator app" (clinic admin), or `npm run reset-staff-authenticator -- <staff ID>` on the server (e.g. the only admin lost their phone). Logs the person out; they scan a new QR code at the next login. Logged. | | Clinic admins, ACISI |
+| SMS login codes remain available only with `STAFF_MFA_SMS_ENABLED=true` (after real SMS works), for people who haven't set up an app. | | |
+
+Audit log: `STAFF_AUTHENTICATOR_SET_UP`, `STAFF_AUTHENTICATOR_RESET`,
+`STAFF_LOGIN_CODE_WRONG`; `STAFF_LOGIN_CODE_VERIFIED` now records the method.
+Front desk and lab technicians are not affected.
+
 ## 2026-11-17: Front-desk setup code always accepted
 
 No database change. A patient holding a setup code from the front desk

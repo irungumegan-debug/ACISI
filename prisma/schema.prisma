@@ -257,6 +257,12 @@ model Staff {
   name               String
   /// bcrypt hash of a staff-chosen numeric PIN. Never store or log the raw PIN.
   pinHash            String
+  /// Authenticator-app (TOTP, RFC 6238) secret for multi-factor login,
+  /// AES-256-GCM encrypted ("enc:v1:..."). Null until the person sets up
+  /// the app at their first login after MFA is switched on, or after their
+  /// clinic admin resets it (lost phone).
+  totpSecret         String?
+  totpEnabledAt      DateTime?
   role               StaffRole              @default(RECEPTIONIST)
   /// A doctor's "home" department (the one they signed up to), kept in sync
   /// as their first department for display. Scoping and assignment use

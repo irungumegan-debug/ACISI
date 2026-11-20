@@ -298,6 +298,8 @@ export interface ClinicStaffListItem {
   /** Every department a doctor works in (empty for other roles). */
   departments: { id: string; name: string }[];
   isActive: boolean;
+  /** True once they have set up an authenticator app for multi-factor login. */
+  authenticatorSetUp: boolean;
   /** null for non-doctor roles — presence is a doctor-only concept. */
   presence: DoctorPresenceStatus | null;
 }
@@ -322,6 +324,7 @@ export async function listClinicStaff(clinicId: string): Promise<ClinicStaffList
     departmentName: s.departments.length ? s.departments.map((d) => d.department.name).join(', ') : (s.department?.name ?? null),
     departments: s.departments.map((d) => d.department),
     isActive: s.isActive,
+    authenticatorSetUp: Boolean(s.totpEnabledAt),
     presence: s.role === 'DOCTOR' ? getDoctorPresenceStatus(s) : null,
   }));
 }

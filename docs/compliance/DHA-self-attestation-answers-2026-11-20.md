@@ -62,7 +62,7 @@ device; no automated diagnosis.
 | Passwords/PINs stored hashed | ✅ | bcrypt (`src/services/staffService.ts`) |
 | Account lockout | ✅ | 5 wrong PINs → 5-minute lock (`src/services/pinLockout.ts`) |
 | Automatic logoff on inactivity | ✅ | 15 minutes (`IDLE_LOGOFF_SECONDS`, `src/config/constants.ts`); sessions also expire (staff 8 h, admin 6 h, owner 2 h) |
-| **Multi-Factor Authentication** | ❌ **leave unticked** | Built for admins and doctors (SMS code) but OFF (`STAFF_MFA_ENABLED`) until real SMS delivery works; gap G1 |
+| **Multi-Factor Authentication** | ⏳ **tick once live** | Authenticator app (TOTP) for admins and doctors, built 20 Nov 2026, no SMS needed. Tick only after the release is installed, `STAFF_MFA_ENABLED=true` is set and checklist section F passes; until then gap G1 |
 | Encryption in transit | ✅ | HTTPS only, TLS 1.2/1.3, HSTS |
 | Encryption at rest | ✅ | AES-256-GCM for health fields, ID numbers, next of kin (`src/utils/fieldCrypto.ts`) and uploaded files; key offline |
 | Audit trail | ✅ | Every view/change of clinical records logged; append-only (database refuses update/delete) and hash-chained; `npm run verify-audit-log` |
@@ -89,7 +89,7 @@ device; no automated diagnosis.
 
 | # | Gap | Plan | Target |
 |---|---|---|---|
-| G1 | MFA built but off | Switch on when the Kenyan SMS sender ID is live (TextSMS) | Dec 2026 |
+| G1 | MFA built but not yet switched on | Authenticator-app login built 20 Nov 2026: install and switch on (runbook) | Nov 2026 |
 | G2 | Not yet connected to the HIE (national identifiers, profiles, system auth) | FHIR R4 interface is built; adapt and connect once DHA issues HIE sandbox credentials and spec (requested 16 Nov 2026) | Within 3 months of DHA providing the spec |
 | G3 | Reports not sent automatically to KHIS/eIDSR | Clinics submit the generated MOH 505 / monthly report; automate once DHA/MOH name the route | With G2 |
 | G4 | Use of the Pharmacy and Poisons Board medicine list (DHA ePrescription IG) "subject to separate terms" | Asked DHA 16 Nov 2026; will follow DHA's terms or remove the copy | On DHA's answer |
@@ -105,7 +105,7 @@ device; no automated diagnosis.
 
 1. Run the manual test checklist (`docs/testing/manual-test-checklist.md`),
    at least sections 0, O and E, and H2 for the restore-test date.
-2. In the portal, enter the answers above. **Leave the MFA box unticked.**
+2. In the portal, enter the answers above. Tick MFA only once it is live (section 5).
    Paste section 7 into the gaps / self-assessment field.
 3. Documents the regulations ask for with the application (Form HMIS 4):
    system manual, requirements specification, Cyber Security Assessment

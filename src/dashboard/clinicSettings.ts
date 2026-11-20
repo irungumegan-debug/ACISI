@@ -18,6 +18,7 @@ import { getPaymentSettings } from '../services/billingService';
 import { MAX_AMOUNT_KES } from '../services/billingMath';
 import { clinicStkConfigured } from '../mpesa/clinicStk';
 import { env } from '../config/env';
+import { resetAuthenticator } from '../services/staffMfaService';
 import {
   InvalidPinFormatError,
   StaffDeactivationError,
@@ -90,6 +91,32 @@ clinicSettingsRouter.post('/staff/:id/reset-pin', async (req, res) => {
     }
     throw err;
   }
+});
+
+/**
+ * Forgets one staff member's authenticator app (lost or changed phone),
+ * scoped to the admin's own clinic. Logs them out and forgets remembered
+ * devices; they set the app up again at their next login.
+ */
+clinicSettingsRouter.post('/staff/:id/reset-authenticator', async (req, res) => {
+  const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  const target = await prisma.staff.findFirst({ where: { id: req.params.id as string, clinicId }, select: { id: true, staffCode: true, name: true } });
+  if (!target) {
+    res.status(404).json({ error: 'Staff member not found' });
+    return;
+  }
+  await resetAuthenticator(target.id);
+  await recordAuditEvent({
+    actorType: 'STAFF',
+    actorId: staffId,
+    staffId,
+    clinicId,
+    action: 'STAFF_AUTHENTICATOR_RESET',
+    entityType: 'Staff',
+    entityId: target.id,
+    metadata: { resetStaffId: target.id, resetStaffCode: target.staffCode },
+  });
+  res.json({ staffCode: target.staffCode, name: target.name });
 });
 
 /**

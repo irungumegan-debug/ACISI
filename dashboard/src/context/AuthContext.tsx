@@ -5,7 +5,7 @@ import { useIdleLogoff } from '../lib/useIdleLogoff';
 interface AuthContextValue {
   session: StaffSession | null;
   loading: boolean;
-  /** Returns a challenge when an SMS code is needed (admins and doctors); then call completeLogin. */
+  /** Returns a challenge when a login code is needed (admins and doctors); then call completeLogin. */
   login: (staffCode: string, pin: string) => Promise<LoginCodeChallenge | null>;
   completeLogin: (challengeId: string, code: string, rememberDevice: boolean) => Promise<void>;
   logout: () => Promise<void>;

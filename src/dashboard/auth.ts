@@ -27,7 +27,6 @@ import {
   isTrustedDevice,
   MfaError,
   mfaRequiredFor,
-  phoneHint,
   rememberDevice,
   startLoginChallenge,
   TRUSTED_DEVICE_COOKIE,
@@ -75,11 +74,10 @@ authRouter.post('/login', async (req, res) => {
 
   await clearLockout(subject);
 
-  // Admins and doctors: a code by SMS as well, unless this device was remembered.
+  // Admins and doctors: a code from their authenticator app (or SMS) as well, unless this device was remembered.
   if (mfaRequiredFor(staff.role) && !(await isTrustedDevice(staff.id, req.cookies?.[TRUSTED_DEVICE_COOKIE] as string | undefined))) {
     try {
-      const challengeId = await startLoginChallenge(staff);
-      res.json({ mfaRequired: true, challengeId, phoneHint: phoneHint(staff.phoneNumber) });
+      res.json(await startLoginChallenge(staff));
     } catch (err) {
       if (err instanceof MfaError) {
         res.status(err.status).json({ error: err.message });
@@ -125,14 +123,14 @@ const verifyCodeSchema = z.object({
   rememberDevice: z.boolean().optional(),
 });
 
-/** Second step of an admin's or doctor's login: the 6-digit code from the SMS. */
+/** Second step of an admin's or doctor's login: the 6-digit code from the authenticator app (or SMS). */
 authRouter.post('/login/verify', async (req, res) => {
   const parsed = verifyCodeSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Enter the 6-digit code' });
     return;
   }
-  let who: { staffId: string; staffCode: string };
+  let who: { staffId: string; staffCode: string; method: string };
   try {
     who = await verifyLoginCode(parsed.data.challengeId, parsed.data.code);
   } catch (err) {
@@ -159,7 +157,7 @@ authRouter.post('/login/verify', async (req, res) => {
     action: 'STAFF_LOGIN_CODE_VERIFIED',
     entityType: 'Staff',
     entityId: staff.id,
-    metadata: { rememberDevice: parsed.data.rememberDevice === true },
+    metadata: { rememberDevice: parsed.data.rememberDevice === true, method: who.method },
   });
   if (parsed.data.rememberDevice) {
     res.cookie(TRUSTED_DEVICE_COOKIE, await rememberDevice(staff.id), {

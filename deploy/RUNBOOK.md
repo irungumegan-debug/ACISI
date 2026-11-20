@@ -372,23 +372,43 @@ event". Front desk sees neither. The monthly disease list is in
 
 ## Turning on multi-factor login (admins and doctors)
 
-After the PIN, clinic admins and doctors get a 6-digit code by SMS (they can
-tick "Remember this device for 30 days"). It is **off** until real SMS works:
-with Africa's Talking in sandbox, codes never reach a phone and admins and
-doctors could not log in.
+After the PIN, clinic admins and doctors enter a 6-digit code from an
+authenticator app on their own phone (Google Authenticator or Microsoft
+Authenticator, free). The first time, the login page shows a QR code to scan.
+This needs **no SMS**, so it can be switched on while SMS is still in sandbox.
 
-1. Check SMS is live: `sudo grep '^AT_USERNAME=' /etc/acisi/acisi.env` must
-   **not** say `sandbox`. Then reset a test PIN by SMS on the website and
-   confirm the SMS arrives on a real phone.
-2. Turn it on and restart:
+1. Install the release (runbook "Updating the app"); it runs migration
+   `20261120120000_staff_authenticator` (two empty columns, nothing to back-fill).
+2. **Tell the clinic admins and doctors first:** "From tomorrow, install
+   Google Authenticator or Microsoft Authenticator on your phone. At your next
+   login, scan the QR code on screen." Staff without a smartphone can't log in
+   as admin or doctor once this is on: sort that out first.
+3. Turn it on and restart:
    ```
-   echo 'STAFF_MFA_ENABLED=true' | sudo tee -a /etc/acisi/acisi.env >/dev/null
+   grep -q '^STAFF_MFA_ENABLED=' /etc/acisi/acisi.env && sudo sed -i 's/^STAFF_MFA_ENABLED=.*/STAFF_MFA_ENABLED=true/' /etc/acisi/acisi.env || echo 'STAFF_MFA_ENABLED=true' | sudo tee -a /etc/acisi/acisi.env >/dev/null
    sudo systemctl restart acisi
    ```
-3. Log in as a doctor: the code should arrive by SMS.
+4. Log in as a test doctor: scan the QR code, type the code, you're in. Log
+   out and in again: the app code is asked (unless "Remember this device" was ticked).
+5. Do the same as each clinic admin yourself, or with them on the phone.
 
-To turn it off again: change the line to `STAFF_MFA_ENABLED=false` and restart.
-A PIN reset or deactivating a staff member forgets their remembered devices.
+**Lost or changed phone:** the clinic admin uses Settings → Staff → "Reset
+authenticator app" (check it's really them first). If the clinic's only admin
+lost their phone:
+```
+sudo bash -c 'set -a; . /etc/acisi/acisi.env; set +a; cd /opt/acisi/app && npm run -s reset-staff-authenticator -- ACI-STF-XXXX'
+```
+They scan a new QR code at the next login.
+
+**SMS codes as well (optional, later):** once real SMS works (`AT_USERNAME`
+is not `sandbox` and a test SMS reaches a real phone), add
+`STAFF_MFA_SMS_ENABLED=true` and restart: people who haven't set up an app
+get a code by SMS instead of the QR code.
+
+To turn multi-factor login off: change the line to `STAFF_MFA_ENABLED=false`
+and restart. Saved app setups are kept, so turning it back on doesn't need a
+new QR scan. A PIN reset, deactivation or authenticator reset forgets
+remembered devices.
 
 ## Switching ACISI's M-Pesa to production (Buy Goods till)
 
