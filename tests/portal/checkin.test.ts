@@ -134,6 +134,7 @@ describe('GET /records/:encounterId/download', () => {
       signature: { doctorName: 'Dr. Amani Wambui', doctorTitle: 'Doctor', signedAt },
       labResults: [],
       otherOrders: [],
+      vitalSigns: [],
     });
     // The patient's own copy shows lab results only once the visit is checked out.
     expect(mockFindFirstEncounter.mock.lastCall[0].include.labOrders.where).toEqual({ status: 'RESULTS_READY', encounter: { status: 'DONE' } });

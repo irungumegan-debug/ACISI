@@ -10,6 +10,7 @@ import { Avatar, btn, EmptyState, field, SkeletonList, StatusBadge } from '../co
 import { PatientFiles } from '../components/PatientFiles';
 import { HieVisitPanel } from '../components/HieVisitPanel';
 import { ServiceOrdersEditor } from '../components/ServiceOrders';
+import { VitalSignsCard } from '../components/VitalSigns';
 import { LabOrdersForVisit, LabResultLine, RequestLabTests } from '../components/DoctorLab';
 import { Allergies } from '../components/Allergies';
 
@@ -142,6 +143,8 @@ export function DoctorEncounterPage() {
       </div>
 
     <Allergies encounterId={encounter.encounterId} initial={encounter.allergies ?? []} hiddenElsewhere={encounter.allergiesHiddenElsewhere ?? false} />
+
+    <VitalSignsCard encounterId={encounter.encounterId} editable={step === 'edit'} />
 
     <HieVisitPanel encounterId={encounter.encounterId} mode="doctor" />
 

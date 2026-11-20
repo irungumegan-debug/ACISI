@@ -3,7 +3,7 @@ import { enterRecordAccessCode, RecordSharingError, requestRecords } from '../se
 import { Prisma } from '@prisma/client';
 import { prisma } from '../db/prisma';
 import { staffPatientScopeWhere } from '../services/staffPatientScope';
-import { buildVisitRecordDataFromEncounter, renderVisitRecordPdf, visitRecordLabInclude, visitRecordOrdersInclude } from '../services/visitRecordDocument';
+import { buildVisitRecordDataFromEncounter, renderVisitRecordPdf, visitRecordLabInclude, visitRecordOrdersInclude, visitRecordVitalsInclude } from '../services/visitRecordDocument';
 import { requireStaffSession, AuthenticatedRequest, isFrontDeskRole } from './auth';
 import { getScopedHistory } from '../services/patientService';
 import { recordAuditEvent } from '../services/auditService';
@@ -229,7 +229,7 @@ patientsRouter.get('/:id/visits/:encounterId/record', async (req, res) => {
   const encounter = await prisma.encounter.findFirst({
     where: { id: req.params.encounterId, patientId: req.params.id, clinicId, patient: { deletedAt: null } },
     // The printed copy a patient asked for includes diagnosis and lab results (front desk never sees them on screen).
-    include: { patient: true, clinic: true, checkIn: { include: { department: true } }, consultedByStaff: true, labOrders: visitRecordLabInclude() , serviceOrders: visitRecordOrdersInclude },
+    include: { patient: true, clinic: true, checkIn: { include: { department: true } }, consultedByStaff: true, labOrders: visitRecordLabInclude() , serviceOrders: visitRecordOrdersInclude, vitalSigns: visitRecordVitalsInclude },
   });
   if (!encounter) {
     res.status(404).json({ error: 'Visit record not found' });

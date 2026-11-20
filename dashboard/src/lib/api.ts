@@ -313,6 +313,24 @@ export type ClientRegistryLookup =
   | { result: 'saved'; crId: string }
   | { result: 'check'; registry: { firstName: string | null; middleName: string | null; lastName: string | null; dateOfBirth: string | null; sex: 'MALE' | 'FEMALE' | null } };
 
+export interface VitalSignsSet {
+  id: string;
+  encounterId: string;
+  recordedAt: string;
+  recordedByName: string;
+  systolic: number | null;
+  diastolic: number | null;
+  pulse: number | null;
+  respiratoryRate: number | null;
+  temperatureC: number | null;
+  oxygenSaturation: number | null;
+  weightKg: number | null;
+  heightCm: number | null;
+  muacCm: number | null;
+  bmi: number | null;
+  warnings: { field: string; level: 'danger' | 'warning'; message: string }[];
+}
+
 export type ServiceOrderCategory = 'RADIOLOGY' | 'PHYSIOTHERAPY' | 'OCCUPATIONAL_THERAPY' | 'NUTRITION' | 'SOCIAL_WORK' | 'COUNSELLING';
 
 export interface ServiceOrderItem {
@@ -873,6 +891,12 @@ export const api = {
     return request<{ ok: true }>('/clinic/payment-settings', { method: 'PUT', body: JSON.stringify(body) });
   },
   /** Saves the ID document and next of kin; fields sent empty are cleared. */
+  getVitalSigns(encounterId: string) {
+    return request<{ thisVisit: VitalSignsSet[]; history: VitalSignsSet[] }>(`/vitals/encounters/${encodeURIComponent(encounterId)}`);
+  },
+  recordVitalSigns(encounterId: string, values: Record<string, number | null>) {
+    return request<{ thisVisit: VitalSignsSet[]; history: VitalSignsSet[] }>(`/vitals/encounters/${encodeURIComponent(encounterId)}`, { method: 'POST', body: JSON.stringify(values) });
+  },
   addServiceOrder(encounterId: string, order: { category: ServiceOrderCategory; description: string; note?: string; urgent?: boolean }) {
     return request<{ orders: ServiceOrderItem[] }>(`/doctor/encounters/${encodeURIComponent(encounterId)}/orders`, { method: 'POST', body: JSON.stringify(order) });
   },

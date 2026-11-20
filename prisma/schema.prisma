@@ -533,6 +533,8 @@ model Encounter {
 
   serviceOrders ServiceOrder[]
 
+  vitalSigns VitalSigns[]
+
   @@index([patientId])
   @@index([clinicId])
   @@index([assignedDoctorId])
@@ -1448,4 +1450,37 @@ model ServiceOrder {
   @@index([encounterId])
   @@index([clinicId, status])
   @@map("service_orders")
+}
+
+/// One set of vital signs taken during a visit (triage at the front desk or
+/// by the doctor). Every field is optional: record what was measured. BMI is
+/// worked out from weight and height when shown, never stored. Several sets
+/// per visit are allowed (e.g. a repeat BP). See services/vitalSignsService.ts.
+model VitalSigns {
+  id                String    @id @default(cuid())
+  encounterId       String
+  encounter         Encounter @relation(fields: [encounterId], references: [id])
+  clinicId          String
+  patientId         String
+  recordedByStaffId String
+  recordedAt        DateTime  @default(now())
+  /// mmHg
+  systolic          Int?
+  diastolic         Int?
+  /// beats per minute
+  pulse             Int?
+  /// breaths per minute
+  respiratoryRate   Int?
+  /// degrees Celsius
+  temperatureC      Float?
+  /// %
+  oxygenSaturation  Int?
+  weightKg          Float?
+  heightCm          Float?
+  /// Mid-upper arm circumference, cm (children 6-59 months, pregnancy).
+  muacCm            Float?
+
+  @@index([encounterId])
+  @@index([patientId, recordedAt])
+  @@map("vital_signs")
 }

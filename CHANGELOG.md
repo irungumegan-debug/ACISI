@@ -3,6 +3,20 @@
 Plain-language record of what changed in ACISI, which data each change
 touches, and who can use it. Newest first.
 
+## 2026-11-21: Vital signs, BMI and warnings
+
+One database change, additive (`20261121100000_vital_signs`: a new table);
+undo script in `prisma/rollback/`.
+
+| What | Data | Who |
+|---|---|---|
+| **Vital signs** on the consultation page, and "Vitals" on each waiting patient in the queue (triage): BP, pulse, breathing rate, temperature, oxygen, weight, height, MUAC. Only what was measured; impossible numbers refused. Never edited: a new set corrects an old one. | New table `vital_signs` | Front desk, doctors |
+| **BMI** worked out from weight and height. **Weight over time** chart and earlier readings at this clinic. | | |
+| **Warnings**, adjusted for the patient's age: raised or very high BP (adults), low BP, fever and hypothermia, low oxygen, fast breathing (WHO IMCI cut-offs for under-5s), pulse out of range for age, MUAC malnutrition (WHO, 6-59 months), BMI categories (WHO, adults). They prompt; they never decide. | | |
+| On the visit record ("Vital signs"), in FHIR as vital-signs Observations with **LOINC** codes and UCUM units, and in what is sent to the national Shared Health Record. | | |
+
+Audit log: `VITAL_SIGNS_RECORDED` (which fields and how many warnings, never the values).
+
 ## 2026-11-21: Radiology, therapy and other orders
 
 One database change, additive (`20261121090000_service_orders`: a new table);

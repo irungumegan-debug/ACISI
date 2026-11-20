@@ -74,3 +74,18 @@ it('FHIR: a ServiceRequest with a SNOMED CT category, priority and the visit', (
     }),
   ]);
 });
+
+it('FHIR vital signs: LOINC-coded Observations with UCUM units, BP as a panel, BMI worked out', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { toVitalSignsObservations } = require('../../src/fhir/mappers') as typeof import('../../src/fhir/mappers');
+  const visit = {
+    id: 'enc-1',
+    vitalSigns: [{ id: 'v1', recordedAt: new Date('2026-11-21T08:00:00Z'), systolic: 120, diastolic: 80, pulse: 72, respiratoryRate: null, temperatureC: 36.8, oxygenSaturation: null, weightKg: 70, heightCm: 175, muacCm: null }],
+  } as unknown as VisitRecord;
+  const obs = toVitalSignsObservations(visit, 'p1');
+  const codes = obs.map((o) => o.code.coding?.[0]?.code);
+  expect(codes).toEqual(['85354-9', '8867-4', '8310-5', '29463-7', '8302-2', '39156-5']);
+  expect(obs[0]!.component![0]!.valueQuantity).toEqual({ value: 120, unit: 'mmHg', system: 'http://unitsofmeasure.org', code: 'mm[Hg]' });
+  expect(obs.find((o) => o.id === 'v1-bmi')!.valueQuantity!.value).toBe(22.9);
+  expect(obs.every((o) => o.encounter?.reference === 'Encounter/enc-1' && o.category?.[0]?.coding?.[0]?.code === 'vital-signs')).toBe(true);
+});

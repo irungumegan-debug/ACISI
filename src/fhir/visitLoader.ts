@@ -23,6 +23,7 @@ export async function loadVisitRecords(where: Prisma.EncounterWhereInput) {
         include: { items: { orderBy: { position: 'asc' } }, requestedByStaff: { select: { id: true, name: true, staffCode: true } } },
       },
       serviceOrders: { orderBy: { requestedAt: 'asc' } },
+      vitalSigns: { orderBy: { recordedAt: 'asc' } },
     },
   });
   const orderStaffIds = [...new Set(encounters.flatMap((e) => e.serviceOrders.map((o) => o.requestedByStaffId)))];
@@ -53,6 +54,7 @@ export async function loadVisitRecords(where: Prisma.EncounterWhereInput) {
         completedAt: o.completedAt,
         items: o.items,
       })),
+      vitalSigns: e.vitalSigns,
       serviceOrders: e.serviceOrders.map((o) => ({
         id: o.id,
         category: o.category,

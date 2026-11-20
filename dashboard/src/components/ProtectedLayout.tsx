@@ -29,7 +29,7 @@ function navFor(role: string): NavItem[] {
     ];
   }
   const items: NavItem[] = [
-    { to: '/queue', label: 'Queue', icon: UsersRound, also: ['/walk-in', '/checkout'] },
+    { to: '/queue', label: 'Queue', icon: UsersRound, also: ['/walk-in', '/checkout', '/visits'] },
     { to: '/patients', label: 'Patients', icon: UserRound },
     { to: '/appointments', label: 'Appointments', icon: CalendarDays },
   ];
@@ -63,6 +63,7 @@ const PAGE_TITLES: [string, string][] = [
   ['/appointments', 'Appointments'],
   ['/settings', 'Settings'],
   ['/national-hie', 'National HIE'],
+  ['/visits', 'Vital signs'],
   ['/surveillance', 'Disease surveillance'],
   ['/doctor/queue', 'My queue'],
   ['/doctor/appointments', 'Appointments'],

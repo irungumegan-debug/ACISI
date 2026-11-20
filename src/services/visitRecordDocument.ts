@@ -1,3 +1,4 @@
+import { bmi } from './vitalAssessment';
 import { SERVICE_ORDER_CATEGORIES } from './serviceOrderService';
 import path from 'node:path';
 import PDFDocument from 'pdfkit';
@@ -44,6 +45,8 @@ export interface VisitRecordData {
   labResults: VisitLabResult[];
   /** Radiology, therapy and other orders (not cancelled), e.g. "Radiology / imaging: Chest X-ray PA". */
   otherOrders?: string[];
+  /** The visit's vital signs, one line per set, e.g. "BP 120/80 mmHg · Pulse 72/min · Temp 36.8 °C". */
+  vitalSigns?: string[];
 }
 
 export interface VisitLabResult {
@@ -67,6 +70,25 @@ export function visitRecordLabInclude(options: { patientView?: boolean } = {}) {
     orderBy: { requestedAt: 'asc' as const },
     include: { items: { orderBy: { position: 'asc' as const } }, completedByStaff: { select: { name: true } } },
   };
+}
+
+/** Add to an encounter query to load its vital signs for the visit record. */
+export const visitRecordVitalsInclude = { orderBy: { recordedAt: 'asc' as const } };
+
+/** One readable line per set of vital signs. */
+export function vitalSignsLine(v: { systolic: number | null; diastolic: number | null; pulse: number | null; respiratoryRate: number | null; temperatureC: number | null; oxygenSaturation: number | null; weightKg: number | null; heightCm: number | null; muacCm: number | null }): string {
+  const parts: string[] = [];
+  if (v.systolic != null && v.diastolic != null) parts.push(`BP ${v.systolic}/${v.diastolic} mmHg`);
+  if (v.pulse != null) parts.push(`Pulse ${v.pulse}/min`);
+  if (v.respiratoryRate != null) parts.push(`Breathing ${v.respiratoryRate}/min`);
+  if (v.temperatureC != null) parts.push(`Temp ${v.temperatureC} °C`);
+  if (v.oxygenSaturation != null) parts.push(`SpO2 ${v.oxygenSaturation}%`);
+  if (v.weightKg != null) parts.push(`Weight ${v.weightKg} kg`);
+  if (v.heightCm != null) parts.push(`Height ${v.heightCm} cm`);
+  const b = bmi(v.weightKg, v.heightCm);
+  if (b !== null) parts.push(`BMI ${b}`);
+  if (v.muacCm != null) parts.push(`MUAC ${v.muacCm} cm`);
+  return parts.join(' · ');
 }
 
 /** Add to an encounter query to load its radiology, therapy and other orders for the visit record. */
@@ -96,6 +118,8 @@ interface EncounterForVisitRecord {
   }[];
   /** Load with visitRecordOrdersInclude; left out, the record has no orders section. */
   serviceOrders?: { category: ServiceOrderCategory; orderDescription: string }[];
+  /** Load with visitRecordVitalsInclude; left out, the record has no vital signs line. */
+  vitalSigns?: Parameters<typeof vitalSignsLine>[0][];
 }
 
 /**
@@ -134,6 +158,7 @@ export function buildVisitRecordDataFromEncounter(encounter: EncounterForVisitRe
         signedAt: o.completedAt,
       })),
     ),
+    vitalSigns: (encounter.vitalSigns ?? []).map(vitalSignsLine).filter(Boolean),
     otherOrders: (encounter.serviceOrders ?? []).map((o) => `${SERVICE_ORDER_CATEGORIES[o.category].label}: ${o.orderDescription}`),
   };
 }
@@ -171,6 +196,14 @@ function drawVisitPage(doc: PDFKit.PDFDocument, data: VisitRecordData): void {
   doc.text(`Department: ${data.departmentName}`);
   doc.text(`Visit date: ${data.visitedAt.toLocaleDateString()}`);
   doc.moveDown(1.5);
+
+  if (data.vitalSigns && data.vitalSigns.length > 0) {
+    doc.fontSize(13).text('Vital signs', { underline: true });
+    doc.moveDown(0.3);
+    doc.fontSize(11);
+    for (const line of data.vitalSigns) doc.text(line);
+    doc.moveDown(1.5);
+  }
 
   doc.fontSize(13).text('Diagnosis / notes', { underline: true });
   doc.moveDown(0.3);

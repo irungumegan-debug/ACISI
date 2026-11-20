@@ -1,5 +1,5 @@
 import type * as fhir4 from 'fhir/r4';
-import { AllergyRecord, toAllergyIntolerance, toConditions, toEncounter, toLabResources, toMedicationRequests, toServiceOrderRequests, VisitRecord } from '../fhir/mappers';
+import { AllergyRecord, toAllergyIntolerance, toConditions, toEncounter, toLabResources, toMedicationRequests, toServiceOrderRequests, toVitalSignsObservations, VisitRecord } from '../fhir/mappers';
 
 /**
  * One visit as the FHIR "collection" Bundle the Shared Health Record takes
@@ -74,6 +74,7 @@ export function buildShrBundle(input: ShrBundleInput): fhir4.Bundle & { id: stri
     ...toMedicationRequests(visit, patientId),
     ...toLabResources(visit, patientId),
     ...toServiceOrderRequests(visit, patientId),
+    ...toVitalSignsObservations(visit, patientId),
     ...allergies,
   ].map((r) => withLabel(rewriteReferences(r, input) as fhir4.FhirResource));
   return {

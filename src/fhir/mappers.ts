@@ -158,6 +158,20 @@ export interface VisitRecord {
     completedAt: Date | null;
     items: { id: string; testName: string; resultValue: string | null; resultUnit: string | null; resultFlag: LabResultFlag | null; resultComment: string | null }[];
   }[];
+  /** Vital signs taken during the visit. */
+  vitalSigns?: {
+    id: string;
+    recordedAt: Date;
+    systolic: number | null;
+    diastolic: number | null;
+    pulse: number | null;
+    respiratoryRate: number | null;
+    temperatureC: number | null;
+    oxygenSaturation: number | null;
+    weightKg: number | null;
+    heightCm: number | null;
+    muacCm: number | null;
+  }[];
   /** Radiology, therapy, nutrition, social work and counselling orders. */
   serviceOrders?: {
     id: string;
@@ -324,6 +338,67 @@ export function toLabResources(v: VisitRecord, patientId: string): (fhir4.Servic
   return out;
 }
 
+export const LOINC_SYSTEM = 'http://loinc.org';
+const UCUM = 'http://unitsofmeasure.org';
+const VITAL_CATEGORY: fhir4.CodeableConcept = {
+  coding: [{ system: 'http://terminology.hl7.org/CodeSystem/observation-category', code: 'vital-signs', display: 'Vital Signs' }],
+};
+
+/** LOINC codes of the HL7 FHIR vital signs profiles. */
+const VITAL_CODES = {
+  pulse: { code: '8867-4', display: 'Heart rate', unit: '/min', ucum: '/min' },
+  respiratoryRate: { code: '9279-1', display: 'Respiratory rate', unit: '/min', ucum: '/min' },
+  temperatureC: { code: '8310-5', display: 'Body temperature', unit: 'C', ucum: 'Cel' },
+  oxygenSaturation: { code: '59408-5', display: 'Oxygen saturation in Arterial blood by Pulse oximetry', unit: '%', ucum: '%' },
+  weightKg: { code: '29463-7', display: 'Body weight', unit: 'kg', ucum: 'kg' },
+  heightCm: { code: '8302-2', display: 'Body height', unit: 'cm', ucum: 'cm' },
+} as const;
+
+/** Vital signs as FHIR Observations (vital-signs category, LOINC codes, UCUM units); BMI worked out from weight and height. */
+export function toVitalSignsObservations(v: VisitRecord, patientId: string): fhir4.Observation[] {
+  const out: fhir4.Observation[] = [];
+  for (const set of v.vitalSigns ?? []) {
+    const common = {
+      resourceType: 'Observation' as const,
+      status: 'final' as const,
+      category: [VITAL_CATEGORY],
+      subject: ref('Patient', patientId),
+      encounter: ref('Encounter', v.id),
+      effectiveDateTime: set.recordedAt.toISOString(),
+    };
+    const quantity = (value: number, unit: string, ucum: string): fhir4.Quantity => ({ value, unit, system: UCUM, code: ucum });
+    if (set.systolic != null && set.diastolic != null) {
+      out.push({
+        ...common,
+        id: `${set.id}-bp`,
+        code: { coding: [{ system: LOINC_SYSTEM, code: '85354-9', display: 'Blood pressure panel with all children optional' }], text: 'Blood pressure' },
+        component: [
+          { code: { coding: [{ system: LOINC_SYSTEM, code: '8480-6', display: 'Systolic blood pressure' }] }, valueQuantity: quantity(set.systolic, 'mmHg', 'mm[Hg]') },
+          { code: { coding: [{ system: LOINC_SYSTEM, code: '8462-4', display: 'Diastolic blood pressure' }] }, valueQuantity: quantity(set.diastolic, 'mmHg', 'mm[Hg]') },
+        ],
+      });
+    }
+    for (const [key, c] of Object.entries(VITAL_CODES) as [keyof typeof VITAL_CODES, (typeof VITAL_CODES)[keyof typeof VITAL_CODES]][]) {
+      const value = set[key];
+      if (value == null) continue;
+      out.push({ ...common, id: `${set.id}-${key}`, code: { coding: [{ system: LOINC_SYSTEM, code: c.code, display: c.display }], text: c.display }, valueQuantity: quantity(value, c.unit, c.ucum) });
+    }
+    if (set.weightKg && set.heightCm) {
+      const m = set.heightCm / 100;
+      out.push({
+        ...common,
+        id: `${set.id}-bmi`,
+        code: { coding: [{ system: LOINC_SYSTEM, code: '39156-5', display: 'Body mass index (BMI) [Ratio]' }], text: 'BMI' },
+        valueQuantity: quantity(Math.round((set.weightKg / (m * m)) * 10) / 10, 'kg/m2', 'kg/m2'),
+      });
+    }
+    if (set.muacCm != null) {
+      out.push({ ...common, id: `${set.id}-muac`, code: { text: 'Mid-upper arm circumference (MUAC)' }, valueQuantity: quantity(set.muacCm, 'cm', 'cm') });
+    }
+  }
+  return out;
+}
+
 const SERVICE_ORDER_STATUS: Record<'REQUESTED' | 'DONE' | 'CANCELLED', fhir4.ServiceRequest['status']> = {
   REQUESTED: 'active',
   DONE: 'completed',
@@ -429,6 +504,7 @@ export function patientEverythingBundle(input: {
     resources.push(...toMedicationRequests(v, patient.id));
     resources.push(...toLabResources(v, patient.id));
     resources.push(...toServiceOrderRequests(v, patient.id));
+    resources.push(...toVitalSignsObservations(v, patient.id));
   }
   return {
     resourceType: 'Bundle',
