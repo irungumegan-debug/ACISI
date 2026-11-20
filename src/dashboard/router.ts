@@ -18,6 +18,7 @@ import { routineReportsRouter } from './routineReports';
 import { hieRouter } from './hie';
 import { serviceOrdersRouter } from './serviceOrders';
 import { vitalsRouter } from './vitals';
+import { dispensingRouter } from './dispensing';
 
 export const dashboardRouter = Router();
 
@@ -35,6 +36,7 @@ dashboardRouter.use('/routine-reports', routineReportsRouter);
 dashboardRouter.use('/hie', hieRouter);
 dashboardRouter.use('/service-orders', serviceOrdersRouter);
 dashboardRouter.use('/vitals', vitalsRouter);
+dashboardRouter.use('/dispensing', dispensingRouter);
 dashboardRouter.use('/appointments', appointmentsRouter);
 dashboardRouter.use('/walk-in', walkInRouter);
 dashboardRouter.use('/billing', billingRouter);

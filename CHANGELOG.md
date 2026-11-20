@@ -3,6 +3,19 @@
 Plain-language record of what changed in ACISI, which data each change
 touches, and who can use it. Newest first.
 
+## 2026-11-21: Residence, family history, dispensing
+
+One database change, additive (`20261121130000_residence_family_history_dispensing`:
+empty columns on patients and prescription items); undo script in `prisma/rollback/`.
+
+| What | Data | Who |
+|---|---|---|
+| Patient page and walk-in: **residence** (county, sub-county, ward, village/estate). In FHIR as the Patient's address. Wiped on account deletion. | Patients: `subCounty`, `ward`, `village` (county existed) | Front desk; patients on their own page |
+| Consultation page: **Family history** note (who had what). | Patients: `familyHistory`, encrypted at rest | Doctors |
+| Checkout page: **Dispensing**. Each prescribed medicine: "Given" (quantity, default the prescribed amount) or "Buying elsewhere"; recording again corrects it. In FHIR and the Shared Health Record as `MedicationDispense`. | Prescription items: dispense status, quantity, when, by whom | Front desk |
+
+Audit log: `FAMILY_HISTORY_UPDATED` / `_CLEARED`, `MEDICINE_DISPENSED`, `MEDICINE_NOT_DISPENSED`.
+
 ## 2026-11-21: Fuller clinical summary (visit record) and plan / follow-up
 
 One database change, additive (`20261121120000_care_plan`: one empty column

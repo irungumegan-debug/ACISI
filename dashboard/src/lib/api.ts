@@ -264,6 +264,10 @@ export interface PatientIdentity {
   idNumber: string;
   nextOfKinName: string;
   nextOfKinPhone: string;
+  county?: string;
+  subCounty?: string;
+  ward?: string;
+  village?: string;
 }
 
 /** As stored (null = not on file). */
@@ -272,6 +276,10 @@ export interface PatientIdentityRecord {
   idNumber: string | null;
   nextOfKinName: string | null;
   nextOfKinPhone: string | null;
+  county?: string | null;
+  subCounty?: string | null;
+  ward?: string | null;
+  village?: string | null;
 }
 
 /** The patient's national Client Registry ID (DHA HIE), only while it matches their current ID document. */
@@ -312,6 +320,16 @@ export interface HieStatus {
 export type ClientRegistryLookup =
   | { result: 'saved'; crId: string }
   | { result: 'check'; registry: { firstName: string | null; middleName: string | null; lastName: string | null; dateOfBirth: string | null; sex: 'MALE' | 'FEMALE' | null } };
+
+export interface DispenseLine {
+  id: string;
+  text: string;
+  prescribedQuantity: number | null;
+  unit: string | null;
+  dispenseStatus: 'DISPENSED' | 'NOT_DISPENSED' | null;
+  dispensedQuantity: number | null;
+  dispensedAt: string | null;
+}
 
 export interface QualityMeasure {
   id: string;
@@ -522,6 +540,7 @@ export interface EncounterDetail {
   serviceOrders?: ServiceOrderItem[];
   problems?: ProblemItem[];
   problemsHiddenElsewhere?: boolean;
+  familyHistory?: string | null;
 }
 
 export interface MedicationItem {
@@ -924,6 +943,18 @@ export const api = {
     return request<{ problems: ProblemItem[]; hiddenElsewhere: boolean }>(`/doctor/encounters/${encodeURIComponent(encounterId)}/problems/${encodeURIComponent(problemId)}`, {
       method: 'PATCH',
       body: JSON.stringify(change),
+    });
+  },
+  setFamilyHistory(encounterId: string, text: string | null) {
+    return request<{ familyHistory: string | null }>(`/doctor/encounters/${encodeURIComponent(encounterId)}/family-history`, { method: 'PUT', body: JSON.stringify({ text }) });
+  },
+  getDispensing(encounterId: string) {
+    return request<{ items: DispenseLine[] }>(`/dispensing/encounters/${encodeURIComponent(encounterId)}`);
+  },
+  recordDispensing(encounterId: string, itemId: string, status: 'DISPENSED' | 'NOT_DISPENSED', quantity?: number | null) {
+    return request<{ items: DispenseLine[] }>(`/dispensing/encounters/${encodeURIComponent(encounterId)}/items/${encodeURIComponent(itemId)}`, {
+      method: 'POST',
+      body: JSON.stringify({ status, quantity }),
     });
   },
   getVitalSigns(encounterId: string) {

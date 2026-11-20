@@ -45,3 +45,19 @@ describe('preparePatientIdentity', () => {
     expect(normalizeIdNumber(' ab 12-3 ')).toBe('AB12-3');
   });
 });
+
+describe('residence', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { preparePatientIdentity, PatientIdentityError } = require('../../src/services/patientIdentity') as typeof import('../../src/services/patientIdentity');
+  it('tidies county, sub-county, ward and village; empty clears only in replace mode', () => {
+    expect(preparePatientIdentity({ county: ' Nairobi ', subCounty: 'Lang’ata'.replace('’', "'"), ward: 'Karen', village: 'Hardy  estate' }, 'fillIn')).toEqual({
+      county: 'Nairobi',
+      subCounty: "Lang'ata",
+      ward: 'Karen',
+      village: 'Hardy estate',
+    });
+    expect(preparePatientIdentity({ village: '' }, 'fillIn')).toEqual({});
+    expect(preparePatientIdentity({ village: '' }, 'replace')).toEqual({ village: null });
+    expect(() => preparePatientIdentity({ village: '<script>' }, 'fillIn')).toThrow(PatientIdentityError);
+  });
+});

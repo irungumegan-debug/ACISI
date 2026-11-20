@@ -115,6 +115,8 @@ export interface EncounterDetail {
   /** The patient's problem list (same sharing rule as allergies). */
   problems: ProblemView[];
   problemsHiddenElsewhere: boolean;
+  /** The patient's family history note. */
+  familyHistory: string | null;
 }
 
 export async function assertEncounterInDoctorQueue(encounterId: string, clinicId: string, departmentIds: string[], staffId: string): Promise<Encounter> {
@@ -183,6 +185,7 @@ export async function getEncounterForDoctor(
     medications: await listMedications(history.map((h) => h.encounterId)),
     serviceOrders: await listServiceOrders(encounter.id),
     ...(await problemsFor(encounter.patientId, clinicId)),
+    familyHistory: patient.familyHistory,
   };
 }
 

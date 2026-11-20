@@ -35,6 +35,7 @@ import {
 import { Avatar, btn, EmptyState, field, SkeletonList, StatusBadge } from '../components/ui';
 import { HieVisitPanel } from '../components/HieVisitPanel';
 import { ServiceOrdersToArrange } from '../components/ServiceOrders';
+import { Dispensing } from '../components/Dispensing';
 
 const input = `${field.input} text-base sm:text-[15px]`;
 const label = field.label;
@@ -777,6 +778,8 @@ export function CheckoutPage() {
       <HieVisitPanel encounterId={view.encounterId} mode="frontdesk" />
 
       <ServiceOrdersToArrange encounterId={view.encounterId} />
+
+      <Dispensing encounterId={view.encounterId} />
 
       {view.prescription && (
         <section className={`${sectionCard} print:hidden`} aria-label="Prescription for this visit">

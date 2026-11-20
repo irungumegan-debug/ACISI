@@ -347,6 +347,13 @@ model Patient {
   dateOfBirth        DateTime?
   sex                Sex            @default(UNKNOWN)
   county             String?
+  /// Residence, below county (Kenya administrative units). Optional; wiped on account deletion.
+  subCounty          String?
+  ward               String?
+  /// Village, estate or landmark.
+  village            String?
+  /// Family history the doctor recorded (e.g. "Mother: diabetes; father: hypertension"). Encrypted at rest.
+  familyHistory      String?
   /// Optional — collected only via the web portal signup form (not USSD,
   /// which has no practical way to enter one). Never used for login or any
   /// notification besides the staff-initiated visit-summary email at
@@ -1290,6 +1297,12 @@ model PrescriptionItem {
   instructions          String?
   /// Why the doctor prescribed it despite a recorded allergy.
   allergyOverrideReason String?
+  /// Dispensing at checkout: DISPENSED (given at the clinic) or NOT_DISPENSED (patient to buy elsewhere). Null: not recorded.
+  dispenseStatus        String?
+  /// How much was given, in `quantityUnit` (or the dose unit).
+  dispensedQuantity     Float?
+  dispensedAt           DateTime?
+  dispensedByStaffId    String?
   createdAt             DateTime  @default(now())
 
   @@index([encounterId])

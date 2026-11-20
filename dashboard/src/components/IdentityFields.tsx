@@ -77,6 +77,29 @@ export function IdentityFields({ value, onChange, idPrefix }: { value: PatientId
           className={input}
         />
       </div>
+      {(
+        [
+          ['county', 'County', 'e.g. Nairobi', 60],
+          ['subCounty', 'Sub-county', "e.g. Lang'ata", 60],
+          ['ward', 'Ward', 'e.g. Karen', 60],
+          ['village', 'Village / estate', 'e.g. Hardy estate', 80],
+        ] as const
+      ).map(([key, label, placeholder, max]) => (
+        <div key={key}>
+          <label htmlFor={`${idPrefix}-${key}`} className={field.label}>
+            Residence: {label.toLowerCase()}
+          </label>
+          <input
+            id={`${idPrefix}-${key}`}
+            autoComplete="off"
+            maxLength={max}
+            placeholder={placeholder}
+            value={value[key] ?? ''}
+            onChange={(e) => set({ [key]: e.target.value })}
+            className={input}
+          />
+        </div>
+      ))}
     </div>
   );
 }

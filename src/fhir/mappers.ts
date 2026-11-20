@@ -59,6 +59,10 @@ export interface PatientRecord {
   nextOfKinName: string | null;
   nextOfKinPhone: string | null;
   deletedAt: Date | null;
+  county?: string | null;
+  subCounty?: string | null;
+  ward?: string | null;
+  village?: string | null;
 }
 
 export function toPatient(p: PatientRecord): fhir4.Patient {
@@ -75,6 +79,20 @@ export function toPatient(p: PatientRecord): fhir4.Patient {
     gender: GENDER[p.sex],
     ...(p.dateOfBirth ? { birthDate: fhirDate(p.dateOfBirth) } : {}),
     telecom,
+    ...(p.county || p.subCounty || p.ward || p.village
+      ? {
+          address: [
+            {
+              use: 'home' as const,
+              text: [p.village, p.ward, p.subCounty, p.county].filter(Boolean).join(', '),
+              ...(p.village || p.ward ? { line: [p.village, p.ward].filter((x): x is string => Boolean(x)) } : {}),
+              ...(p.subCounty ? { district: p.subCounty } : {}),
+              ...(p.county ? { state: p.county } : {}),
+              country: 'KE',
+            },
+          ],
+        }
+      : {}),
     ...(p.nextOfKinName
       ? {
           contact: [
@@ -145,6 +163,9 @@ export interface VisitRecord {
     quantityUnit: string | null;
     instructionCodes: string | null;
     instructions: string | null;
+    dispenseStatus?: string | null;
+    dispensedQuantity?: number | null;
+    dispensedAt?: Date | null;
   }[];
   clinicId: string;
   departmentName: string;
@@ -420,6 +441,27 @@ export function toCarePlan(v: VisitRecord, patientId: string): fhir4.CarePlan[] 
   ];
 }
 
+/** What the clinic gave (or didn't) for each prescribed medicine, as MedicationDispense. */
+export function toMedicationDispenses(v: VisitRecord, patientId: string): fhir4.MedicationDispense[] {
+  return v.prescriptionItems
+    .filter((i) => i.dispenseStatus === 'DISPENSED' || i.dispenseStatus === 'NOT_DISPENSED')
+    .map((i) => {
+      const unit = i.quantityUnit ?? i.doseUnit;
+      return {
+        resourceType: 'MedicationDispense',
+        id: `${i.id}-dispense`,
+        status: i.dispenseStatus === 'DISPENSED' ? 'completed' : 'declined',
+        ...(i.dispenseStatus === 'NOT_DISPENSED' ? { statusReasonCodeableConcept: { text: 'Not dispensed at the clinic (patient to obtain elsewhere)' } } : {}),
+        medicationCodeableConcept: i.productCode ? { coding: [{ system: dhaSystem('products'), code: i.productCode, display: i.drugName }], text: i.drugName } : { text: i.drugName },
+        subject: ref('Patient', patientId),
+        context: ref('Encounter', v.id),
+        authorizingPrescription: [ref('MedicationRequest', i.id)],
+        ...(i.dispensedQuantity ? { quantity: { value: i.dispensedQuantity, system: dhaSystem('units'), code: unit, unit: dhaDisplay('units', unit) ?? unit } } : {}),
+        ...(i.dispensedAt ? { whenHandedOver: i.dispensedAt.toISOString() } : {}),
+      };
+    });
+}
+
 const SERVICE_ORDER_STATUS: Record<'REQUESTED' | 'DONE' | 'CANCELLED', fhir4.ServiceRequest['status']> = {
   REQUESTED: 'active',
   DONE: 'completed',
@@ -562,6 +604,7 @@ export function patientEverythingBundle(input: {
     resources.push(...toServiceOrderRequests(v, patient.id));
     resources.push(...toVitalSignsObservations(v, patient.id));
     resources.push(...toCarePlan(v, patient.id));
+    resources.push(...toMedicationDispenses(v, patient.id));
   }
   return {
     resourceType: 'Bundle',

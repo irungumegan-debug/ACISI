@@ -187,6 +187,10 @@ const toForm = (r: PatientIdentityRecord): PatientIdentity => ({
   idNumber: r.idNumber ?? '',
   nextOfKinName: r.nextOfKinName ?? '',
   nextOfKinPhone: r.nextOfKinPhone ?? '',
+  county: r.county ?? '',
+  subCounty: r.subCounty ?? '',
+  ward: r.ward ?? '',
+  village: r.village ?? '',
 });
 
 /** ID document and next of kin: everyone can see them; front desk can edit (emptying a field removes it). */
@@ -221,13 +225,14 @@ function IdentityCard({ patient, onSaved }: { patient: PatientDetail; onSaved: (
   );
 
   return (
-    <Card title="ID and next of kin" icon={IdCard} className="mb-6">
+    <Card title="ID, address and next of kin" icon={IdCard} className="mb-6">
         {!editing ? (
           <>
             <dl className="space-y-2.5 text-sm">
               {row('ID document', patient.idType ? `${ID_TYPE_LABEL[patient.idType]} ${patient.idNumber ?? ''}` : null)}
               {row('Next of kin', patient.nextOfKinName)}
               {row('Next of kin phone', patient.nextOfKinPhone)}
+              {row('Residence', [patient.village, patient.ward, patient.subCounty, patient.county].filter(Boolean).join(', ') || null)}
             </dl>
             <ClientRegistryRow patient={patient} canLookUp={canEdit} onSaved={(crId) => onSaved({ ...patient, hie: { ...patient.hie, crId, verifiedAt: new Date().toISOString() } })} />
             {canEdit && (

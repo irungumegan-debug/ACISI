@@ -19,6 +19,7 @@ import { ICD11_RELEASE, Icd11Entry, MAX_DIAGNOSIS_CODES, resolveDiagnosisCodes, 
 import { AllergyError, recordAllergy, removeAllergy } from '../services/allergyService';
 import { closeServiceOrder, createServiceOrder, ServiceOrderError } from '../services/serviceOrderService';
 import { addProblem, ProblemListError, updateProblem } from '../services/problemListService';
+import { FamilyHistoryError, setFamilyHistory } from '../services/familyHistoryService';
 import {
   AllergyOverrideRequiredError,
   checkPrescriptionAllergies,
@@ -430,5 +431,29 @@ doctorRouter.patch('/encounters/:id/problems/:problemId', async (req, res) => {
     res.json(await updateProblem({ problemId: req.params.problemId as string, patientId, clinicId, staffId, change: parsed.data }));
   } catch (err) {
     if (!sendProblemError(err, res)) throw err;
+  }
+});
+
+/** Family history of the patient of a visit in this doctor's queue (one note; empty clears it). */
+doctorRouter.put('/encounters/:id/family-history', async (req, res) => {
+  const parsed = z.object({ text: z.string().nullable() }).safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Enter the family history' });
+    return;
+  }
+  const patientId = await patientInMyQueue(req, res);
+  if (!patientId) {
+    res.status(404).json({ error: 'Patient not found in your queue' });
+    return;
+  }
+  const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  try {
+    res.json(await setFamilyHistory({ patientId, clinicId, staffId, text: parsed.data.text }));
+  } catch (err) {
+    if (err instanceof FamilyHistoryError) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
+    throw err;
   }
 });
