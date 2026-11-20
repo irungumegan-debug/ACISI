@@ -51,8 +51,11 @@ USSD-first clinic management platform for small clinics in Kenya. See
   Structured prescriptions + allergy warning built 14 Nov (DHA ePrescription
   IG codes in src/assets/dha/). DHA FHIR guides (Kenya Core 1.0.0, Patient
   Summary 0.1.0, ePrescription 0.1.0) download from fhir.dha.go.ke/ig/...
-  /package.tgz (host now allowed in the ACISI environment); HIE contact: interoperability@dha.go.ke bounced (16 Nov), no working
-  address known.
+  /package.tgz (host now allowed in the ACISI environment). HIE: public API
+  docs at hie-docs.dha.go.ke; credentials and UAT via afyaconnect.dha@gmail.com
+  (interoperability@dha.go.ke bounces). Plan and API summary:
+  docs/compliance/HIE-integration-plan.md (hosts hie-docs, ilm-dev and
+  hie-test .dha.go.ke allowed in the ACISI environment).
   Routine reports (monthly/quarterly/annual, IDSR monthly table) and public
   health events (event-based surveillance, fill MOH 505 event and death rows)
   built 14 Nov (src/services/{routineReportService,publicHealthEventService}.ts).
