@@ -19,6 +19,7 @@ import { MAX_AMOUNT_KES } from '../services/billingMath';
 import { clinicStkConfigured } from '../mpesa/clinicStk';
 import { env } from '../config/env';
 import { resetAuthenticator } from '../services/staffMfaService';
+import { surveillanceEmailAvailable, validSurveillanceEmail } from '../services/surveillanceEmailService';
 import {
   InvalidPinFormatError,
   StaffDeactivationError,
@@ -353,4 +354,32 @@ clinicSettingsRouter.put('/staff/:id/departments', async (req, res) => {
   } catch (err) {
     sendDepartmentError(res, err);
   }
+});
+
+/** Sub-County surveillance coordinator's email for emailed MOH 505 summaries and immediate notices (empty turns it off). */
+clinicSettingsRouter.get('/surveillance-email', async (req, res) => {
+  const { clinicId } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  const clinic = await prisma.clinic.findUnique({ where: { id: clinicId }, select: { surveillanceEmail: true, surveillanceWeeklySentFor: true } });
+  res.json({ email: clinic?.surveillanceEmail ?? null, lastWeekSent: clinic?.surveillanceWeeklySentFor ?? null, emailAvailable: surveillanceEmailAvailable() });
+});
+
+clinicSettingsRouter.put('/surveillance-email', async (req, res) => {
+  const parsed = z.object({ email: z.string().trim().max(200).nullable() }).safeParse(req.body);
+  const email = parsed.success ? parsed.data.email?.toLowerCase() || null : undefined;
+  if (email === undefined || (email && !validSurveillanceEmail(email))) {
+    res.status(400).json({ error: 'Enter a valid email address' });
+    return;
+  }
+  const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  await prisma.clinic.update({ where: { id: clinicId }, data: { surveillanceEmail: email } });
+  await recordAuditEvent({
+    actorType: 'STAFF',
+    actorId: staffId,
+    staffId,
+    clinicId,
+    action: email ? 'SURVEILLANCE_EMAIL_SET' : 'SURVEILLANCE_EMAIL_REMOVED',
+    entityType: 'Clinic',
+    entityId: clinicId,
+  });
+  res.json({ email, emailAvailable: surveillanceEmailAvailable() });
 });

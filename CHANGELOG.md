@@ -3,6 +3,20 @@
 Plain-language record of what changed in ACISI, which data each change
 touches, and who can use it. Newest first.
 
+## 2026-11-21: Reports emailed to the Sub-County surveillance coordinator
+
+One database change, additive (`20261121140000_surveillance_email`: two empty
+columns on clinics); undo script in `prisma/rollback/`.
+
+| What | Data | Who |
+|---|---|---|
+| Settings: **Disease surveillance reporting**, the Sub-County Disease Surveillance Coordinator's (SCDSC) email. Empty = off. | Clinic: coordinator email, last week sent | Clinic admins |
+| **Weekly**: every Monday from 08:00 Kenya time, last week's MOH 505 summary emailed to the coordinator (CSV attached), once per week. | | Automatic |
+| **Immediate**: as soon as an immediately reportable disease is diagnosed or an immediate public health event is recorded, an email with the clinic, the disease or event and the time (IHR diseases marked). | | Automatic |
+| Never patient names, phone numbers or IDs (the email service is outside Kenya); the coordinator calls the clinic for the case form. Staff still phone for immediate cases and mark them reported. Needs email (Resend) configured on the server. | | |
+
+Audit log: `SURVEILLANCE_EMAIL_SET` / `_REMOVED`, `SURVEILLANCE_WEEKLY_EMAIL_SENT`, `SURVEILLANCE_IMMEDIATE_EMAIL_SENT` / `_SKIPPED` / `_FAILED`.
+
 ## 2026-11-21: Public health alerts on screen, IHR flag
 
 No database change.

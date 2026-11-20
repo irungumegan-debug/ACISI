@@ -154,33 +154,39 @@ enum AppointmentStatus {
 }
 
 model Clinic {
-  id                    String     @id @default(cuid())
-  name                  String
-  county                String?
+  id                        String     @id @default(cuid())
+  name                      String
+  county                    String?
   /// Short numeric code staff give patients to select this clinic within
   /// the shared USSD menu, e.g. "482". Not a phone number, not secret.
-  ussdCode              String     @unique
+  ussdCode                  String     @unique
   /// Persistent invite code (e.g. "SUNRISE-7F2K") shared with prospective
   /// doctors/staff so their signup can attach to this clinic. Regenerable by
   /// a clinic admin — regenerating invalidates the old code for future
   /// signups, but never affects staff who already joined with it.
-  inviteCode            String     @unique
-  isActive              Boolean    @default(true)
+  inviteCode                String     @unique
+  isActive                  Boolean    @default(true)
   /// The clinic's ACISI plan (C24). Sets the default monthly SMS allowance;
   /// the owner can change both from the owner site.
-  plan                  ClinicPlan @default(STARTER)
+  plan                      ClinicPlan @default(STARTER)
   /// SMS a month included in the plan; above it, each SMS is charged
   /// SMS_OVERAGE_KES. Starts at the plan's amount, can be changed per clinic.
-  smsMonthlyAllowance   Int        @default(500)
+  smsMonthlyAllowance       Int        @default(500)
   /// DHA Health Information Exchange: the clinic's Facility Registry code
   /// (FR code, e.g. "FID-47-115307-8"), set by the clinic admin after a
   /// Facility Registry lookup. Sent as X-Facility-Id on HIE calls.
-  hieFacilityId         String?
+  hieFacilityId             String?
   /// Official name the Facility Registry returned, shown to confirm the match.
-  hieFacilityName       String?
-  hieFacilityVerifiedAt DateTime?
-  createdAt             DateTime   @default(now())
-  updatedAt             DateTime   @updatedAt
+  hieFacilityName           String?
+  hieFacilityVerifiedAt     DateTime?
+  /// Email of the Sub-County Disease Surveillance Coordinator (SCDSC). When set (clinic admin),
+  /// ACISI emails the weekly MOH 505 summary every Monday and an immediate notice for each
+  /// immediately reportable case or event: counts and disease names only, never patient details.
+  surveillanceEmail         String?
+  /// Week (Monday, YYYY-MM-DD) whose summary was last emailed, so it goes once.
+  surveillanceWeeklySentFor String?
+  createdAt                 DateTime   @default(now())
+  updatedAt                 DateTime   @updatedAt
 
   staff            Staff[]
   checkIns         CheckIn[]

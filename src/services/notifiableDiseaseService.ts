@@ -5,6 +5,7 @@ import { sendSms } from './smsService';
 import { buildNotifiableAlertSms } from './smsTemplates';
 import { ageInYears } from './labService';
 import { logger } from '../utils/logger';
+import { emailImmediateNotice } from './surveillanceEmailService';
 import { EVENT_FORM_ROWS, eventsBetween } from './publicHealthEventService';
 import { matchNotifiable, NOTIFIABLE_DISEASES, NOTIFIABLE_LIST_CONFIRMED, NOTIFIABLE_LIST_SOURCE, NotifiableReporting } from './notifiableDiseases';
 
@@ -79,6 +80,8 @@ export async function notifyNotifiableCases(input: { clinicId: string; staffId: 
       metadata: { diseaseIds: input.alerts.map((a) => a.diseaseId), immediate: input.alerts.some((a) => a.reporting === 'IMMEDIATE') },
     });
     if (!input.alerts.some((a) => a.reporting === 'IMMEDIATE')) return;
+    const immediate = input.alerts.filter((a) => a.reporting === 'IMMEDIATE');
+    void emailImmediateNotice({ clinicId: input.clinicId, kind: 'case', items: immediate.map((a) => ({ name: a.name, ihr: a.ihr })), at: new Date(), entityType: 'Encounter', entityId: input.encounterId });
 
     const [clinic, staff] = await Promise.all([
       prisma.clinic.findUnique({ where: { id: input.clinicId }, select: { name: true } }),

@@ -997,6 +997,13 @@ export const api = {
     return request<{ items: NationalRecordItem[] }>(`/hie/visits/${encodeURIComponent(encounterId)}/national-record`);
   },
 
+  getSurveillanceEmail() {
+    return request<{ email: string | null; lastWeekSent: string | null; emailAvailable: boolean }>('/clinic/surveillance-email');
+  },
+  setSurveillanceEmail(email: string | null) {
+    return request<{ email: string | null; emailAvailable: boolean }>('/clinic/surveillance-email', { method: 'PUT', body: JSON.stringify({ email }) });
+  },
+
   getHieStatus() {
     return request<HieStatus>('/hie/status');
   },

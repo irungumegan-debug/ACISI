@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AdminDepartment, api, ApiError, ClinicStaffListItem, DoctorPresenceStatus } from '../lib/api';
 import { PaymentSettingsSection } from '../components/PaymentSettingsSection';
+import { SurveillanceEmailSection } from '../components/SurveillanceEmailSection';
 import { DepartmentsSection } from '../components/DepartmentsSection';
 import { LabTestsSection } from '../components/LabTestsSection';
 import { Building2, FlaskConical, KeyRound, RefreshCw, UsersRound, Wallet } from 'lucide-react';
@@ -204,6 +205,8 @@ export function SettingsPage() {
           <p className="mb-5 text-sm text-ink-500">How patients pay the clinic at checkout. The ACISI check-in fee is separate and unaffected.</p>
           <PaymentSettingsSection />
         </Card>
+
+        <SurveillanceEmailSection />
 
         <Card title="Staff & doctors" icon={UsersRound}>
           <p className="mb-4 text-sm text-ink-500">Reset a staff or doctor&apos;s PIN if they&apos;ve forgotten it, and choose which departments each doctor sees.</p>
