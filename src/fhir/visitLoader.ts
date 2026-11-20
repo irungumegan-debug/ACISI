@@ -55,6 +55,7 @@ export async function loadVisitRecords(where: Prisma.EncounterWhereInput) {
         items: o.items,
       })),
       vitalSigns: e.vitalSigns,
+      carePlan: e.carePlan,
       serviceOrders: e.serviceOrders.map((o) => ({
         id: o.id,
         category: o.category,

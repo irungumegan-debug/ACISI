@@ -3,6 +3,17 @@
 Plain-language record of what changed in ACISI, which data each change
 touches, and who can use it. Newest first.
 
+## 2026-11-21: Fuller clinical summary (visit record) and plan / follow-up
+
+One database change, additive (`20261121120000_care_plan`: one empty column
+on encounters); undo script in `prisma/rollback/`.
+
+| What | Data | Who |
+|---|---|---|
+| Consultation form: **Plan / follow-up** (optional), e.g. "Review in 2 weeks with home BP readings". Shown on the signing summary. | Encounter `carePlan`, encrypted at rest | Doctors |
+| The visit record (printed, downloaded by the patient, emailed) now also has: **date of birth, sex and ID document**; **vital signs**; **other current medicines** (still running from earlier visits at the same clinic); **plan / follow-up**; other orders. Dates are day-first, Kenya time. | | |
+| FHIR: the plan as a `CarePlan` in `Patient/$everything` (the national Shared Health Record does not take CarePlans). | | |
+
 ## 2026-11-21: Quality measures
 
 No database change.

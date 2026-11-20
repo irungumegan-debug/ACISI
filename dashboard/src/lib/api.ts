@@ -1263,7 +1263,7 @@ export const api = {
 
   submitConsultation(
     encounterId: string,
-    body: { diagnosisCodes: string[]; diagnosis: string; prescriptionItems: PrescriptionLine[]; prescriptionAdvice: string; pin: string },
+    body: { diagnosisCodes: string[]; diagnosis: string; prescriptionItems: PrescriptionLine[]; prescriptionAdvice: string; carePlan?: string; pin: string },
   ) {
     return request<{ encounterId: string; status: EncounterStatus; notifiable?: NotifiableAlert[] }>(`/doctor/encounters/${encounterId}/consult`, {
       method: 'POST',

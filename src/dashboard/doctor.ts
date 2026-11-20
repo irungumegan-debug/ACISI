@@ -116,6 +116,8 @@ const consultSchema = z.object({
   prescriptionItems: prescriptionItemsSchema,
   /** General advice for the patient, printed after the medicines (optional). */
   prescriptionAdvice: z.string().trim().max(1000).nullish(),
+  /** Plan / follow-up for the patient (optional). */
+  carePlan: z.string().trim().max(1000).nullish(),
   // The doctor's own PIN, re-entered as the act of signing — required on
   // every submission, not optional. See encounterService.submitConsultation.
   pin: z.string().min(1),
@@ -150,6 +152,7 @@ doctorRouter.post('/encounters/:id/consult', async (req, res) => {
       diagnosis: parsed.data.diagnosis,
       prescriptionItems: items,
       prescriptionAdvice: parsed.data.prescriptionAdvice,
+      carePlan: parsed.data.carePlan,
       pin: parsed.data.pin,
     });
     res.json({ encounterId: encounter.id, status: encounter.status, notifiable: encounter.notifiable });

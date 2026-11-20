@@ -158,6 +158,8 @@ export interface VisitRecord {
     completedAt: Date | null;
     items: { id: string; testName: string; resultValue: string | null; resultUnit: string | null; resultFlag: LabResultFlag | null; resultComment: string | null }[];
   }[];
+  /** The doctor's plan / follow-up. */
+  carePlan?: string | null;
   /** Vital signs taken during the visit. */
   vitalSigns?: {
     id: string;
@@ -399,6 +401,25 @@ export function toVitalSignsObservations(v: VisitRecord, patientId: string): fhi
   return out;
 }
 
+/** The doctor's plan / follow-up as a CarePlan for the visit (FHIR interface only: the Shared Health Record does not take CarePlans). */
+export function toCarePlan(v: VisitRecord, patientId: string): fhir4.CarePlan[] {
+  if (!v.carePlan) return [];
+  return [
+    {
+      resourceType: 'CarePlan',
+      id: `${v.id}-plan`,
+      status: v.status === 'DONE' ? 'completed' : 'active',
+      intent: 'plan',
+      title: 'Plan / follow-up',
+      description: v.carePlan,
+      subject: ref('Patient', patientId),
+      encounter: ref('Encounter', v.id),
+      ...(v.consultedAt ? { created: v.consultedAt.toISOString() } : {}),
+      ...(v.doctor ? { author: ref('Practitioner', v.doctor.id) } : {}),
+    },
+  ];
+}
+
 const SERVICE_ORDER_STATUS: Record<'REQUESTED' | 'DONE' | 'CANCELLED', fhir4.ServiceRequest['status']> = {
   REQUESTED: 'active',
   DONE: 'completed',
@@ -540,6 +561,7 @@ export function patientEverythingBundle(input: {
     resources.push(...toLabResources(v, patient.id));
     resources.push(...toServiceOrderRequests(v, patient.id));
     resources.push(...toVitalSignsObservations(v, patient.id));
+    resources.push(...toCarePlan(v, patient.id));
   }
   return {
     resourceType: 'Bundle',

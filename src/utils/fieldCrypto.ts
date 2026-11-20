@@ -50,6 +50,8 @@ export const ENCRYPTED_FIELDS: ReadonlySet<string> = new Set([
   // patient_problems
   'problemTitle',
   'problemNote',
+  // encounters: the doctor's plan / follow-up
+  'carePlan',
 ]);
 
 let cachedKey: Buffer | null | undefined;

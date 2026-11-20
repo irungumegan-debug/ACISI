@@ -38,6 +38,7 @@ export function DoctorEncounterPage() {
   const [diagnosis, setDiagnosis] = useState('');
   const [lines, setLines] = useState<DraftLine[]>(() => [emptyLine()]);
   const [advice, setAdvice] = useState('');
+  const [carePlan, setCarePlan] = useState('');
   const [conflicts, setConflicts] = useState<AllergyConflict[]>([]);
   const rxOptions = usePrescriptionOptions();
   const [step, setStep] = useState<Step>('edit');
@@ -96,6 +97,7 @@ export function DoctorEncounterPage() {
         diagnosis,
         prescriptionItems: lines.map(toPrescriptionLine),
         prescriptionAdvice: advice.trim(),
+        carePlan: carePlan.trim() || undefined,
         pin,
       });
       if (res.notifiable && res.notifiable.length > 0) setNotifiable(res.notifiable);
@@ -297,6 +299,19 @@ export function DoctorEncounterPage() {
                   className={`${field.input} min-h-20 resize-y py-3`}
                 />
               </div>
+              <div>
+                <label className={field.label} htmlFor="carePlan">
+                  Plan / follow-up (optional)
+                </label>
+                <textarea
+                  id="carePlan"
+                  value={carePlan}
+                  maxLength={1000}
+                  onChange={(e) => setCarePlan(e.target.value)}
+                  placeholder="e.g. Review in 2 weeks with home BP readings; refer to nutrition if weight keeps rising"
+                  className={`${field.input} min-h-20 resize-y py-3`}
+                />
+              </div>
               {error && step === 'edit' && (
                 <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3.5 py-2.5 text-sm text-red-700">
                   {error}
@@ -347,6 +362,12 @@ export function DoctorEncounterPage() {
                   ))}
                   {advice.trim() && <li className="whitespace-pre-wrap pl-6">{advice.trim()}</li>}
                 </ul>
+                {carePlan.trim() && (
+                  <p className="whitespace-pre-wrap">
+                    <span className="font-semibold text-navy-900">Plan / follow-up: </span>
+                    {carePlan.trim()}
+                  </p>
+                )}
                 <p className="border-t border-slate-200 pt-3 font-medium text-navy-900">I confirm this prescription is accurate and complete.</p>
               </div>
               <div>

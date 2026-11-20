@@ -209,6 +209,8 @@ interface SubmitConsultationInput {
   prescriptionItems: ResolvedPrescriptionItem[];
   /** General advice for the patient, added after the medicine lines (optional). */
   prescriptionAdvice?: string | null;
+  /** Plan / follow-up for the patient (optional). */
+  carePlan?: string | null;
   /**
    * The doctor's own PIN, re-entered as the actual act of signing — the
    * same mechanism as login (staffService.comparePin), just triggered here
@@ -258,6 +260,7 @@ export async function submitConsultation(input: SubmitConsultationInput): Promis
         diagnosis: input.diagnosis || null,
         diagnosisCodes: JSON.stringify(input.diagnosisCodes),
         prescription: formatPrescriptionText(input.prescriptionItems, input.prescriptionAdvice),
+        carePlan: input.carePlan?.trim() || null,
         consultedByStaffId: input.staffId,
         consultedAt,
       },

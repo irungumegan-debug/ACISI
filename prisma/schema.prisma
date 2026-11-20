@@ -511,6 +511,8 @@ model Encounter {
   /// Encrypted at rest. `diagnosis` holds the doctor's own notes.
   diagnosisCodes      String?
   prescription        String?
+  /// The doctor's plan and follow-up for the patient (e.g. "Review in 2 weeks with BP readings"). Optional. Encrypted at rest.
+  carePlan            String?
   consultedByStaffId  String?
   consultedByStaff    Staff?          @relation("EncounterConsultedBy", fields: [consultedByStaffId], references: [id])
   consultedAt         DateTime?
