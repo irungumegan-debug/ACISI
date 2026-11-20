@@ -313,6 +313,16 @@ export type ClientRegistryLookup =
   | { result: 'saved'; crId: string }
   | { result: 'check'; registry: { firstName: string | null; middleName: string | null; lastName: string | null; dateOfBirth: string | null; sex: 'MALE' | 'FEMALE' | null } };
 
+export interface QualityMeasure {
+  id: string;
+  name: string;
+  definition: string;
+  kind: 'percent' | 'minutes';
+  numerator: number | null;
+  denominator: number | null;
+  value: number | null;
+}
+
 export interface ProblemItem {
   id: string;
   icd11Code: string;
@@ -1320,6 +1330,14 @@ export const api = {
   /** Routine report: period MONTH (YYYY-MM), QUARTER (YYYY-Q1..Q4) or YEAR (YYYY). */
   routineReport(period: string, value: string) {
     return request<RoutineReport>(`/routine-reports?period=${period}&value=${encodeURIComponent(value)}`);
+  },
+
+  qualityMeasures(period: string, value: string) {
+    return request<{ label: string; startDate: string; endDate: string; measures: QualityMeasure[] }>(`/routine-reports/quality?period=${period}&value=${encodeURIComponent(value)}`);
+  },
+
+  qualityMeasuresCsvUrl(period: string, value: string) {
+    return `/api/staff/routine-reports/quality/csv?period=${period}&value=${encodeURIComponent(value)}`;
   },
 
   routineReportCsvUrl(period: string, value: string) {

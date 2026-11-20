@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Activity, Download, FileBarChart, FlaskConical, Pill, ShieldAlert, Stethoscope, UsersRound } from 'lucide-react';
-import { api, ApiError, CountRow, RoutineReport } from '../lib/api';
+import { Activity, Award, Download, FileBarChart, FlaskConical, Pill, ShieldAlert, Stethoscope, UsersRound } from 'lucide-react';
+import { api, ApiError, CountRow, QualityMeasure, RoutineReport } from '../lib/api';
 import { btn, Card, field, SkeletonList, StatCard } from '../components/ui';
 
 type Period = 'MONTH' | 'QUARTER' | 'YEAR';
@@ -55,6 +55,56 @@ function List({ rows, empty }: { rows: CountRow[]; empty: string }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+/** Quality-of-care measures for the same period: what share of eligible visits met each standard. */
+function QualityMeasures({ period, value }: { period: Period; value: string }) {
+  const [measures, setMeasures] = useState<QualityMeasure[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setMeasures(null);
+    api
+      .qualityMeasures(period, value)
+      .then((r) => !cancelled && setMeasures(r.measures))
+      .catch(() => !cancelled && setMeasures([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [period, value]);
+  return (
+    <Card
+      title="Quality measures"
+      icon={Award}
+      actions={
+        <a href={api.qualityMeasuresCsvUrl(period, value)} className={btn.secondary} download>
+          <Download size={16} aria-hidden /> CSV
+        </a>
+      }
+    >
+      {!measures ? (
+        <SkeletonList rows={3} label="Calculating" />
+      ) : (
+        <ul className="divide-y divide-slate-100">
+          {measures.map((m) => (
+            <li key={m.id} className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+              <div className="min-w-0">
+                <p className="font-medium text-navy-900">{m.name}</p>
+                <p className="text-xs text-ink-500">{m.definition}</p>
+              </div>
+              <div className="shrink-0 text-right">
+                <p className="font-display text-xl font-bold tabular-nums text-navy-900">
+                  {m.value === null ? 'n/a' : m.kind === 'percent' ? `${m.value}%` : `${m.value} min`}
+                </p>
+                <p className="text-xs text-ink-500">
+                  {m.kind === 'percent' ? (m.denominator ? `${m.numerator} of ${m.denominator}` : 'no eligible visits') : m.denominator ? `${m.denominator} measured` : 'none yet'}
+                </p>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
   );
 }
 
@@ -238,6 +288,7 @@ export function RoutineReportsPage() {
           </div>
         </>
       )}
+      <QualityMeasures period={period} value={value} />
     </div>
   );
 }

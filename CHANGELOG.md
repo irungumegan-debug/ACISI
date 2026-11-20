@@ -3,6 +3,16 @@
 Plain-language record of what changed in ACISI, which data each change
 touches, and who can use it. Newest first.
 
+## 2026-11-21: Quality measures
+
+No database change.
+
+| What | Who |
+|---|---|
+| Routine reports page: **Quality measures** for the chosen month, quarter or year, each with its count and definition: visits with a coded diagnosis; visits with vital signs; hypertension visits with BP measured; malaria diagnoses confirmed by a test (WHO "test before treat"); diabetes visits with blood sugar tested; children 6-59 months screened with MUAC; median wait to see the doctor; median lab turnaround. "n/a" when nothing to measure. **CSV** download. Counts only, no names. | Doctors, clinic admins |
+
+Audit log: `QUALITY_MEASURES_DOWNLOADED`.
+
 ## 2026-11-21: Critical lab result warnings
 
 No database change.
