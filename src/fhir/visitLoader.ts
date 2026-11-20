@@ -22,8 +22,13 @@ export async function loadVisitRecords(where: Prisma.EncounterWhereInput) {
         orderBy: { requestedAt: 'asc' },
         include: { items: { orderBy: { position: 'asc' } }, requestedByStaff: { select: { id: true, name: true, staffCode: true } } },
       },
+      serviceOrders: { orderBy: { requestedAt: 'asc' } },
     },
   });
+  const orderStaffIds = [...new Set(encounters.flatMap((e) => e.serviceOrders.map((o) => o.requestedByStaffId)))];
+  const orderStaff = new Map(
+    (orderStaffIds.length ? await prisma.staff.findMany({ where: { id: { in: orderStaffIds } }, select: { id: true, name: true, staffCode: true } }) : []).map((s) => [s.id, s]),
+  );
   return encounters.map((e) => {
     const visit: VisitRecord = {
       id: e.id,
@@ -47,6 +52,16 @@ export async function loadVisitRecords(where: Prisma.EncounterWhereInput) {
         noteForLab: o.noteForLab,
         completedAt: o.completedAt,
         items: o.items,
+      })),
+      serviceOrders: e.serviceOrders.map((o) => ({
+        id: o.id,
+        category: o.category,
+        description: o.orderDescription,
+        note: o.orderNote,
+        urgent: o.urgent,
+        status: o.status,
+        requestedAt: o.requestedAt,
+        requestedBy: orderStaff.get(o.requestedByStaffId) ?? { id: o.requestedByStaffId, name: 'Clinician', staffCode: '' },
       })),
     };
     return { visit, clinic: e.clinic };

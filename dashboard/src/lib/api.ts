@@ -313,6 +313,21 @@ export type ClientRegistryLookup =
   | { result: 'saved'; crId: string }
   | { result: 'check'; registry: { firstName: string | null; middleName: string | null; lastName: string | null; dateOfBirth: string | null; sex: 'MALE' | 'FEMALE' | null } };
 
+export type ServiceOrderCategory = 'RADIOLOGY' | 'PHYSIOTHERAPY' | 'OCCUPATIONAL_THERAPY' | 'NUTRITION' | 'SOCIAL_WORK' | 'COUNSELLING';
+
+export interface ServiceOrderItem {
+  id: string;
+  category: ServiceOrderCategory;
+  categoryLabel: string;
+  description: string;
+  note: string | null;
+  urgent: boolean;
+  status: 'REQUESTED' | 'DONE' | 'CANCELLED';
+  requestedAt: string;
+  requestedByName: string;
+  closedAt: string | null;
+}
+
 export interface HieVisitInfo {
   consentStatus: 'PENDING' | 'APPROVED' | 'REJECTED';
   emergency: boolean;
@@ -461,6 +476,8 @@ export interface EncounterDetail {
   allergiesHiddenElsewhere?: boolean;
   /** Medicines from the visits shown in `history`, newest first. Doctor view only. */
   medications?: MedicationItem[];
+  /** This visit's radiology, therapy and other orders. */
+  serviceOrders?: ServiceOrderItem[];
 }
 
 export interface MedicationItem {
@@ -856,6 +873,22 @@ export const api = {
     return request<{ ok: true }>('/clinic/payment-settings', { method: 'PUT', body: JSON.stringify(body) });
   },
   /** Saves the ID document and next of kin; fields sent empty are cleared. */
+  addServiceOrder(encounterId: string, order: { category: ServiceOrderCategory; description: string; note?: string; urgent?: boolean }) {
+    return request<{ orders: ServiceOrderItem[] }>(`/doctor/encounters/${encodeURIComponent(encounterId)}/orders`, { method: 'POST', body: JSON.stringify(order) });
+  },
+  cancelServiceOrder(encounterId: string, orderId: string) {
+    return request<{ orders: ServiceOrderItem[] }>(`/doctor/encounters/${encodeURIComponent(encounterId)}/orders/${encodeURIComponent(orderId)}/cancel`, { method: 'POST' });
+  },
+  getVisitServiceOrders(encounterId: string) {
+    return request<{ orders: ServiceOrderItem[] }>(`/service-orders/encounters/${encodeURIComponent(encounterId)}`);
+  },
+  closeVisitServiceOrder(encounterId: string, orderId: string, outcome: 'DONE' | 'CANCELLED') {
+    return request<{ orders: ServiceOrderItem[] }>(`/service-orders/encounters/${encodeURIComponent(encounterId)}/${encodeURIComponent(orderId)}/close`, {
+      method: 'POST',
+      body: JSON.stringify({ outcome }),
+    });
+  },
+
   getHieVisit(encounterId: string) {
     return request<HieVisitState>(`/hie/visits/${encodeURIComponent(encounterId)}`);
   },

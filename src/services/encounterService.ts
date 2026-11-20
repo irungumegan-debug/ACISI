@@ -1,3 +1,4 @@
+import { listServiceOrders, ServiceOrderView } from './serviceOrderService';
 import { queueVisitForShr } from '../hie/shrService';
 import { Encounter, EncounterStatus } from '@prisma/client';
 import { doctorQueueFilter } from './doctorScope';
@@ -104,6 +105,8 @@ export interface EncounterDetail {
   allergiesHiddenElsewhere: boolean;
   /** Medicines prescribed in the visits shown in `history` (same sharing rule), newest first; `active` = course not finished. */
   medications: MedicationView[];
+  /** This visit's radiology, therapy and other orders. */
+  serviceOrders: ServiceOrderView[];
 }
 
 export async function assertEncounterInDoctorQueue(encounterId: string, clinicId: string, departmentIds: string[], staffId: string): Promise<Encounter> {
@@ -170,6 +173,7 @@ export async function getEncounterForDoctor(
     labOrders: await getLabOrdersForEncounter(encounter.id),
     ...(await allergiesFor(encounter.patientId, clinicId)),
     medications: await listMedications(history.map((h) => h.encounterId)),
+    serviceOrders: await listServiceOrders(encounter.id),
   };
 }
 

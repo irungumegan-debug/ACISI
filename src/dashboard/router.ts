@@ -16,6 +16,7 @@ import { labRouter, labTestsAdminRouter } from './lab';
 import { surveillanceRouter } from './surveillance';
 import { routineReportsRouter } from './routineReports';
 import { hieRouter } from './hie';
+import { serviceOrdersRouter } from './serviceOrders';
 
 export const dashboardRouter = Router();
 
@@ -31,6 +32,7 @@ dashboardRouter.use('/doctor', doctorRouter);
 dashboardRouter.use('/surveillance', surveillanceRouter);
 dashboardRouter.use('/routine-reports', routineReportsRouter);
 dashboardRouter.use('/hie', hieRouter);
+dashboardRouter.use('/service-orders', serviceOrdersRouter);
 dashboardRouter.use('/appointments', appointmentsRouter);
 dashboardRouter.use('/walk-in', walkInRouter);
 dashboardRouter.use('/billing', billingRouter);

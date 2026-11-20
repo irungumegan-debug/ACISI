@@ -531,6 +531,8 @@ model Encounter {
 
   hieVisit HieVisit?
 
+  serviceOrders ServiceOrder[]
+
   @@index([patientId])
   @@index([clinicId])
   @@index([assignedDoctorId])
@@ -1400,4 +1402,50 @@ model HieVisit {
 
   @@index([clinicId, closeStatus])
   @@map("hie_visits")
+}
+
+/// Orders a doctor places besides medicines and lab tests (CPOE).
+enum ServiceOrderCategory {
+  RADIOLOGY
+  PHYSIOTHERAPY
+  OCCUPATIONAL_THERAPY
+  NUTRITION
+  SOCIAL_WORK
+  COUNSELLING
+}
+
+enum ServiceOrderStatus {
+  REQUESTED
+  /// Done at the clinic, or the patient was referred/booked (front desk marks it).
+  DONE
+  /// Withdrawn by the doctor before signing, or not needed.
+  CANCELLED
+}
+
+/// A radiology, therapy, nutrition, social work or counselling order for a
+/// visit, placed by the doctor during the consultation. Front desk sees it at
+/// checkout to arrange it (or refer). Never deleted: cancelled ones stay.
+/// Sent as a FHIR ServiceRequest. See services/serviceOrderService.ts.
+model ServiceOrder {
+  id                 String               @id @default(cuid())
+  encounterId        String
+  encounter          Encounter            @relation(fields: [encounterId], references: [id])
+  clinicId           String
+  patientId          String
+  category           ServiceOrderCategory
+  /// What is ordered, e.g. "Chest X-ray PA", "Lower back physiotherapy, 6 sessions". Encrypted at rest.
+  orderDescription   String
+  /// Why / instructions, e.g. "Productive cough 3 weeks". Encrypted at rest.
+  orderNote          String?
+  urgent             Boolean              @default(false)
+  status             ServiceOrderStatus   @default(REQUESTED)
+  requestedByStaffId String
+  requestedAt        DateTime             @default(now())
+  /// Who marked it done or cancelled, and when.
+  closedByStaffId    String?
+  closedAt           DateTime?
+
+  @@index([encounterId])
+  @@index([clinicId, status])
+  @@map("service_orders")
 }

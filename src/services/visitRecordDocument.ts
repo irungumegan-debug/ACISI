@@ -1,6 +1,7 @@
+import { SERVICE_ORDER_CATEGORIES } from './serviceOrderService';
 import path from 'node:path';
 import PDFDocument from 'pdfkit';
-import { StaffRole } from '@prisma/client';
+import { ServiceOrderCategory, StaffRole } from '@prisma/client';
 import { parseDiagnosisCodes } from './icd11Service';
 
 const SIGNATURE_FONT_PATH = path.join(__dirname, '../assets/fonts/DancingScript-Regular.woff');
@@ -41,6 +42,8 @@ export interface VisitRecordData {
   } | null;
   /** Signed lab results of this visit (empty when none, or not shown to this reader yet). */
   labResults: VisitLabResult[];
+  /** Radiology, therapy and other orders (not cancelled), e.g. "Radiology / imaging: Chest X-ray PA". */
+  otherOrders?: string[];
 }
 
 export interface VisitLabResult {
@@ -66,6 +69,13 @@ export function visitRecordLabInclude(options: { patientView?: boolean } = {}) {
   };
 }
 
+/** Add to an encounter query to load its radiology, therapy and other orders for the visit record. */
+export const visitRecordOrdersInclude = {
+  where: { status: { not: 'CANCELLED' as const } },
+  orderBy: { requestedAt: 'asc' as const },
+  select: { category: true, orderDescription: true },
+};
+
 const FLAG_LABEL: Record<'NORMAL' | 'ABNORMAL' | 'CRITICAL', string> = { NORMAL: 'Normal', ABNORMAL: 'Abnormal', CRITICAL: 'Critical' };
 
 interface EncounterForVisitRecord {
@@ -84,6 +94,8 @@ interface EncounterForVisitRecord {
     completedByStaff: { name: string } | null;
     items: { testName: string; resultValue: string | null; resultUnit: string | null; resultFlag: 'NORMAL' | 'ABNORMAL' | 'CRITICAL' | null; resultComment: string | null }[];
   }[];
+  /** Load with visitRecordOrdersInclude; left out, the record has no orders section. */
+  serviceOrders?: { category: ServiceOrderCategory; orderDescription: string }[];
 }
 
 /**
@@ -122,6 +134,7 @@ export function buildVisitRecordDataFromEncounter(encounter: EncounterForVisitRe
         signedAt: o.completedAt,
       })),
     ),
+    otherOrders: (encounter.serviceOrders ?? []).map((o) => `${SERVICE_ORDER_CATEGORIES[o.category].label}: ${o.orderDescription}`),
   };
 }
 
@@ -186,6 +199,14 @@ function drawVisitPage(doc: PDFKit.PDFDocument, data: VisitRecordData): void {
     if (signer) {
       doc.fontSize(10).fillColor('#555555').text(`Lab results signed by ${signer.signedByName} on ${signer.signedAt!.toLocaleString()}`).fillColor('#000000');
     }
+  }
+
+  if (data.otherOrders && data.otherOrders.length > 0) {
+    doc.moveDown(1.5);
+    doc.fontSize(13).text('Other orders', { underline: true });
+    doc.moveDown(0.3);
+    doc.fontSize(11);
+    for (const o of data.otherOrders) doc.text(o);
   }
 
   if (data.signature) {

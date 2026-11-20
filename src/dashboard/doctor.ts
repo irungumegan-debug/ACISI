@@ -17,6 +17,7 @@ import { listLabTests, requestLabTests } from '../services/labService';
 import { sendLabError } from './lab';
 import { ICD11_RELEASE, Icd11Entry, MAX_DIAGNOSIS_CODES, resolveDiagnosisCodes, searchIcd11 } from '../services/icd11Service';
 import { AllergyError, recordAllergy, removeAllergy } from '../services/allergyService';
+import { closeServiceOrder, createServiceOrder, ServiceOrderError } from '../services/serviceOrderService';
 import {
   AllergyOverrideRequiredError,
   checkPrescriptionAllergies,
@@ -322,5 +323,53 @@ doctorRouter.post('/encounters/:id/allergies/:allergyId/remove', async (req, res
     res.json(await removeAllergy({ allergyId: req.params.allergyId as string, patientId, clinicId, staffId, reason: parsed.data.reason }));
   } catch (err) {
     if (!sendAllergyError(err, res)) throw err;
+  }
+});
+
+const serviceOrderSchema = z.object({
+  category: z.enum(['RADIOLOGY', 'PHYSIOTHERAPY', 'OCCUPATIONAL_THERAPY', 'NUTRITION', 'SOCIAL_WORK', 'COUNSELLING']),
+  description: z.string(),
+  note: z.string().nullish(),
+  urgent: z.boolean().optional(),
+});
+
+function sendServiceOrderError(err: unknown, res: Response): boolean {
+  if (err instanceof ServiceOrderError) {
+    res.status(err.status).json({ error: err.message });
+    return true;
+  }
+  return false;
+}
+
+/** Radiology, therapy, nutrition, social work or counselling order for a visit in this doctor's queue. */
+doctorRouter.post('/encounters/:id/orders', async (req, res) => {
+  const parsed = serviceOrderSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Choose the type of order and say what is ordered' });
+    return;
+  }
+  if (!(await patientInMyQueue(req, res))) {
+    res.status(404).json({ error: 'Patient not found in your queue' });
+    return;
+  }
+  const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  try {
+    res.status(201).json({ orders: await createServiceOrder({ encounterId: req.params.id as string, clinicId, staffId, ...parsed.data }) });
+  } catch (err) {
+    if (!sendServiceOrderError(err, res)) throw err;
+  }
+});
+
+/** Withdraw an order before signing. It stays on the visit, marked cancelled. */
+doctorRouter.post('/encounters/:id/orders/:orderId/cancel', async (req, res) => {
+  if (!(await patientInMyQueue(req, res))) {
+    res.status(404).json({ error: 'Patient not found in your queue' });
+    return;
+  }
+  const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  try {
+    res.json({ orders: await closeServiceOrder({ orderId: req.params.orderId as string, encounterId: req.params.id as string, clinicId, staffId, outcome: 'CANCELLED' }) });
+  } catch (err) {
+    if (!sendServiceOrderError(err, res)) throw err;
   }
 });

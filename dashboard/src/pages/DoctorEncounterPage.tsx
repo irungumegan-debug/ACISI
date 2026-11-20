@@ -9,6 +9,7 @@ import { AlertTriangle, ArrowLeft, Building2, FileText, Lock, NotebookPen, Phone
 import { Avatar, btn, EmptyState, field, SkeletonList, StatusBadge } from '../components/ui';
 import { PatientFiles } from '../components/PatientFiles';
 import { HieVisitPanel } from '../components/HieVisitPanel';
+import { ServiceOrdersEditor } from '../components/ServiceOrders';
 import { LabOrdersForVisit, LabResultLine, RequestLabTests } from '../components/DoctorLab';
 import { Allergies } from '../components/Allergies';
 
@@ -227,6 +228,7 @@ export function DoctorEncounterPage() {
           <RequestLabTests encounterId={encounter.encounterId} onSent={() => navigate('/doctor/queue', { replace: true })} />
         </div>
       )}
+      <ServiceOrdersEditor encounterId={encounter.encounterId} initial={encounter.serviceOrders ?? []} editable={step === 'edit'} />
       <div className="h-fit rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card sm:p-7">
         <ol className="mb-5 flex items-center gap-2 text-sm" aria-label="Progress">
           <li className={`flex items-center gap-2 ${step === 'edit' ? 'font-semibold text-navy-900' : 'text-ink-500'}`} aria-current={step === 'edit' ? 'step' : undefined}>

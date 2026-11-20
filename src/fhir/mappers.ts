@@ -1,5 +1,6 @@
 import type * as fhir4 from 'fhir/r4';
-import type { LabResultFlag, PatientIdType, Sex } from '@prisma/client';
+import type { LabResultFlag, PatientIdType, ServiceOrderCategory, Sex } from '@prisma/client';
+import { SERVICE_ORDER_CATEGORIES } from '../services/serviceOrderService';
 import { dhaDisplay, dhaSystem } from '../services/dhaTerminology';
 import { formatPrescriptionLine, FREQUENCIES, FrequencyCode, rowToLine } from '../services/prescriptionService';
 
@@ -157,6 +158,17 @@ export interface VisitRecord {
     completedAt: Date | null;
     items: { id: string; testName: string; resultValue: string | null; resultUnit: string | null; resultFlag: LabResultFlag | null; resultComment: string | null }[];
   }[];
+  /** Radiology, therapy, nutrition, social work and counselling orders. */
+  serviceOrders?: {
+    id: string;
+    category: ServiceOrderCategory;
+    description: string;
+    note: string | null;
+    urgent: boolean;
+    status: 'REQUESTED' | 'DONE' | 'CANCELLED';
+    requestedAt: Date;
+    requestedBy: { id: string; name: string; staffCode: string };
+  }[];
 }
 
 export function toEncounter(v: VisitRecord, patientId: string): fhir4.Encounter {
@@ -312,6 +324,33 @@ export function toLabResources(v: VisitRecord, patientId: string): (fhir4.Servic
   return out;
 }
 
+const SERVICE_ORDER_STATUS: Record<'REQUESTED' | 'DONE' | 'CANCELLED', fhir4.ServiceRequest['status']> = {
+  REQUESTED: 'active',
+  DONE: 'completed',
+  CANCELLED: 'revoked',
+};
+
+/** One ServiceRequest per radiology, therapy, nutrition, social work or counselling order (category coded with SNOMED CT). */
+export function toServiceOrderRequests(v: VisitRecord, patientId: string): fhir4.ServiceRequest[] {
+  return (v.serviceOrders ?? []).map((o) => {
+    const cat = SERVICE_ORDER_CATEGORIES[o.category];
+    return {
+      resourceType: 'ServiceRequest',
+      id: o.id,
+      status: SERVICE_ORDER_STATUS[o.status],
+      intent: 'order',
+      priority: o.urgent ? 'urgent' : 'routine',
+      category: [{ coding: [{ system: 'http://snomed.info/sct', code: cat.snomed.code, display: cat.snomed.display }], text: cat.label }],
+      code: { text: o.description },
+      subject: ref('Patient', patientId),
+      encounter: ref('Encounter', v.id),
+      authoredOn: o.requestedAt.toISOString(),
+      requester: ref('Practitioner', o.requestedBy.id),
+      ...(o.note ? { note: [{ text: o.note }] } : {}),
+    };
+  });
+}
+
 export interface AllergyRecord {
   id: string;
   category: 'MEDICATION' | 'FOOD' | 'ENVIRONMENT' | 'OTHER';
@@ -375,6 +414,7 @@ export function patientEverythingBundle(input: {
   for (const v of visits) {
     if (v.doctor) practitioners.set(v.doctor.id, v.doctor);
     for (const o of v.labOrders) practitioners.set(o.requestedBy.id, o.requestedBy);
+    for (const o of v.serviceOrders ?? []) practitioners.set(o.requestedBy.id, o.requestedBy);
   }
   for (const a of input.allergies ?? []) practitioners.set(a.recordedBy.id, a.recordedBy);
   const resources: fhir4.FhirResource[] = [
@@ -388,6 +428,7 @@ export function patientEverythingBundle(input: {
     resources.push(...toConditions(v, patient.id));
     resources.push(...toMedicationRequests(v, patient.id));
     resources.push(...toLabResources(v, patient.id));
+    resources.push(...toServiceOrderRequests(v, patient.id));
   }
   return {
     resourceType: 'Bundle',

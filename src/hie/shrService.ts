@@ -222,7 +222,7 @@ export async function sendVisitToShr(encounterId: string, attempt: number, lastA
     const [loaded] = await loadVisitRecords({ id: encounterId });
     if (!loaded) throw new Error('Visit not found');
     const visit = loaded.visit;
-    const staffIds = new Set<string>([...(visit.doctor ? [visit.doctor.id] : []), ...visit.labOrders.map((o) => o.requestedBy.id)]);
+    const staffIds = new Set<string>([...(visit.doctor ? [visit.doctor.id] : []), ...visit.labOrders.map((o) => o.requestedBy.id), ...(visit.serviceOrders ?? []).map((o) => o.requestedBy.id)]);
     const allergies = await prisma.patientAllergy.findMany({
       where: { patientId: v.patientId, clinicId: v.clinicId },
       include: { recordedByStaff: { select: { id: true, name: true, staffCode: true } } },

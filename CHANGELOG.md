@@ -3,6 +3,19 @@
 Plain-language record of what changed in ACISI, which data each change
 touches, and who can use it. Newest first.
 
+## 2026-11-21: Radiology, therapy and other orders
+
+One database change, additive (`20261121090000_service_orders`: a new table);
+undo script in `prisma/rollback/`.
+
+| What | Data | Who |
+|---|---|---|
+| Consultation page: **Other orders**. Radiology/imaging, physiotherapy, occupational therapy, nutrition/dietetics, social work, counselling: what is ordered, optional reason, urgent. Withdrawn before signing = kept, marked cancelled. | New table `service_orders`; what is ordered and the reason encrypted at rest | Doctors |
+| Checkout page: **Orders to arrange**, each marked "Done / referred" or "Not needed". | | Front desk |
+| On the printed and downloaded visit record ("Other orders"), in FHIR (`ServiceRequest`, category coded with SNOMED CT) and in what is sent to the national Shared Health Record. | | |
+
+Audit log: `SERVICE_ORDER_CREATED`, `SERVICE_ORDER_DONE`, `SERVICE_ORDER_CANCELLED` (type only, never the text).
+
 ## 2026-11-20: National Shared Health Record (consent, sending visits, reading, closing)
 
 One database change, additive (`20261120180000_hie_visits`: a new table);

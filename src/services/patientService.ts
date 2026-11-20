@@ -8,7 +8,7 @@ import { prisma } from '../db/prisma';
 import { recordAuditEvent } from './auditService';
 import { generatePatientCode } from '../utils/idCodes';
 import { CONSENT_VERSION, HISTORY_ENCOUNTER_LIMIT } from '../config/constants';
-import { buildVisitRecordDataFromEncounter, VisitLabResult, visitRecordLabInclude } from './visitRecordDocument';
+import { buildVisitRecordDataFromEncounter, VisitLabResult, visitRecordLabInclude, visitRecordOrdersInclude } from './visitRecordDocument';
 import { Icd11Entry, parseDiagnosisCodes } from './icd11Service';
 
 type LabOrdersForRecord = NonNullable<Parameters<typeof buildVisitRecordDataFromEncounter>[0]['labOrders']>;
@@ -289,6 +289,7 @@ export async function getOwnVisitHistory(patientId: string): Promise<OwnVisitHis
       clinic: { select: { name: true } },
       checkIn: { include: { department: { select: { name: true } } } },
       labOrders: visitRecordLabInclude({ patientView: true }),
+      serviceOrders: visitRecordOrdersInclude,
     },
   });
 
@@ -364,6 +365,7 @@ export async function getScopedHistory(
       consultedByStaff: { select: { name: true } },
       assignedDoctor: { select: { name: true } },
       labOrders: visitRecordLabInclude(),
+      serviceOrders: visitRecordOrdersInclude,
     },
   });
 
