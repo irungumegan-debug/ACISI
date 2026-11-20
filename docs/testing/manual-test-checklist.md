@@ -204,6 +204,10 @@ enough.
 
 ## To confirm (not tests: things only you can check or decide)
 
+**20 Nov 2026:** DHA did not reply, so T5, T11, T12 and T13 are submitted as
+known gaps (G2–G4 in `docs/compliance/DHA-self-attestation-answers-2026-11-20.md`)
+and no longer block the submission.
+
 Bring these to the DHA/MOH call or check them yourself; tell Claude the
 answers and the code will be updated.
 
