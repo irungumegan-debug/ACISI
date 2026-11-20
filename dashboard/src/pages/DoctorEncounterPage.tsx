@@ -11,6 +11,7 @@ import { PatientFiles } from '../components/PatientFiles';
 import { HieVisitPanel } from '../components/HieVisitPanel';
 import { ServiceOrdersEditor } from '../components/ServiceOrders';
 import { VitalSignsCard } from '../components/VitalSigns';
+import { ProblemList } from '../components/ProblemList';
 import { LabOrdersForVisit, LabResultLine, RequestLabTests } from '../components/DoctorLab';
 import { Allergies } from '../components/Allergies';
 
@@ -143,6 +144,8 @@ export function DoctorEncounterPage() {
       </div>
 
     <Allergies encounterId={encounter.encounterId} initial={encounter.allergies ?? []} hiddenElsewhere={encounter.allergiesHiddenElsewhere ?? false} />
+
+    <ProblemList encounterId={encounter.encounterId} initial={encounter.problems ?? []} hiddenElsewhere={encounter.problemsHiddenElsewhere ?? false} />
 
     <VitalSignsCard encounterId={encounter.encounterId} editable={step === 'edit'} />
 

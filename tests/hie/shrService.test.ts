@@ -13,6 +13,7 @@ jest.mock('../../src/hie/shr', () => ({
   fetchPatientRecords: jest.fn(async () => ({ entry: [{ resource: { resourceType: 'Condition', id: 'c', code: { text: 'Asthma' } } }] })),
 }));
 jest.mock('../../src/fhir/visitLoader', () => ({
+  loadProblemRecords: jest.fn(async () => []),
   loadVisitRecords: jest.fn(async () => [
     {
       visit: { id: 'enc-1', status: 'DONE', createdAt: new Date(), checkedOutAt: new Date(), consultedAt: new Date(), visitReason: null, diagnosis: null, diagnosisCodes: [], prescription: null, prescriptionItems: [], clinicId: 'c1', departmentName: 'General', doctor: { id: 'doc-1', name: 'Dr A', staffCode: 'x' }, labOrders: [] },

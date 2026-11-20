@@ -5,7 +5,7 @@ import { loadDashboardSession, SESSION_COOKIE_NAME } from '../dashboard/session'
 import { staffPatientScopeWhere } from '../services/staffPatientScope';
 import { recordAuditEvent } from '../services/auditService';
 import { capabilityStatement, patientEverythingBundle, toPatient } from './mappers';
-import { loadVisitRecords } from './visitLoader';
+import { loadProblemRecords, loadVisitRecords } from './visitLoader';
 
 /**
  * HL7 FHIR R4 interface, mounted at /fhir/r4.
@@ -113,12 +113,15 @@ fhirRouter.get('/Patient/:id/\\$everything', async (req, res) => {
     include: { recordedByStaff: { select: { id: true, name: true, staffCode: true } } },
   });
 
+  const problems = await loadProblemRecords(patient.id, clinicId);
+
   const bundle = patientEverythingBundle({
     baseUrl: baseUrl(req),
     patient,
     clinics: clinic ? [clinic] : [],
     visits,
     allergies: allergies.map((a) => ({ ...a, recordedBy: a.recordedByStaff })),
+    problems,
   });
   await audit(req, patient.id, 'everything', bundle.total ?? 0);
   res.type(FHIR_JSON).json(bundle);

@@ -313,6 +313,18 @@ export type ClientRegistryLookup =
   | { result: 'saved'; crId: string }
   | { result: 'check'; registry: { firstName: string | null; middleName: string | null; lastName: string | null; dateOfBirth: string | null; sex: 'MALE' | 'FEMALE' | null } };
 
+export interface ProblemItem {
+  id: string;
+  icd11Code: string;
+  title: string;
+  note: string | null;
+  status: 'ACTIVE' | 'RESOLVED' | 'ENTERED_IN_ERROR';
+  onsetDate: string | null;
+  recordedAt: string;
+  isOwnClinic: boolean;
+  history: { action: string; status: string; at: string; byName: string }[];
+}
+
 export interface VitalSignsSet {
   id: string;
   encounterId: string;
@@ -496,6 +508,8 @@ export interface EncounterDetail {
   medications?: MedicationItem[];
   /** This visit's radiology, therapy and other orders. */
   serviceOrders?: ServiceOrderItem[];
+  problems?: ProblemItem[];
+  problemsHiddenElsewhere?: boolean;
 }
 
 export interface MedicationItem {
@@ -891,6 +905,15 @@ export const api = {
     return request<{ ok: true }>('/clinic/payment-settings', { method: 'PUT', body: JSON.stringify(body) });
   },
   /** Saves the ID document and next of kin; fields sent empty are cleared. */
+  addProblem(encounterId: string, p: { icd11Code: string; note?: string; onsetDate?: string }) {
+    return request<{ problems: ProblemItem[]; hiddenElsewhere: boolean }>(`/doctor/encounters/${encodeURIComponent(encounterId)}/problems`, { method: 'POST', body: JSON.stringify(p) });
+  },
+  updateProblem(encounterId: string, problemId: string, change: { status: ProblemItem['status'] } | { note: string | null }) {
+    return request<{ problems: ProblemItem[]; hiddenElsewhere: boolean }>(`/doctor/encounters/${encodeURIComponent(encounterId)}/problems/${encodeURIComponent(problemId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(change),
+    });
+  },
   getVitalSigns(encounterId: string) {
     return request<{ thisVisit: VitalSignsSet[]; history: VitalSignsSet[] }>(`/vitals/encounters/${encodeURIComponent(encounterId)}`);
   },

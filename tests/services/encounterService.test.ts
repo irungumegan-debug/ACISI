@@ -7,6 +7,7 @@ jest.mock('../../src/db/prisma', () => ({
     notifiableDiseaseCase: { createMany: jest.fn() },
     prescriptionItem: { createMany: jest.fn() },
     serviceOrder: { findMany: jest.fn(async () => []) },
+    patientProblem: { findMany: jest.fn(async () => []) },
     staff: { findMany: jest.fn(async () => []) },
     // No HIE consent on these visits: nothing goes to the national record.
     hieVisit: { findUnique: jest.fn(async () => null) },

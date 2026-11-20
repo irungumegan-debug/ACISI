@@ -3,6 +3,20 @@
 Plain-language record of what changed in ACISI, which data each change
 touches, and who can use it. Newest first.
 
+## 2026-11-21: Problem list
+
+One database change, additive (`20261121110000_problem_list`: two new tables);
+undo script in `prisma/rollback/`.
+
+| What | Data | Who |
+|---|---|---|
+| Consultation page: **Problem list**, the patient's long-term or important conditions (hypertension, diabetes, asthma...), separate from a visit's diagnoses. Add from the ICD-11 list with an optional note and "since" date; mark **resolved**, **active again**, change the note, or mark **entered in error**. No active duplicates. | New tables `patient_problems` (condition title and note encrypted at rest) and `patient_problem_changes` | Doctors |
+| **History** of each problem (who changed what, when). Nothing is ever deleted. | | |
+| Other clinics see it on the same rule as allergies (patient's sharing consent or a records code used today). | | |
+| In FHIR as `Condition` (category problem-list-item, ICD-11), and sent with each visit to the national Shared Health Record. | | |
+
+Audit log: `PROBLEM_ADDED`, `PROBLEM_RESOLVED`, `PROBLEM_REACTIVATED`, `PROBLEM_NOTE_CHANGED`, `PROBLEM_ENTERED_IN_ERROR`.
+
 ## 2026-11-21: Vital signs, BMI and warnings
 
 One database change, additive (`20261121100000_vital_signs`: a new table);

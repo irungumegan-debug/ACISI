@@ -1,5 +1,5 @@
 import type * as fhir4 from 'fhir/r4';
-import { AllergyRecord, toAllergyIntolerance, toConditions, toEncounter, toLabResources, toMedicationRequests, toServiceOrderRequests, toVitalSignsObservations, VisitRecord } from '../fhir/mappers';
+import { AllergyRecord, ProblemRecord, toAllergyIntolerance, toProblemCondition, toConditions, toEncounter, toLabResources, toMedicationRequests, toServiceOrderRequests, toVitalSignsObservations, VisitRecord } from '../fhir/mappers';
 
 /**
  * One visit as the FHIR "collection" Bundle the Shared Health Record takes
@@ -28,6 +28,8 @@ export interface ShrBundleInput {
   staffNames: Map<string, string>;
   /** Allergies recorded at this clinic for the patient. */
   allergies: AllergyRecord[];
+  /** Problem-list entries recorded at this clinic (sent with this visit as context). */
+  problems?: ProblemRecord[];
 }
 
 const NORMAL: fhir4.Coding = { system: 'http://terminology.hl7.org/CodeSystem/v3-Confidentiality', code: 'N', display: 'Normal' };
@@ -76,6 +78,7 @@ export function buildShrBundle(input: ShrBundleInput): fhir4.Bundle & { id: stri
     ...toServiceOrderRequests(visit, patientId),
     ...toVitalSignsObservations(visit, patientId),
     ...allergies,
+    ...(input.problems ?? []).map((p) => ({ ...toProblemCondition(p, patientId), encounter: encounterRef }) as fhir4.Condition),
   ].map((r) => withLabel(rewriteReferences(r, input) as fhir4.FhirResource));
   return {
     resourceType: 'Bundle',

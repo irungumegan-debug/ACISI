@@ -1,4 +1,6 @@
 import { listServiceOrders, ServiceOrderView } from './serviceOrderService';
+import { listProblemsForClinic, ProblemView } from './problemListService';
+
 import { queueVisitForShr } from '../hie/shrService';
 import { Encounter, EncounterStatus } from '@prisma/client';
 import { doctorQueueFilter } from './doctorScope';
@@ -107,6 +109,9 @@ export interface EncounterDetail {
   medications: MedicationView[];
   /** This visit's radiology, therapy and other orders. */
   serviceOrders: ServiceOrderView[];
+  /** The patient's problem list (same sharing rule as allergies). */
+  problems: ProblemView[];
+  problemsHiddenElsewhere: boolean;
 }
 
 export async function assertEncounterInDoctorQueue(encounterId: string, clinicId: string, departmentIds: string[], staffId: string): Promise<Encounter> {
@@ -174,6 +179,7 @@ export async function getEncounterForDoctor(
     ...(await allergiesFor(encounter.patientId, clinicId)),
     medications: await listMedications(history.map((h) => h.encounterId)),
     serviceOrders: await listServiceOrders(encounter.id),
+    ...(await problemsFor(encounter.patientId, clinicId)),
   };
 }
 
@@ -359,4 +365,10 @@ export async function checkoutEncounter(
   }
 
   return updated;
+}
+
+/** The patient's problem list as this clinic may see it. */
+async function problemsFor(patientId: string, clinicId: string): Promise<{ problems: ProblemView[]; problemsHiddenElsewhere: boolean }> {
+  const { problems, hiddenElsewhere } = await listProblemsForClinic(patientId, clinicId);
+  return { problems, problemsHiddenElsewhere: hiddenElsewhere };
 }

@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { HieVisit } from '@prisma/client';
 import { prisma } from '../db/prisma';
 import { recordAuditEvent } from '../services/auditService';
-import { loadVisitRecords } from '../fhir/visitLoader';
+import { loadProblemRecords, loadVisitRecords } from '../fhir/visitLoader';
 import { logger } from '../utils/logger';
 import { HieError, hieConfigured } from './client';
 import { HieSetupError, patientCrView } from './registryService';
@@ -228,6 +228,8 @@ export async function sendVisitToShr(encounterId: string, attempt: number, lastA
       include: { recordedByStaff: { select: { id: true, name: true, staffCode: true } } },
     });
     allergies.forEach((a) => staffIds.add(a.recordedByStaffId));
+    const problems = await loadProblemRecords(v.patientId, v.clinicId);
+    problems.forEach((p) => staffIds.add(p.recordedBy.id));
     const staff = await prisma.staff.findMany({ where: { id: { in: [...staffIds] } }, select: { id: true, name: true, hiePractitionerId: true } });
     const bundleId = v.bundleId ?? crypto.randomUUID();
     const bundle = buildShrBundle({
@@ -240,6 +242,7 @@ export async function sendVisitToShr(encounterId: string, attempt: number, lastA
       puids: new Map(staff.filter((s) => s.hiePractitionerId).map((s) => [s.id, s.hiePractitionerId!])),
       staffNames: new Map(staff.map((s) => [s.id, s.name])),
       allergies: allergies.map((a) => ({ ...a, recordedBy: a.recordedByStaff })),
+      problems,
     });
     await prisma.hieVisit.update({ where: { id: v.id }, data: { bundleId, sendAttempts: attempt } });
     await shr.submitBundle({ bundle, facilityId });

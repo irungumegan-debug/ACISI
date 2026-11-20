@@ -426,6 +426,38 @@ export function toServiceOrderRequests(v: VisitRecord, patientId: string): fhir4
   });
 }
 
+export interface ProblemRecord {
+  id: string;
+  icd11Code: string;
+  title: string;
+  note: string | null;
+  status: 'ACTIVE' | 'RESOLVED' | 'ENTERED_IN_ERROR';
+  onsetDate: Date | null;
+  recordedAt: Date;
+  recordedBy: { id: string; name: string; staffCode: string };
+}
+
+/** A problem-list entry as a Condition (category problem-list-item, ICD-11 coded). */
+export function toProblemCondition(p: ProblemRecord, patientId: string): fhir4.Condition {
+  return {
+    resourceType: 'Condition',
+    id: p.id,
+    clinicalStatus: {
+      coding: [{ system: 'http://terminology.hl7.org/CodeSystem/condition-clinical', code: p.status === 'RESOLVED' ? 'resolved' : p.status === 'ACTIVE' ? 'active' : 'inactive' }],
+    },
+    verificationStatus: {
+      coding: [{ system: 'http://terminology.hl7.org/CodeSystem/condition-ver-status', code: p.status === 'ENTERED_IN_ERROR' ? 'entered-in-error' : 'confirmed' }],
+    },
+    category: [{ coding: [{ system: 'http://terminology.hl7.org/CodeSystem/condition-category', code: 'problem-list-item', display: 'Problem List Item' }] }],
+    code: { coding: [{ system: ICD11_MMS_SYSTEM, code: p.icd11Code, display: p.title }], text: p.title },
+    subject: ref('Patient', patientId),
+    ...(p.onsetDate ? { onsetDateTime: p.onsetDate.toISOString().slice(0, 10) } : {}),
+    recordedDate: p.recordedAt.toISOString(),
+    recorder: ref('Practitioner', p.recordedBy.id),
+    ...(p.note ? { note: [{ text: p.note }] } : {}),
+  };
+}
+
 export interface AllergyRecord {
   id: string;
   category: 'MEDICATION' | 'FOOD' | 'ENVIRONMENT' | 'OTHER';
@@ -482,6 +514,7 @@ export function patientEverythingBundle(input: {
   clinics: { id: string; name: string; county: string | null }[];
   visits: VisitRecord[];
   allergies?: AllergyRecord[];
+  problems?: ProblemRecord[];
   now?: Date;
 }): fhir4.Bundle {
   const { baseUrl, patient, visits } = input;
@@ -492,11 +525,13 @@ export function patientEverythingBundle(input: {
     for (const o of v.serviceOrders ?? []) practitioners.set(o.requestedBy.id, o.requestedBy);
   }
   for (const a of input.allergies ?? []) practitioners.set(a.recordedBy.id, a.recordedBy);
+  for (const p of input.problems ?? []) practitioners.set(p.recordedBy.id, p.recordedBy);
   const resources: fhir4.FhirResource[] = [
     toPatient(patient),
     ...input.clinics.map(toOrganization),
     ...[...practitioners.values()].map(toPractitioner),
     ...(input.allergies ?? []).map((a) => toAllergyIntolerance(a, patient.id)),
+    ...(input.problems ?? []).map((p) => toProblemCondition(p, patient.id)),
   ];
   for (const v of visits) {
     resources.push(toEncounter(v, patient.id));

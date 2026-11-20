@@ -47,6 +47,9 @@ export const ENCRYPTED_FIELDS: ReadonlySet<string> = new Set([
   // service_orders (radiology, therapy and other orders)
   'orderDescription',
   'orderNote',
+  // patient_problems
+  'problemTitle',
+  'problemNote',
 ]);
 
 let cachedKey: Buffer | null | undefined;

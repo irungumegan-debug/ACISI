@@ -1484,3 +1484,51 @@ model VitalSigns {
   @@index([patientId, recordedAt])
   @@map("vital_signs")
 }
+
+enum ProblemStatus {
+  ACTIVE
+  RESOLVED
+  /// Recorded by mistake: kept, never shown as a current problem.
+  ENTERED_IN_ERROR
+}
+
+/// The patient's problem list: long-term or important conditions that carry
+/// across visits (e.g. hypertension, diabetes, asthma), coded with ICD-11.
+/// Separate from a visit's diagnoses. Never deleted; every change is kept in
+/// PatientProblemChange. Same sharing rule between clinics as allergies.
+model PatientProblem {
+  id                String                 @id @default(cuid())
+  patientId         String
+  /// Clinic where it was first recorded.
+  clinicId          String
+  icd11Code         String
+  /// WHO ICD-11 title at the time (encrypted at rest).
+  problemTitle      String
+  /// Free note, e.g. "On amlodipine since 2024" (encrypted at rest).
+  problemNote       String?
+  status            ProblemStatus          @default(ACTIVE)
+  onsetDate         DateTime?              @db.Date
+  recordedByStaffId String
+  recordedAt        DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  changes           PatientProblemChange[]
+
+  @@index([patientId])
+  @@map("patient_problems")
+}
+
+/// History of a problem: added, resolved, active again, note changed, entered in error.
+model PatientProblemChange {
+  id        String         @id @default(cuid())
+  problemId String
+  problem   PatientProblem @relation(fields: [problemId], references: [id])
+  clinicId  String
+  staffId   String
+  action    String
+  /// Status after the change.
+  status    ProblemStatus
+  at        DateTime       @default(now())
+
+  @@index([problemId])
+  @@map("patient_problem_changes")
+}

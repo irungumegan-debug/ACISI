@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../db/prisma';
 import { parseDiagnosisCodes } from '../services/icd11Service';
-import { VisitRecord } from './mappers';
+import { ProblemRecord, VisitRecord } from './mappers';
 
 /**
  * Loads visits (encounters) with everything the FHIR mappers need, oldest
@@ -68,4 +68,21 @@ export async function loadVisitRecords(where: Prisma.EncounterWhereInput) {
     };
     return { visit, clinic: e.clinic };
   });
+}
+
+/** Problem-list entries recorded at this clinic, for FHIR. */
+export async function loadProblemRecords(patientId: string, clinicId: string): Promise<ProblemRecord[]> {
+  const rows = await prisma.patientProblem.findMany({ where: { patientId, clinicId }, orderBy: { recordedAt: 'asc' } });
+  const staff = rows.length ? await prisma.staff.findMany({ where: { id: { in: [...new Set(rows.map((r) => r.recordedByStaffId))] } }, select: { id: true, name: true, staffCode: true } }) : [];
+  const byId = new Map(staff.map((s) => [s.id, s]));
+  return rows.map((r) => ({
+    id: r.id,
+    icd11Code: r.icd11Code,
+    title: r.problemTitle,
+    note: r.problemNote,
+    status: r.status,
+    onsetDate: r.onsetDate,
+    recordedAt: r.recordedAt,
+    recordedBy: byId.get(r.recordedByStaffId) ?? { id: r.recordedByStaffId, name: 'Clinician', staffCode: '' },
+  }));
 }

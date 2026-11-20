@@ -18,6 +18,7 @@ import { sendLabError } from './lab';
 import { ICD11_RELEASE, Icd11Entry, MAX_DIAGNOSIS_CODES, resolveDiagnosisCodes, searchIcd11 } from '../services/icd11Service';
 import { AllergyError, recordAllergy, removeAllergy } from '../services/allergyService';
 import { closeServiceOrder, createServiceOrder, ServiceOrderError } from '../services/serviceOrderService';
+import { addProblem, ProblemListError, updateProblem } from '../services/problemListService';
 import {
   AllergyOverrideRequiredError,
   checkPrescriptionAllergies,
@@ -371,5 +372,60 @@ doctorRouter.post('/encounters/:id/orders/:orderId/cancel', async (req, res) => 
     res.json({ orders: await closeServiceOrder({ orderId: req.params.orderId as string, encounterId: req.params.id as string, clinicId, staffId, outcome: 'CANCELLED' }) });
   } catch (err) {
     if (!sendServiceOrderError(err, res)) throw err;
+  }
+});
+
+function sendProblemError(err: unknown, res: Response): boolean {
+  if (err instanceof ProblemListError) {
+    res.status(err.status).json({ error: err.message });
+    return true;
+  }
+  return false;
+}
+
+const addProblemSchema = z.object({ icd11Code: z.string().min(1).max(20), note: z.string().nullish(), onsetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish() });
+
+/** Adds a problem (ICD-11) to the problem list of the patient of a visit in this doctor's queue. */
+doctorRouter.post('/encounters/:id/problems', async (req, res) => {
+  const parsed = addProblemSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Choose the condition from the ICD-11 list' });
+    return;
+  }
+  const patientId = await patientInMyQueue(req, res);
+  if (!patientId) {
+    res.status(404).json({ error: 'Patient not found in your queue' });
+    return;
+  }
+  const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  try {
+    res.status(201).json(await addProblem({ patientId, clinicId, staffId, ...parsed.data }));
+  } catch (err) {
+    if (!sendProblemError(err, res)) throw err;
+  }
+});
+
+const updateProblemSchema = z.union([
+  z.object({ status: z.enum(['ACTIVE', 'RESOLVED', 'ENTERED_IN_ERROR']) }),
+  z.object({ note: z.string().nullable() }),
+]);
+
+/** Resolve, make active again, mark entered in error, or change the note. Kept in the problem's history. */
+doctorRouter.patch('/encounters/:id/problems/:problemId', async (req, res) => {
+  const parsed = updateProblemSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Nothing to change' });
+    return;
+  }
+  const patientId = await patientInMyQueue(req, res);
+  if (!patientId) {
+    res.status(404).json({ error: 'Patient not found in your queue' });
+    return;
+  }
+  const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  try {
+    res.json(await updateProblem({ problemId: req.params.problemId as string, patientId, clinicId, staffId, change: parsed.data }));
+  } catch (err) {
+    if (!sendProblemError(err, res)) throw err;
   }
 });
