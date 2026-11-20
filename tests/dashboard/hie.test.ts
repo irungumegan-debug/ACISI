@@ -13,12 +13,28 @@ jest.mock('../../src/hie/registryService', () => ({
   verifyOwnPractitionerRecord: jest.fn(async () => ({ practitionerId: 'PUID-1' })),
   lookUpPatientInClientRegistry: jest.fn(async () => ({ result: 'saved', crId: 'CR1-1' })),
 }));
+jest.mock('../../src/hie/shrService', () => ({
+  getHieVisit: jest.fn(async () => ({ connected: true, facilitySet: true, patientLinked: true, visit: null })),
+  startConsent: jest.fn(async () => ({ consentStatus: 'PENDING' })),
+  confirmConsentCode: jest.fn(async () => ({ consentStatus: 'APPROVED' })),
+  readNationalRecord: jest.fn(async () => []),
+  recordConsentRefusal: jest.fn(),
+  resendConsentCode: jest.fn(),
+  retrySend: jest.fn(),
+  startClose: jest.fn(),
+  confirmCloseCode: jest.fn(),
+}));
+jest.mock('../../src/jobs/queue', () => ({ enqueueHieShrSend: jest.fn() }));
+jest.mock('../../src/services/departmentService', () => ({ getDoctorDepartmentIds: jest.fn(async () => ['d1']) }));
+jest.mock('../../src/services/encounterService', () => ({ assertEncounterInDoctorQueue: jest.fn(async () => ({})) }));
 jest.mock('../../src/db/prisma', () => ({ prisma: { clinic: { findUnique: jest.fn(async () => null) }, staff: { findUnique: jest.fn(async () => null) } } }));
 
 import { loadDashboardSession, SESSION_COOKIE_NAME } from '../../src/dashboard/session';
 import { HieError } from '../../src/hie/client';
 import { lookUpPatientInClientRegistry, setClinicFacility, verifyOwnPractitionerRecord } from '../../src/hie/registryService';
 import { hieRouter } from '../../src/dashboard/hie';
+import { assertEncounterInDoctorQueue } from '../../src/services/encounterService';
+import { confirmConsentCode, readNationalRecord, startConsent } from '../../src/hie/shrService';
 
 const base = { staffId: 's1', staffCode: 'ACI-STF-1', staffName: 'X', clinicId: 'c1', clinicName: 'Sunrise', departmentId: null };
 const as = (role: string) => (loadDashboardSession as jest.Mock).mockResolvedValue({ ...base, role });
@@ -72,4 +88,34 @@ it('status shows connection, facility and the doctor’s own record', async () =
   as('DOCTOR');
   const res = await call('get', '/hie/status');
   expect(res.body).toEqual({ connected: true, facility: null, practitioner: null });
+});
+
+describe('Shared Health Record, per visit', () => {
+  it('lab technicians have no access', async () => {
+    as('LAB_TECHNICIAN');
+    expect((await call('get', '/hie/visits/e1')).status).toBe(403);
+  });
+
+  it('a doctor works only on visits in their own queue', async () => {
+    as('DOCTOR');
+    (assertEncounterInDoctorQueue as jest.Mock).mockRejectedValueOnce(new Error('no'));
+    expect((await call('post', '/hie/visits/e1/consent')).status).toBe(404);
+    expect(startConsent).not.toHaveBeenCalled();
+    expect((await call('post', '/hie/visits/e1/consent')).body).toEqual({ consentStatus: 'PENDING' });
+  });
+
+  it('only doctors read the national record', async () => {
+    as('RECEPTIONIST');
+    expect((await call('get', '/hie/visits/e1/national-record')).status).toBe(403);
+    expect(readNationalRecord).not.toHaveBeenCalled();
+    as('DOCTOR');
+    expect((await call('get', '/hie/visits/e1/national-record')).body).toEqual({ items: [] });
+  });
+
+  it('the consent code must be digits', async () => {
+    as('RECEPTIONIST');
+    expect((await call('post', '/hie/visits/e1/consent/confirm', { code: 'abc' })).status).toBe(400);
+    expect(confirmConsentCode).not.toHaveBeenCalled();
+    expect((await call('post', '/hie/visits/e1/consent/confirm', { code: '14384' })).status).toBe(200);
+  });
 });

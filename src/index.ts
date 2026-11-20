@@ -5,6 +5,7 @@ import { ensureOwnerFromEnv } from './services/ownerService';
 import { startSmsReceiptWorker } from './jobs/workers/smsReceiptWorker';
 import { startStkStatusWorker } from './jobs/workers/stkStatusWorker';
 import { startVisitSummaryEmailWorker } from './jobs/workers/visitSummaryEmailWorker';
+import { startHieShrWorker } from './jobs/workers/hieShrWorker';
 import { startClinicStkStatusWorker } from './jobs/workers/clinicStkStatusWorker';
 import { scheduleCheckInPaymentSweep, scheduleHourlyMaintenance, scheduleQueueAlertSweep } from './jobs/queue';
 import { startQueueAlertWorker } from './jobs/workers/queueAlertWorker';
@@ -17,6 +18,7 @@ const visitSummaryEmailWorker = startVisitSummaryEmailWorker();
 const clinicStkStatusWorker = startClinicStkStatusWorker();
 const maintenanceWorker = startMaintenanceWorker();
 const queueAlertWorker = startQueueAlertWorker();
+const hieShrWorker = startHieShrWorker();
 
 const server = app.listen(env.PORT, () => {
   logger.info({ port: env.PORT, env: env.NODE_ENV }, 'ACISI server listening');
@@ -31,7 +33,7 @@ void ensureOwnerFromEnv({ email: env.OWNER_EMAIL, name: env.OWNER_NAME, password
 async function shutdown(signal: string): Promise<void> {
   logger.info({ signal }, 'Shutting down');
   server.close();
-  await Promise.all([smsWorker.close(), stkStatusWorker.close(), visitSummaryEmailWorker.close(), clinicStkStatusWorker.close(), maintenanceWorker.close(), queueAlertWorker.close()]);
+  await Promise.all([smsWorker.close(), stkStatusWorker.close(), visitSummaryEmailWorker.close(), clinicStkStatusWorker.close(), maintenanceWorker.close(), queueAlertWorker.close(), hieShrWorker.close()]);
   process.exit(0);
 }
 

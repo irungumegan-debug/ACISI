@@ -1,3 +1,4 @@
+import { queueVisitForShr } from '../hie/shrService';
 import { Encounter, EncounterStatus } from '@prisma/client';
 import { doctorQueueFilter } from './doctorScope';
 import { prisma } from '../db/prisma';
@@ -23,7 +24,7 @@ async function allergiesFor(patientId: string, clinicId: string): Promise<{ alle
 }
 import { getScopedHistory, ScopedHistoryEntry } from './patientService';
 import { emailConfigured } from '../config/email';
-import { enqueueVisitSummaryEmail } from '../jobs/queue';
+import { enqueueHieShrSend, enqueueVisitSummaryEmail } from '../jobs/queue';
 import { logger } from '../utils/logger';
 import { sendCheckoutSms } from './checkoutSmsService';
 
@@ -105,7 +106,7 @@ export interface EncounterDetail {
   medications: MedicationView[];
 }
 
-async function assertEncounterInDoctorQueue(encounterId: string, clinicId: string, departmentIds: string[], staffId: string): Promise<Encounter> {
+export async function assertEncounterInDoctorQueue(encounterId: string, clinicId: string, departmentIds: string[], staffId: string): Promise<Encounter> {
   // Only a visit still in the queue: once signed it is front desk's, and a
   // doctor sees it again only as history of a patient back in their queue.
   const encounter = await prisma.encounter.findFirst({
@@ -334,6 +335,10 @@ export async function checkoutEncounter(
     entityId: encounter.id,
     metadata: { deliveryMethod },
   });
+
+  // National Shared Health Record: only if the patient consented for this
+  // visit; queued (with retries) and never blocks or undoes the checkout.
+  await queueVisitForShr(encounter.id, enqueueHieShrSend);
 
   // One SMS: receipt + visit summary (never the diagnosis or department).
   await sendCheckoutSms(encounter.id);

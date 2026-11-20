@@ -434,7 +434,11 @@ patients and the test identifiers DHA gives.
 4. As a doctor: National HIE → regulator + registration number → Verify.
 5. Front desk: a TEST patient with a national ID → patient page → "Look up
    in the national Client Registry".
-6. `sudo journalctl -u acisi -n 50 --no-pager | grep -i hie` shows each call's
+6. Shared Health Record, with that TEST patient: check in → doctor opens
+   the visit → "Ask the patient for consent" → enter DHA's code → "Show
+   records from other facilities" → sign → front desk checkout → the panel
+   shows "Sent to the national record" (within a minute) → "Close the HIE visit".
+7. `sudo journalctl -u acisi -n 50 --no-pager | grep -i hie` shows each call's
    status (never patient details).
 
 Before **production** credentials: update the Privacy Notice, DPIA and ODPC

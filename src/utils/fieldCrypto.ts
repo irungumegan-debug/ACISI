@@ -42,6 +42,8 @@ export const ENCRYPTED_FIELDS: ReadonlySet<string> = new Set([
   'totpSecret',
   // patients: national Client Registry ID (HIE)
   'hieCrId',
+  // hie_visits: per-visit consent token for the national record
+  'consentToken',
 ]);
 
 let cachedKey: Buffer | null | undefined;

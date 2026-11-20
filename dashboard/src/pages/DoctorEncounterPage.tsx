@@ -8,6 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import { AlertTriangle, ArrowLeft, Building2, FileText, Lock, NotebookPen, Phone, Pill, ShieldCheck, Stethoscope } from 'lucide-react';
 import { Avatar, btn, EmptyState, field, SkeletonList, StatusBadge } from '../components/ui';
 import { PatientFiles } from '../components/PatientFiles';
+import { HieVisitPanel } from '../components/HieVisitPanel';
 import { LabOrdersForVisit, LabResultLine, RequestLabTests } from '../components/DoctorLab';
 import { Allergies } from '../components/Allergies';
 
@@ -140,6 +141,8 @@ export function DoctorEncounterPage() {
       </div>
 
     <Allergies encounterId={encounter.encounterId} initial={encounter.allergies ?? []} hiddenElsewhere={encounter.allergiesHiddenElsewhere ?? false} />
+
+    <HieVisitPanel encounterId={encounter.encounterId} mode="doctor" />
 
     <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
       <div className="order-2 lg:order-1">

@@ -154,24 +154,24 @@ enum AppointmentStatus {
 }
 
 model Clinic {
-  id                  String     @id @default(cuid())
-  name                String
-  county              String?
+  id                    String     @id @default(cuid())
+  name                  String
+  county                String?
   /// Short numeric code staff give patients to select this clinic within
   /// the shared USSD menu, e.g. "482". Not a phone number, not secret.
-  ussdCode            String     @unique
+  ussdCode              String     @unique
   /// Persistent invite code (e.g. "SUNRISE-7F2K") shared with prospective
   /// doctors/staff so their signup can attach to this clinic. Regenerable by
   /// a clinic admin — regenerating invalidates the old code for future
   /// signups, but never affects staff who already joined with it.
-  inviteCode          String     @unique
-  isActive            Boolean    @default(true)
+  inviteCode            String     @unique
+  isActive              Boolean    @default(true)
   /// The clinic's ACISI plan (C24). Sets the default monthly SMS allowance;
   /// the owner can change both from the owner site.
-  plan                ClinicPlan @default(STARTER)
+  plan                  ClinicPlan @default(STARTER)
   /// SMS a month included in the plan; above it, each SMS is charged
   /// SMS_OVERAGE_KES. Starts at the plan's amount, can be changed per clinic.
-  smsMonthlyAllowance Int        @default(500)
+  smsMonthlyAllowance   Int        @default(500)
   /// DHA Health Information Exchange: the clinic's Facility Registry code
   /// (FR code, e.g. "FID-47-115307-8"), set by the clinic admin after a
   /// Facility Registry lookup. Sent as X-Facility-Id on HIE calls.
@@ -179,8 +179,8 @@ model Clinic {
   /// Official name the Facility Registry returned, shown to confirm the match.
   hieFacilityName       String?
   hieFacilityVerifiedAt DateTime?
-  createdAt           DateTime   @default(now())
-  updatedAt           DateTime   @updatedAt
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
 
   staff            Staff[]
   checkIns         CheckIn[]
@@ -249,27 +249,27 @@ model StaffDepartment {
 }
 
 model Staff {
-  id                 String                 @id @default(cuid())
-  clinicId           String
-  clinic             Clinic                 @relation(fields: [clinicId], references: [id])
+  id                    String                 @id @default(cuid())
+  clinicId              String
+  clinic                Clinic                 @relation(fields: [clinicId], references: [id])
   /// System-generated login identifier, e.g. "ACI-STF-7F2K". Never
   /// self-chosen or clinic-supplied. This — not phoneNumber — is what staff
   /// and doctors authenticate with, on both the dashboard and USSD.
-  staffCode          String                 @unique
+  staffCode             String                 @unique
   /// E.164 phone number, e.g. "+2547XXXXXXXX". Contact/SMS purposes only —
   /// never used to authenticate.
-  phoneNumber        String                 @unique
+  phoneNumber           String                 @unique
   /// Optional work email. Contact only; never used to log in.
-  email              String?
-  name               String
+  email                 String?
+  name                  String
   /// bcrypt hash of a staff-chosen numeric PIN. Never store or log the raw PIN.
-  pinHash            String
+  pinHash               String
   /// Authenticator-app (TOTP, RFC 6238) secret for multi-factor login,
   /// AES-256-GCM encrypted ("enc:v1:..."). Null until the person sets up
   /// the app at their first login after MFA is switched on, or after their
   /// clinic admin resets it (lost phone).
-  totpSecret         String?
-  totpEnabledAt      DateTime?
+  totpSecret            String?
+  totpEnabledAt         DateTime?
   /// DHA Health Worker Registry: regulator (KMPDC, COC, NCK, PPB) and
   /// registration number the clinician entered, and what the registry
   /// returned: the Practitioner Unique Identifier (PUID) used on HIE calls,
@@ -280,29 +280,29 @@ model Staff {
   hieRegisteredName     String?
   hieLicenceEnd         DateTime?
   hieVerifiedAt         DateTime?
-  role               StaffRole              @default(RECEPTIONIST)
+  role                  StaffRole              @default(RECEPTIONIST)
   /// A doctor's "home" department (the one they signed up to), kept in sync
   /// as their first department for display. Scoping and assignment use
   /// `departments` (StaffDepartment), which can hold several. Null for roles
   /// that aren't department-scoped (front desk, admin).
-  departmentId       String?
-  department         Department?            @relation(fields: [departmentId], references: [id])
-  departments        StaffDepartment[]
-  isActive           Boolean                @default(true)
+  departmentId          String?
+  department            Department?            @relation(fields: [departmentId], references: [id])
+  departments           StaffDepartment[]
+  isActive              Boolean                @default(true)
   /// Set on every successful login (DOCTOR role only) — the automatic
   /// "in today" signal. Compared against presenceOverrideAt (whichever is
   /// more recent, restricted to today) to decide current presence; see
   /// staffService.getDoctorPresenceStatus. Not a schedule or a history —
   /// only today's value is ever meaningful.
-  lastLoginAt        DateTime?
+  lastLoginAt           DateTime?
   /// An explicit "mark in" / "mark out" correction, settable by the doctor
   /// themselves or their clinic admin. Only meaningful when
   /// presenceOverrideAt falls on today; a stale value from a previous day
   /// is ignored, not carried forward.
-  presenceOverride   StaffPresenceOverride?
-  presenceOverrideAt DateTime?
-  createdAt          DateTime               @default(now())
-  updatedAt          DateTime               @updatedAt
+  presenceOverride      StaffPresenceOverride?
+  presenceOverrideAt    DateTime?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
 
   checkIns                 CheckIn[]
   checkInsPaymentConfirmed CheckIn[]               @relation("CheckInPaymentConfirmedBy")
@@ -528,6 +528,8 @@ model Encounter {
   labOrders         LabOrder[]
   notifiableCases   NotifiableDiseaseCase[]
   prescriptionItems PrescriptionItem[]
+
+  hieVisit HieVisit?
 
   @@index([patientId])
   @@index([clinicId])
@@ -1337,4 +1339,65 @@ model PublicHealthEvent {
 
   @@index([clinicId, detectedOn])
   @@map("public_health_events")
+}
+
+enum HieConsentStatus {
+  /// DHA sent the patient a one-time code; waiting for it.
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum HieSendStatus {
+  NOT_SENT
+  /// Queued or being retried.
+  SENDING
+  /// Accepted by the Shared Health Record (DHA processes it asynchronously).
+  SENT
+  /// Gave up after the retries; staff can try again.
+  FAILED
+}
+
+enum HieCloseStatus {
+  OPEN
+  /// DHA sent the patient a code to confirm closing the visit.
+  CODE_SENT
+  CLOSED
+}
+
+/// One visit's link to DHA's Shared Health Record (SHR): the patient's
+/// consent (bound to this visit), sending the visit's record, and closing
+/// the HIE visit. Created when staff ask for consent. See hie/shrService.ts.
+model HieVisit {
+  id                 String           @id @default(cuid())
+  encounterId        String           @unique
+  encounter          Encounter        @relation(fields: [encounterId], references: [id])
+  clinicId           String
+  patientId          String
+  /// DHA's consent request id (e.g. "VCR-20260624-13698E26") and the
+  /// reference that goes back with the patient's code.
+  consentId          String?
+  otpRecord          String?
+  consentStatus      HieConsentStatus @default(PENDING)
+  /// Approved without a code because the patient couldn't consent (emergency).
+  emergency          Boolean          @default(false)
+  /// DHA's visit id (the EpisodeOfCare the Encounter references).
+  hieVisitId         String?
+  /// Per-visit token for reading the patient's national record. Encrypted at rest.
+  consentToken       String?
+  consentDecidedAt   DateTime?
+  requestedByStaffId String
+  /// Bundle id sent to the SHR (echoed back by DHA as mediator_id).
+  bundleId           String?
+  sendStatus         HieSendStatus    @default(NOT_SENT)
+  sendAttempts       Int              @default(0)
+  sentAt             DateTime?
+  closeStatus        HieCloseStatus   @default(OPEN)
+  closeOtpRecord     String?
+  closedAt           DateTime?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@index([clinicId, closeStatus])
+  @@map("hie_visits")
 }

@@ -4,8 +4,8 @@ import { AuthenticatedRequest } from '../dashboard/auth';
 import { loadDashboardSession, SESSION_COOKIE_NAME } from '../dashboard/session';
 import { staffPatientScopeWhere } from '../services/staffPatientScope';
 import { recordAuditEvent } from '../services/auditService';
-import { parseDiagnosisCodes } from '../services/icd11Service';
-import { capabilityStatement, patientEverythingBundle, toPatient, VisitRecord } from './mappers';
+import { capabilityStatement, patientEverythingBundle, toPatient } from './mappers';
+import { loadVisitRecords } from './visitLoader';
 
 /**
  * HL7 FHIR R4 interface, mounted at /fhir/r4.
@@ -102,47 +102,9 @@ fhirRouter.get('/Patient/:id/\\$everything', async (req, res) => {
   }
 
   // This clinic's own visits only; other clinics' records are shared through the HIE, not here.
-  const encounters = await prisma.encounter.findMany({
-    where: { patientId: patient.id, clinicId },
-    orderBy: { createdAt: 'asc' },
-    include: {
-      clinic: { select: { id: true, name: true, county: true } },
-      checkIn: { select: { department: { select: { name: true } } } },
-      consultedByStaff: { select: { id: true, name: true, staffCode: true } },
-      assignedDoctor: { select: { id: true, name: true, staffCode: true } },
-      prescriptionItems: { orderBy: { position: 'asc' } },
-      labOrders: {
-        orderBy: { requestedAt: 'asc' },
-        include: { items: { orderBy: { position: 'asc' } }, requestedByStaff: { select: { id: true, name: true, staffCode: true } } },
-      },
-    },
-  });
-
+  const encounters = await loadVisitRecords({ patientId: patient.id, clinicId });
+  const visits = encounters.map((e) => e.visit);
   const clinic = encounters[0]?.clinic ?? (await prisma.clinic.findUnique({ where: { id: clinicId }, select: { id: true, name: true, county: true } }));
-  const visits: VisitRecord[] = encounters.map((e) => ({
-    id: e.id,
-    status: e.status,
-    createdAt: e.createdAt,
-    checkedOutAt: e.checkedOutAt,
-    consultedAt: e.consultedAt,
-    visitReason: e.visitReason,
-    diagnosis: e.diagnosis,
-    diagnosisCodes: parseDiagnosisCodes(e.diagnosisCodes),
-    prescription: e.prescription,
-    prescriptionItems: e.prescriptionItems,
-    clinicId: e.clinicId,
-    departmentName: e.checkIn.department.name,
-    doctor: e.consultedByStaff ?? e.assignedDoctor,
-    labOrders: e.labOrders.map((o) => ({
-      id: o.id,
-      status: o.status,
-      requestedAt: o.requestedAt,
-      requestedBy: o.requestedByStaff,
-      noteForLab: o.noteForLab,
-      completedAt: o.completedAt,
-      items: o.items,
-    })),
-  }));
 
   // Allergies recorded at this clinic (same scope as the visits).
   const allergies = await prisma.patientAllergy.findMany({

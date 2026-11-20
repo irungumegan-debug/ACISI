@@ -78,12 +78,14 @@ export interface HieRequest {
   body?: unknown;
   /** The clinic's FR code; omitted only for calls not made on behalf of a facility (e.g. finding the facility itself). */
   facilityId?: string | null;
+  /** Extra headers, e.g. X-Consent-Token for reading a patient's national record. */
+  headers?: Record<string, string>;
 }
 
 /** One call to the HIE. Retries once with a fresh token if the token was rejected. */
 export async function hieRequest<T>(req: HieRequest, retried = false): Promise<T> {
   const token = await getHieToken();
-  const headers: Record<string, string> = { Authorization: `Bearer ${token}`, Accept: 'application/json' };
+  const headers: Record<string, string> = { ...req.headers, Authorization: `Bearer ${token}`, Accept: 'application/json' };
   if (req.facilityId) {
     headers['X-Facility-Id'] = req.facilityId;
     headers['X-Facility-Id-Type'] = 'fr-code';

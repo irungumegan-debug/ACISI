@@ -313,6 +313,31 @@ export type ClientRegistryLookup =
   | { result: 'saved'; crId: string }
   | { result: 'check'; registry: { firstName: string | null; middleName: string | null; lastName: string | null; dateOfBirth: string | null; sex: 'MALE' | 'FEMALE' | null } };
 
+export interface HieVisitInfo {
+  consentStatus: 'PENDING' | 'APPROVED' | 'REJECTED';
+  emergency: boolean;
+  canRead: boolean;
+  sendStatus: 'NOT_SENT' | 'SENDING' | 'SENT' | 'FAILED';
+  sentAt: string | null;
+  closeStatus: 'OPEN' | 'CODE_SENT' | 'CLOSED';
+  closedAt: string | null;
+}
+
+export interface HieVisitState {
+  connected: boolean;
+  facilitySet: boolean;
+  patientLinked: boolean;
+  visit: HieVisitInfo | null;
+}
+
+export interface NationalRecordItem {
+  kind: 'Visit' | 'Diagnosis' | 'Medicine' | 'Allergy' | 'Result' | 'Immunisation';
+  date: string | null;
+  title: string;
+  detail: string | null;
+  facility: string | null;
+}
+
 export interface PatientDetail extends PatientIdentityRecord {
   id: string;
   firstName: string;
@@ -831,6 +856,16 @@ export const api = {
     return request<{ ok: true }>('/clinic/payment-settings', { method: 'PUT', body: JSON.stringify(body) });
   },
   /** Saves the ID document and next of kin; fields sent empty are cleared. */
+  getHieVisit(encounterId: string) {
+    return request<HieVisitState>(`/hie/visits/${encodeURIComponent(encounterId)}`);
+  },
+  hieVisitAction(encounterId: string, action: 'consent' | 'consent/resend' | 'consent/confirm' | 'consent/refuse' | 'send' | 'close' | 'close/confirm', body?: object) {
+    return request<HieVisitInfo | { ok: true }>(`/hie/visits/${encodeURIComponent(encounterId)}/${action}`, { method: 'POST', body: JSON.stringify(body ?? {}) });
+  },
+  getNationalRecord(encounterId: string) {
+    return request<{ items: NationalRecordItem[] }>(`/hie/visits/${encodeURIComponent(encounterId)}/national-record`);
+  },
+
   getHieStatus() {
     return request<HieStatus>('/hie/status');
   },

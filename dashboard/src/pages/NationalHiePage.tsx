@@ -194,7 +194,7 @@ function PractitionerCard({ status, onSaved }: { status: HieStatus; onSaved: (p:
           </p>
           {current.licenceEnd && (
             <p className={current.licenceCurrent ? 'text-ink-700' : 'font-semibold text-red-700'}>
-              Licence {current.licenceCurrent ? 'valid until' : 'expired on'} {new Date(current.licenceEnd).toLocaleDateString()}
+              Licence {current.licenceCurrent ? 'valid until' : 'expired on'} {new Date(current.licenceEnd).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
             </p>
           )}
         </div>

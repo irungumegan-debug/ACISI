@@ -3,6 +3,28 @@
 Plain-language record of what changed in ACISI, which data each change
 touches, and who can use it. Newest first.
 
+## 2026-11-20: National Shared Health Record (consent, sending visits, reading, closing)
+
+One database change, additive (`20261120180000_hie_visits`: a new table);
+undo script in `prisma/rollback/`. **Off** with the rest of the HIE until
+DHA's credentials are in place; the panels stay hidden until then.
+
+| What | Data | Who |
+|---|---|---|
+| **Consent per visit.** "Ask the patient for consent" on the consultation page (doctor) and the checkout page (front desk). DHA texts the patient a code; they read it out and staff enter it. "Send the code again" and "Patient says no" (the refusal is recorded with DHA and in ACISI's audit log). If the patient already has an open HIE visit at the clinic it's reused, no new code. | New table `hie_visits`: DHA's consent and visit ids, status, the consent token (encrypted) | Front desk, doctors |
+| **Emergency consent** (doctors only) for a patient who can't consent, with a short reason sent to DHA; approved at once. | | Doctors |
+| **Sending.** At checkout, a consented visit is queued for the national Shared Health Record: ICD-11 diagnoses, prescriptions (DHA codes), lab requests and results, the clinic's allergy records. National identifiers only (Client Registry ID, facility code, practitioner ID); no Patient resource. Retried 5 times over ~15 minutes if DHA is down; never blocks checkout. Status on the checkout page; "Try sending again" if it failed. | | Front desk |
+| **Reading.** "Show records from other facilities" on the consultation page: the patient's visits, diagnoses, medicines, allergies, results and immunisations from the national record. Needs consent and the doctor's verified registration. Shown only, never saved in ACISI. | | Doctors |
+| **Closing.** "Close the HIE visit" on the checkout page once the visit is sent; DHA may text the patient a closing code. The consent token is deleted on closing. | | Front desk |
+
+Audit log: `HIE_CONSENT_REQUESTED`, `_APPROVED`, `_REFUSED`, `_EMERGENCY`,
+`_CODE_RESENT`, `_CODE_WRONG`, `_REUSED_OPEN_VISIT`, `HIE_SHR_VISIT_SENT`,
+`_SEND_FAILED`, `_RESEND`, `HIE_SHR_RECORDS_VIEWED` (count only),
+`HIE_VISIT_CLOSE_CODE_SENT`, `HIE_VISIT_CLOSED`.
+Not yet: consent through a parent or guardian for children (DHA's
+"dependant" consent needs the guardian's Client Registry ID; ACISI doesn't
+record guardians as separate people yet).
+
 ## 2026-11-20: National HIE registries (facility, health workers, patients)
 
 One database change, additive (`20261120150000_hie_registries`: empty

@@ -58,7 +58,9 @@ USSD-first clinic management platform for small clinics in Kenya. See
   hie-test .dha.go.ke allowed in the ACISI environment). Steps 1-4 built
   20 Nov (src/hie/, src/dashboard/hie.ts, console "National HIE" page; off
   until HIE_ENABLED=true with DHA's credentials, runbook "Connecting to the
-  national HIE"). Owner has no facility codes yet: admins find the clinic by
+  national HIE"). Steps 5-8 (Shared Health Record: consent per visit, send at
+  checkout via queue hie-shr-send, doctor reads other facilities' records,
+  close visit) built 20 Nov in src/hie/shr*.ts. Owner has no facility codes yet: admins find the clinic by
   name or MFL code on that page.
   Routine reports (monthly/quarterly/annual, IDSR monthly table) and public
   health events (event-based surveillance, fill MOH 505 event and death rows)

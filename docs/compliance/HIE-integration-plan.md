@@ -43,7 +43,15 @@ Security labels: `GET /shr/security-labels` (N/R confidentiality; HIV, PSY, SUD 
 
 ## What ACISI needs to build (can start before credentials)
 
-**Done 20 Nov 2026 (off until credentials): steps 1-4** (`src/hie/`,
+**Done 20 Nov 2026 (off until credentials): steps 1-8** (steps 5-8 in
+`src/hie/shr*.ts`, worker `hie-shr-send`, panels on the consultation and
+checkout pages). Not yet: dependant (guardian) consent for children.
+Also check in DHA's development environment: whether the bundle should
+include an EpisodeOfCare resource or only reference DHA's; the shape of
+`/shr/open-visits` and refresh answers; closing an open visit that was
+reused (ACISI has no consent id for it).
+
+Earlier note on steps 1-4 (`src/hie/`,
 console page "National HIE", patient page Client Registry lookup). To check
 in DHA's development environment: the exact `identification_type` strings
 (the docs show both "National ID" and "NATIONAL ID"), where the PUID and CR ID
