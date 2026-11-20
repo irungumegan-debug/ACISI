@@ -3,6 +3,17 @@
 Plain-language record of what changed in ACISI, which data each change
 touches, and who can use it. Newest first.
 
+## 2026-11-21: Critical lab result warnings
+
+No database change.
+
+| What | Who |
+|---|---|
+| When the lab signs a result flagged **Critical**: a red **"Critical result"** badge on that patient in the doctor's queue, and a red **"Critical lab result: review now"** box at the top of the lab results on the consultation page, naming the test and value. | Doctors |
+| The doctor who requested the test also gets an SMS ("a CRITICAL lab result is ready for one of your patients at <clinic>"), with no name, test or result in it. Works once real SMS is live; the on-screen warnings work now. | Doctors |
+
+Audit log: `LAB_CRITICAL_RESULT_ALERT` (count and whether the SMS went).
+
 ## 2026-11-21: Problem list
 
 One database change, additive (`20261121110000_problem_list`: two new tables);

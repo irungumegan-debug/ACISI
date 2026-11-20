@@ -451,6 +451,8 @@ export interface DoctorQueueItem {
   waitingSince: string;
   /** Came back from the lab with signed results. */
   backFromLab?: boolean;
+  /** Signed results the lab flagged critical. */
+  criticalResults?: number;
 }
 
 export type AppointmentStatus = 'REQUESTED' | 'CONFIRMED' | 'CANCELLED' | 'COMPLETED';

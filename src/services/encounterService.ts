@@ -43,6 +43,8 @@ export interface DoctorQueueItem {
   waitingSince: Date;
   /** True when this visit came back from the lab with signed results. */
   backFromLab: boolean;
+  /** How many of this visit's signed lab results the lab flagged critical (decision support: review first). */
+  criticalResults: number;
 }
 
 /**
@@ -65,7 +67,7 @@ export { doctorQueueFilter } from './doctorScope';
 export async function getDoctorQueue(clinicId: string, departmentIds: string[], staffId: string): Promise<DoctorQueueItem[]> {
   const encounters = await prisma.encounter.findMany({
     where: doctorQueueFilter(clinicId, departmentIds, staffId),
-    include: { patient: true, labOrders: { where: { status: 'RESULTS_READY' }, select: { id: true }, take: 1 } },
+    include: { patient: true, labOrders: { where: { status: 'RESULTS_READY' }, select: { id: true, items: { where: { resultFlag: 'CRITICAL' }, select: { id: true } } } } },
     orderBy: { createdAt: 'asc' },
   });
 
@@ -78,6 +80,7 @@ export async function getDoctorQueue(clinicId: string, departmentIds: string[], 
     status: e.status,
     waitingSince: e.createdAt,
     backFromLab: (e.labOrders?.length ?? 0) > 0,
+    criticalResults: (e.labOrders ?? []).reduce((n, o) => n + (o.items?.length ?? 0), 0),
   }));
 }
 

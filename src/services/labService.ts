@@ -1,3 +1,4 @@
+import { sendSms } from './smsService';
 import { LabOrderStatus, LabResultFlag, Prisma, Sex } from '@prisma/client';
 import { prisma } from '../db/prisma';
 import { logger } from '../utils/logger';
@@ -490,8 +491,46 @@ export async function completeLabOrder(input: { labOrderId: string; clinicId: st
   const encounter = await prisma.encounter.findUnique({ where: { id: order.encounterId }, select: { checkInId: true } });
   if (encounter) publishQueueChanged({ checkInId: encounter.checkInId, clinicId: input.clinicId });
 
+  const criticalCount = order.items.filter((i) => i.resultFlag === 'CRITICAL').length;
+  if (criticalCount > 0) void alertDoctorOfCriticalResult(order.id, criticalCount);
+
   if (!backToDoctor) return { sms: 'not_sent_yet' };
   return { sms: await sendLabResultsReadySms(order.id) };
+}
+
+/**
+ * Decision support for lab results: a result the lab flagged critical is
+ * shown at the top of the doctor's queue and on the consultation page, and
+ * the requesting doctor gets an SMS (no patient name, test or result in
+ * it). Never throws.
+ */
+export async function alertDoctorOfCriticalResult(labOrderId: string, criticalCount: number): Promise<void> {
+  try {
+    const order = await prisma.labOrder.findUniqueOrThrow({
+      where: { id: labOrderId },
+      select: { id: true, clinicId: true, encounterId: true, clinic: { select: { name: true } }, requestedByStaff: { select: { id: true, phoneNumber: true, isActive: true } } },
+    });
+    let sent = false;
+    if (order.requestedByStaff.isActive) {
+      sent =
+        (await sendSms(
+          order.requestedByStaff.phoneNumber,
+          `ACISI: a CRITICAL lab result is ready for one of your patients at ${order.clinic.name}. Please open your queue and review it now.`,
+          'LAB_CRITICAL_RESULT_ALERT',
+          order.clinicId,
+        )) === 'sent';
+    }
+    await recordAuditEvent({
+      actorType: 'SYSTEM',
+      action: 'LAB_CRITICAL_RESULT_ALERT',
+      entityType: 'LabOrder',
+      entityId: order.id,
+      clinicId: order.clinicId,
+      metadata: { encounterId: order.encounterId, criticalCount, doctorSmsSent: sent },
+    });
+  } catch (err) {
+    logger.error({ err, labOrderId }, 'Critical lab result alert failed');
+  }
 }
 
 /**

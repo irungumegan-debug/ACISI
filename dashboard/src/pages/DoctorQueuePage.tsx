@@ -163,14 +163,22 @@ export function DoctorQueuePage() {
                         <p className="truncate font-display font-semibold text-navy-900">{item.patientName}</p>
                         <p className="mt-0.5 flex flex-wrap items-center gap-x-3 text-[13px] text-ink-500">
                           {item.patientCode}
-                          {item.backFromLab && <span className="font-semibold text-blue-800 sm:hidden">Back from lab</span>}
+                          {item.criticalResults ? (
+                            <span className="font-semibold text-red-700 sm:hidden">Critical result</span>
+                          ) : (
+                            item.backFromLab && <span className="font-semibold text-blue-800 sm:hidden">Back from lab</span>
+                          )}
                           <span className="inline-flex items-center gap-1">
                             <Clock size={13} aria-hidden /> Waiting <strong className="text-navy-900">{waited(item.waitingSince, now)}</strong>
                           </span>
                         </p>
                       </div>
                       <span className="hidden sm:inline-flex">
-                        {item.backFromLab ? (
+                        {item.criticalResults ? (
+                          <Badge tone="danger" icon={FlaskConical}>
+                            Critical result
+                          </Badge>
+                        ) : item.backFromLab ? (
                           <Badge tone="blue" icon={FlaskConical}>
                             Back from lab
                           </Badge>
