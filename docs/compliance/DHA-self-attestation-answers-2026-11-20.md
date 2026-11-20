@@ -42,7 +42,7 @@ device; no automated diagnosis.
 | Allergy recording and warning at prescribing | Yes (override needs a reason, kept encrypted) | |
 | Lab requests and results, signed | Yes | |
 | Patient files (scans, photos of paper records) | Yes, encrypted on disk | `src/services/fileStorageService.ts` |
-| Billing / payments | Cash and M-Pesa recorded; M-Pesa STK push in **sandbox only** (going live next) | `src/mpesa/clinicStk.ts` |
+| Billing / payments | Check-in fee: **live M-Pesa** (STK push, confirmed 20 Nov 2026). Clinic checkout: cash and M-Pesa recorded; checkout STK push not yet live | `src/mpesa/` |
 
 ## 4. Reporting
 
@@ -96,7 +96,7 @@ device; no automated diagnosis.
 | G5 | Backup copy is on the same server | Off-server copy kept in Kenya | Before onboarding more clinics |
 | G6 | No external uptime alert | Add one on `/healthz` | Dec 2026 |
 | G7 | Automatic deletion at end of retention | Build | Q2 2027 |
-| G8 | Card payments and live M-Pesa | Sandbox only today | Next |
+| G8 | Card payments and live M-Pesa at clinic checkout | Check-in fee live on M-Pesa since 20 Nov 2026; checkout prompts and cards next | Dec 2026 |
 | G9 | Breach procedure does not yet name DHA | Add DHA notification (48 h) to the breach procedure | Dec 2026 |
 
 ---

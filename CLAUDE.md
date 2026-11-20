@@ -8,6 +8,12 @@ USSD-first clinic management platform for small clinics in Kenya. See
 - **USSD check-in:** planned for Dec 2026 / early 2027. When live, add the
   USSD code to the walk-in invite SMS (see invite template:
   `buildWalkInInviteSms` in `src/services/smsTemplates.ts`).
+- **ACISI check-in fee on live M-Pesa: confirmed working 20 Nov 2026**
+  (owner paid a real STK prompt from their phone; payment showed on
+  acisi.co.ke). Production Daraja, Buy Goods till (runbook "Switching ACISI's
+  M-Pesa to production"). Note: clinic checkout prompts switch off on a
+  production server (`clinicStkConfigured`), so clinic checkout M-Pesa is
+  cash/manual until the item below is done.
 - **Clinic checkout payments (live):** Go live with M-Pesa STK push per clinic
   (production Daraja credentials or a payment provider like
   IntaSend/Pesapal/Paystack), and add live card payments. Currently sandbox
