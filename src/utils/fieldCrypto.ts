@@ -38,6 +38,22 @@ export const ENCRYPTED_FIELDS: ReadonlySet<string> = new Set([
   'drugName',
   'instructions',
   'allergyOverrideReason',
+  // staff: authenticator-app secret
+  'totpSecret',
+  // patients: national Client Registry ID (HIE)
+  'hieCrId',
+  // hie_visits: per-visit consent token for the national record
+  'consentToken',
+  // service_orders (radiology, therapy and other orders)
+  'orderDescription',
+  'orderNote',
+  // patient_problems
+  'problemTitle',
+  'problemNote',
+  // encounters: the doctor's plan / follow-up
+  'carePlan',
+  // patients: family history
+  'familyHistory',
 ]);
 
 let cachedKey: Buffer | null | undefined;

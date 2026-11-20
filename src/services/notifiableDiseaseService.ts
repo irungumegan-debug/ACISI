@@ -5,6 +5,7 @@ import { sendSms } from './smsService';
 import { buildNotifiableAlertSms } from './smsTemplates';
 import { ageInYears } from './labService';
 import { logger } from '../utils/logger';
+import { emailImmediateNotice } from './surveillanceEmailService';
 import { EVENT_FORM_ROWS, eventsBetween } from './publicHealthEventService';
 import { matchNotifiable, NOTIFIABLE_DISEASES, NOTIFIABLE_LIST_CONFIRMED, NOTIFIABLE_LIST_SOURCE, NotifiableReporting } from './notifiableDiseases';
 
@@ -24,6 +25,8 @@ export interface NotifiableAlert {
   icd11Code: string;
   /** e.g. "reported by testing laboratories only". */
   note?: string;
+  /** International Health Regulations flag (see notifiableDiseases.ts). */
+  ihr?: 'ALWAYS' | 'ASSESS';
 }
 
 type Tx = Prisma.TransactionClient;
@@ -55,6 +58,7 @@ export async function recordNotifiableCases(
     reporting: disease.reporting,
     icd11Code: code,
     ...(disease.note ? { note: disease.note } : {}),
+    ...(disease.ihr ? { ihr: disease.ihr } : {}),
   }));
 }
 
@@ -76,6 +80,8 @@ export async function notifyNotifiableCases(input: { clinicId: string; staffId: 
       metadata: { diseaseIds: input.alerts.map((a) => a.diseaseId), immediate: input.alerts.some((a) => a.reporting === 'IMMEDIATE') },
     });
     if (!input.alerts.some((a) => a.reporting === 'IMMEDIATE')) return;
+    const immediate = input.alerts.filter((a) => a.reporting === 'IMMEDIATE');
+    void emailImmediateNotice({ clinicId: input.clinicId, kind: 'case', items: immediate.map((a) => ({ name: a.name, ihr: a.ihr })), at: new Date(), entityType: 'Encounter', entityId: input.encounterId });
 
     const [clinic, staff] = await Promise.all([
       prisma.clinic.findUnique({ where: { id: input.clinicId }, select: { name: true } }),
@@ -115,6 +121,7 @@ export interface NotifiableCaseView {
   reportedAt: Date | null;
   reportedBy: string | null;
   reportNote: string | null;
+  ihr: 'ALWAYS' | 'ASSESS' | null;
 }
 
 /** The clinic's cases, newest first: doctors only (names a patient and a diagnosis). */
@@ -144,6 +151,7 @@ export async function listNotifiableCases(clinicId: string, options: { unreporte
     reportedAt: r.reportedAt,
     reportedBy: r.reportedByStaff?.name ?? null,
     reportNote: r.reportNote,
+    ihr: NOTIFIABLE_DISEASES.find((d) => d.id === r.diseaseId)?.ihr ?? null,
   }));
 }
 

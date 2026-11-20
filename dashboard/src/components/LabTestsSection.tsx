@@ -13,7 +13,8 @@ export function LabTestsSection() {
   const [tests, setTests] = useState<LabTestItem[] | null>(null);
   const [name, setName] = useState('');
   const [price, setPrice] = useState('');
-  const [editing, setEditing] = useState<{ id: string; name: string; price: string } | null>(null);
+  const [editing, setEditing] = useState<{ id: string; name: string; price: string; loinc: string } | null>(null);
+  const [suggestions, setSuggestions] = useState<{ code: string; name: string }[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -63,7 +64,10 @@ export function LabTestsSection() {
       setError('Enter the price in whole shillings.');
       return;
     }
-    if (await run(() => api.updateLabTest(editing.id, { name: editing.name, priceKes }))) setEditing(null);
+    if (await run(() => api.updateLabTest(editing.id, { name: editing.name, priceKes, loincCode: editing.loinc.trim() || null }))) {
+      setEditing(null);
+      setSuggestions(null);
+    }
   }
 
   return (
@@ -90,18 +94,53 @@ export function LabTestsSection() {
                   <button type="button" className={btn.secondary} disabled={busy} onClick={() => setEditing(null)}>
                     Cancel
                   </button>
+                  <div className="sm:col-span-4">
+                    <label className="block sm:w-56">
+                      <span className={field.label}>LOINC code (optional)</span>
+                      <input className={field.input} placeholder="e.g. 718-7" maxLength={12} value={editing.loinc} onChange={(e) => setEditing({ ...editing, loinc: e.target.value })} />
+                    </label>
+                    <button
+                      type="button"
+                      className={`${btn.ghost} mt-1`}
+                      onClick={() =>
+                        void api
+                          .loincSuggestions(editing.name)
+                          .then((r) => setSuggestions(r.suggestions))
+                          .catch(() => setSuggestions([]))
+                      }
+                    >
+                      Suggest a code
+                    </button>
+                    {suggestions && suggestions.length === 0 && <p className="text-xs text-ink-500">No suggestion for this name. Look the test up on loinc.org.</p>}
+                    {suggestions && suggestions.length > 0 && (
+                      <ul className="mt-1 space-y-1 text-sm">
+                        {suggestions.map((sg) => (
+                          <li key={sg.code}>
+                            <button type="button" className="text-left text-navy-900 underline underline-offset-2" onClick={() => setEditing({ ...editing, loinc: sg.code })}>
+                              <span className="font-mono">{sg.code}</span> {sg.name}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <p className="mt-1 text-xs text-ink-500">International lab code: lets results be read by other systems (national health record).</p>
+                  </div>
                 </form>
               </li>
             ) : (
               <li key={t.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
                 <span className={`flex-1 font-medium ${t.isActive ? 'text-navy-900' : 'text-ink-400 line-through'}`}>{t.name}</span>
+                {t.loincCode && <span className="font-mono text-xs text-ink-500">LOINC {t.loincCode}</span>}
                 <span className="text-sm text-ink-700">KES {t.priceKes.toLocaleString('en-KE')}</span>
                 {!t.isActive && <Badge tone="neutral">Not offered</Badge>}
                 <button
                   type="button"
                   className={btn.ghost}
                   disabled={busy}
-                  onClick={() => setEditing({ id: t.id, name: t.name, price: String(t.priceKes) })}
+                  onClick={() => {
+                    setSuggestions(null);
+                    setEditing({ id: t.id, name: t.name, price: String(t.priceKes), loinc: t.loincCode ?? '' });
+                  }}
                   aria-label={`Edit ${t.name}`}
                 >
                   <Pencil size={14} aria-hidden /> Edit

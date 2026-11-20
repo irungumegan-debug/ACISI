@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { AllergyConflict, api, ApiError, EncounterDetail, Icd11Code, NotifiableAlert } from '../lib/api';
+import { AllergyConflict, api, ApiError, EncounterDetail, Icd11Code, IHR_TEXT, NotifiableAlert } from '../lib/api';
 import { describeLine, DraftLine, emptyLine, lineProblem, PrescriptionEditor, toPrescriptionLine, usePrescriptionOptions } from '../components/PrescriptionEditor';
 import { Medications } from '../components/Medications';
 import { Icd11Picker } from '../components/Icd11Picker';
@@ -8,6 +8,11 @@ import { useAuth } from '../context/AuthContext';
 import { AlertTriangle, ArrowLeft, Building2, FileText, Lock, NotebookPen, Phone, Pill, ShieldCheck, Stethoscope } from 'lucide-react';
 import { Avatar, btn, EmptyState, field, SkeletonList, StatusBadge } from '../components/ui';
 import { PatientFiles } from '../components/PatientFiles';
+import { HieVisitPanel } from '../components/HieVisitPanel';
+import { ServiceOrdersEditor } from '../components/ServiceOrders';
+import { VitalSignsCard } from '../components/VitalSigns';
+import { ProblemList } from '../components/ProblemList';
+import { FamilyHistory } from '../components/FamilyHistory';
 import { LabOrdersForVisit, LabResultLine, RequestLabTests } from '../components/DoctorLab';
 import { Allergies } from '../components/Allergies';
 
@@ -34,6 +39,7 @@ export function DoctorEncounterPage() {
   const [diagnosis, setDiagnosis] = useState('');
   const [lines, setLines] = useState<DraftLine[]>(() => [emptyLine()]);
   const [advice, setAdvice] = useState('');
+  const [carePlan, setCarePlan] = useState('');
   const [conflicts, setConflicts] = useState<AllergyConflict[]>([]);
   const rxOptions = usePrescriptionOptions();
   const [step, setStep] = useState<Step>('edit');
@@ -92,6 +98,7 @@ export function DoctorEncounterPage() {
         diagnosis,
         prescriptionItems: lines.map(toPrescriptionLine),
         prescriptionAdvice: advice.trim(),
+        carePlan: carePlan.trim() || undefined,
         pin,
       });
       if (res.notifiable && res.notifiable.length > 0) setNotifiable(res.notifiable);
@@ -140,6 +147,14 @@ export function DoctorEncounterPage() {
       </div>
 
     <Allergies encounterId={encounter.encounterId} initial={encounter.allergies ?? []} hiddenElsewhere={encounter.allergiesHiddenElsewhere ?? false} />
+
+    <ProblemList encounterId={encounter.encounterId} initial={encounter.problems ?? []} hiddenElsewhere={encounter.problemsHiddenElsewhere ?? false} />
+
+    <FamilyHistory encounterId={encounter.encounterId} initial={encounter.familyHistory ?? null} />
+
+    <VitalSignsCard encounterId={encounter.encounterId} editable={step === 'edit'} />
+
+    <HieVisitPanel encounterId={encounter.encounterId} mode="doctor" />
 
     <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
       <div className="order-2 lg:order-1">
@@ -224,6 +239,7 @@ export function DoctorEncounterPage() {
           <RequestLabTests encounterId={encounter.encounterId} onSent={() => navigate('/doctor/queue', { replace: true })} />
         </div>
       )}
+      <ServiceOrdersEditor encounterId={encounter.encounterId} initial={encounter.serviceOrders ?? []} editable={step === 'edit'} />
       <div className="h-fit rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card sm:p-7">
         <ol className="mb-5 flex items-center gap-2 text-sm" aria-label="Progress">
           <li className={`flex items-center gap-2 ${step === 'edit' ? 'font-semibold text-navy-900' : 'text-ink-500'}`} aria-current={step === 'edit' ? 'step' : undefined}>
@@ -286,6 +302,19 @@ export function DoctorEncounterPage() {
                   className={`${field.input} min-h-20 resize-y py-3`}
                 />
               </div>
+              <div>
+                <label className={field.label} htmlFor="carePlan">
+                  Plan / follow-up (optional)
+                </label>
+                <textarea
+                  id="carePlan"
+                  value={carePlan}
+                  maxLength={1000}
+                  onChange={(e) => setCarePlan(e.target.value)}
+                  placeholder="e.g. Review in 2 weeks with home BP readings; refer to nutrition if weight keeps rising"
+                  className={`${field.input} min-h-20 resize-y py-3`}
+                />
+              </div>
               {error && step === 'edit' && (
                 <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3.5 py-2.5 text-sm text-red-700">
                   {error}
@@ -336,6 +365,12 @@ export function DoctorEncounterPage() {
                   ))}
                   {advice.trim() && <li className="whitespace-pre-wrap pl-6">{advice.trim()}</li>}
                 </ul>
+                {carePlan.trim() && (
+                  <p className="whitespace-pre-wrap">
+                    <span className="font-semibold text-navy-900">Plan / follow-up: </span>
+                    {carePlan.trim()}
+                  </p>
+                )}
                 <p className="border-t border-slate-200 pt-3 font-medium text-navy-900">I confirm this prescription is accurate and complete.</p>
               </div>
               <div>
@@ -413,6 +448,7 @@ function NotifiableNotice({ alerts, onDone }: { alerts: NotifiableAlert[]; onDon
               {a.reporting === 'IMMEDIATE' ? 'report within 24 hours' : 'counted in the weekly report'}
             </span>
             {a.note && <span className="basis-full text-xs text-ink-500">{a.note}</span>}
+            {a.ihr && <span className="basis-full text-xs font-semibold text-red-800">{IHR_TEXT[a.ihr]}</span>}
           </li>
         ))}
       </ul>

@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import { Navigate, NavLink, Outlet, useLocation } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
-import { BarChart3, CalendarDays, FileBarChart, ClipboardList, FlaskConical, LogOut, Menu, ScrollText, Settings, ShieldAlert, UserRound, UsersRound, X } from 'lucide-react';
+import { BarChart3, CalendarDays, FileBarChart, ClipboardList, FlaskConical, LogOut, Menu, Network, ScrollText, Settings, ShieldAlert, UserRound, UsersRound, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api, ApiError, LegalStatus } from '../lib/api';
 import { CONFIDENTIALITY_UNDERTAKING_PATH, legalBoxSatisfied, PRIVACY_PATH, TERMS_PATH } from '../lib/legal';
@@ -25,10 +25,11 @@ function navFor(role: string): NavItem[] {
       { to: '/doctor/appointments', label: 'Appointments', icon: CalendarDays },
       { to: '/surveillance', label: 'Disease surveillance', icon: ShieldAlert },
       { to: '/reports/routine', label: 'Routine reports', icon: FileBarChart },
+      { to: '/national-hie', label: 'National HIE', icon: Network },
     ];
   }
   const items: NavItem[] = [
-    { to: '/queue', label: 'Queue', icon: UsersRound, also: ['/walk-in', '/checkout'] },
+    { to: '/queue', label: 'Queue', icon: UsersRound, also: ['/walk-in', '/checkout', '/visits'] },
     { to: '/patients', label: 'Patients', icon: UserRound },
     { to: '/appointments', label: 'Appointments', icon: CalendarDays },
   ];
@@ -37,9 +38,11 @@ function navFor(role: string): NavItem[] {
       { to: '/reports/daily', label: 'Daily summary', icon: BarChart3 },
       { to: '/reports/routine', label: 'Routine reports', icon: FileBarChart },
       { to: '/surveillance', label: 'Disease surveillance', icon: ShieldAlert },
+      { to: '/national-hie', label: 'National HIE', icon: Network },
       { to: '/settings', label: 'Settings', icon: Settings },
     );
   }
+  if (role === 'CLINICIAN') items.push({ to: '/national-hie', label: 'National HIE', icon: Network });
   return items;
 }
 
@@ -59,6 +62,8 @@ const PAGE_TITLES: [string, string][] = [
   ['/patients', 'Patients'],
   ['/appointments', 'Appointments'],
   ['/settings', 'Settings'],
+  ['/national-hie', 'National HIE'],
+  ['/visits', 'Vital signs'],
   ['/surveillance', 'Disease surveillance'],
   ['/doctor/queue', 'My queue'],
   ['/doctor/appointments', 'Appointments'],
@@ -95,6 +100,29 @@ function useUnreportedCount(role: string | undefined, pathname: string): number 
     };
   }, [role, pathname]);
   return role === 'DOCTOR' || role === 'ADMIN' ? count : 0;
+}
+
+/**
+ * On-screen alert on every page while an immediately reportable case or
+ * public health event hasn't been reported to the Sub-County (doctors see
+ * cases and events, clinic admins events). Works without SMS.
+ */
+function ReportNowBanner() {
+  const { session } = useAuth();
+  const { pathname } = useLocation();
+  const count = useUnreportedCount(session?.role, pathname);
+  if (count === 0 || pathname === '/surveillance') return null;
+  return (
+    <div role="alert" className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900 print:hidden">
+      <p className="flex items-center gap-2 font-semibold">
+        <ShieldAlert size={18} aria-hidden className="flex-none" />
+        {count} immediately reportable {count === 1 ? 'case or event is' : 'cases or events are'} not yet reported to the Sub-County. Report within 24 hours.
+      </p>
+      <NavLink to="/surveillance" className="rounded-full bg-red-700 px-4 py-1.5 text-sm font-semibold text-white hover:bg-red-800">
+        Open disease surveillance
+      </NavLink>
+    </div>
+  );
 }
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
@@ -429,7 +457,10 @@ export function ProtectedLayout() {
         </header>
         <main id="main" className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8 print:max-w-none print:p-0">
           {termsStatus === 'accepted' ? (
-            <Outlet />
+            <>
+              <ReportNowBanner />
+              <Outlet />
+            </>
           ) : termsStatus === 'required' ? (
             <AcceptTermsCard legal={legal} onAccepted={() => setTermsStatus('accepted')} />
           ) : termsStatus === 'error' ? (

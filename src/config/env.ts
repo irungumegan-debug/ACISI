@@ -96,11 +96,21 @@ const envSchema = z.object({
   FILE_UPLOAD_MIN_FREE_MB: z.coerce.number().int().min(0).default(2048),
 
   /**
-   * Multi-factor login (SMS code) for clinic admins and doctors. Off until
-   * real SMS delivery is confirmed (with Africa's Talking in sandbox, codes
-   * would never reach a phone and admins and doctors would be locked out).
+   * Multi-factor login for clinic admins and doctors: after the PIN, a
+   * 6-digit code from an authenticator app (set up at their first login).
+   * Needs no SMS, so it works while SMS is still in sandbox.
    */
   STAFF_MFA_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+
+  /**
+   * With STAFF_MFA_ENABLED: also allow the login code by SMS, for staff who
+   * haven't set up an authenticator app. Off until real SMS delivery is
+   * confirmed (with Africa's Talking in sandbox, codes never reach a phone).
+   */
+  STAFF_MFA_SMS_ENABLED: z
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
@@ -115,6 +125,20 @@ const envSchema = z.object({
     .trim()
     .optional()
     .refine((v) => !v || Buffer.from(v, 'base64').length === 32, 'DATA_ENCRYPTION_KEY must be 32 bytes, base64-encoded (openssl rand -base64 32)'),
+
+  /**
+   * DHA Health Information Exchange (HIE). Off until DHA issues ACISI's
+   * client credentials (afyaconnect.dha@gmail.com). HIE_BASE_URL defaults to
+   * DHA's development middleware; set the production URL only after DHA
+   * certification. See docs/compliance/HIE-integration-plan.md.
+   */
+  HIE_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  HIE_BASE_URL: z.string().url().default('https://ilm-dev.dha.go.ke/uat-middleware/api/v1'),
+  HIE_CLIENT_ID: z.string().trim().optional(),
+  HIE_CLIENT_SECRET: z.string().trim().optional(),
 
   STAFF_PIN_SALT_ROUNDS: z.coerce.number().int().min(4).max(15).default(10),
 
@@ -162,10 +186,16 @@ export function productionEncryptionProblems(e: Env): string[] {
   return ['DATA_ENCRYPTION_KEY: required when NODE_ENV=production (create one with: openssl rand -base64 32)'];
 }
 
+/** HIE switched on without the credentials DHA issued. */
+export function hieProblems(e: Env): string[] {
+  if (!e.HIE_ENABLED || (e.HIE_CLIENT_ID && e.HIE_CLIENT_SECRET)) return [];
+  return ['HIE_CLIENT_ID and HIE_CLIENT_SECRET: required when HIE_ENABLED=true (credentials from DHA)'];
+}
+
 export function parseEnv(source: NodeJS.ProcessEnv): Env {
   const parsed = envSchema.safeParse(source);
   const issues = parsed.success
-    ? [...productionMpesaProblems(parsed.data), ...productionEncryptionProblems(parsed.data)]
+    ? [...productionMpesaProblems(parsed.data), ...productionEncryptionProblems(parsed.data), ...hieProblems(parsed.data)]
     : parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`);
   if (issues.length > 0) {
     throw new Error(`Invalid environment configuration:\n${issues.map((i) => `  - ${i}`).join('\n')}`);

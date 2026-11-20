@@ -1,6 +1,9 @@
+import { formatPrescriptionLine, rowToLine } from './prescriptionService';
+import { bmi } from './vitalAssessment';
+import { SERVICE_ORDER_CATEGORIES } from './serviceOrderService';
 import path from 'node:path';
 import PDFDocument from 'pdfkit';
-import { StaffRole } from '@prisma/client';
+import { ServiceOrderCategory, StaffRole } from '@prisma/client';
 import { parseDiagnosisCodes } from './icd11Service';
 
 const SIGNATURE_FONT_PATH = path.join(__dirname, '../assets/fonts/DancingScript-Regular.woff');
@@ -41,6 +44,16 @@ export interface VisitRecordData {
   } | null;
   /** Signed lab results of this visit (empty when none, or not shown to this reader yet). */
   labResults: VisitLabResult[];
+  /** Radiology, therapy and other orders (not cancelled), e.g. "Radiology / imaging: Chest X-ray PA". */
+  otherOrders?: string[];
+  /** The visit's vital signs, one line per set, e.g. "BP 120/80 mmHg · Pulse 72/min · Temp 36.8 °C". */
+  vitalSigns?: string[];
+  /** Patient biodata for the header: date of birth, sex, ID document. */
+  biodata?: { dateOfBirth: Date | null; sex: string | null; idDocument: string | null };
+  /** Other medicines the patient is still taking, prescribed at earlier visits at this clinic. */
+  currentMedicines?: string[];
+  /** The doctor's plan / follow-up. */
+  carePlan?: string | null;
 }
 
 export interface VisitLabResult {
@@ -66,6 +79,51 @@ export function visitRecordLabInclude(options: { patientView?: boolean } = {}) {
   };
 }
 
+/**
+ * Add as `patient: visitRecordPatientInclude` to an encounter query: the
+ * patient's own fields plus their recent signed visits' medicines, for
+ * "Other current medicines".
+ */
+export const visitRecordPatientInclude = {
+  include: {
+    encounters: {
+      where: { consultedAt: { not: null } },
+      orderBy: { consultedAt: 'desc' as const },
+      take: 20,
+      select: { id: true, clinicId: true, consultedAt: true, prescriptionItems: { orderBy: { position: 'asc' as const } } },
+    },
+  },
+};
+
+const ID_LABEL: Record<string, string> = { NATIONAL_ID: 'National ID', PASSPORT: 'Passport', BIRTH_CERTIFICATE: 'Birth certificate', ALIEN_ID: 'Alien ID' };
+const SEX_LABEL: Record<string, string> = { MALE: 'Male', FEMALE: 'Female', OTHER: 'Other' };
+
+/** Add to an encounter query to load its vital signs for the visit record. */
+export const visitRecordVitalsInclude = { orderBy: { recordedAt: 'asc' as const } };
+
+/** One readable line per set of vital signs. */
+export function vitalSignsLine(v: { systolic: number | null; diastolic: number | null; pulse: number | null; respiratoryRate: number | null; temperatureC: number | null; oxygenSaturation: number | null; weightKg: number | null; heightCm: number | null; muacCm: number | null }): string {
+  const parts: string[] = [];
+  if (v.systolic != null && v.diastolic != null) parts.push(`BP ${v.systolic}/${v.diastolic} mmHg`);
+  if (v.pulse != null) parts.push(`Pulse ${v.pulse}/min`);
+  if (v.respiratoryRate != null) parts.push(`Breathing ${v.respiratoryRate}/min`);
+  if (v.temperatureC != null) parts.push(`Temp ${v.temperatureC} °C`);
+  if (v.oxygenSaturation != null) parts.push(`SpO2 ${v.oxygenSaturation}%`);
+  if (v.weightKg != null) parts.push(`Weight ${v.weightKg} kg`);
+  if (v.heightCm != null) parts.push(`Height ${v.heightCm} cm`);
+  const b = bmi(v.weightKg, v.heightCm);
+  if (b !== null) parts.push(`BMI ${b}`);
+  if (v.muacCm != null) parts.push(`MUAC ${v.muacCm} cm`);
+  return parts.join(' · ');
+}
+
+/** Add to an encounter query to load its radiology, therapy and other orders for the visit record. */
+export const visitRecordOrdersInclude = {
+  where: { status: { not: 'CANCELLED' as const } },
+  orderBy: { requestedAt: 'asc' as const },
+  select: { category: true, orderDescription: true },
+};
+
 const FLAG_LABEL: Record<'NORMAL' | 'ABNORMAL' | 'CRITICAL', string> = { NORMAL: 'Normal', ABNORMAL: 'Abnormal', CRITICAL: 'Critical' };
 
 interface EncounterForVisitRecord {
@@ -74,7 +132,20 @@ interface EncounterForVisitRecord {
   diagnosisCodes: string | null;
   prescription: string | null;
   consultedAt: Date | null;
-  patient: { firstName: string; lastName: string; patientCode: string };
+  id?: string;
+  clinicId?: string;
+  carePlan?: string | null;
+  patient: {
+    firstName: string;
+    lastName: string;
+    patientCode: string;
+    dateOfBirth?: Date | null;
+    sex?: string | null;
+    idType?: string | null;
+    idNumber?: string | null;
+    /** Load with visitRecordPatientInclude for "Other current medicines". */
+    encounters?: { id: string; clinicId: string; consultedAt: Date | null; prescriptionItems: Parameters<typeof rowToLine>[0][] & { durationDays: number | null; frequency: string }[] }[];
+  };
   clinic: { name: string; county: string | null };
   checkIn: { department: { name: string } };
   consultedByStaff: { name: string; role: StaffRole } | null;
@@ -84,6 +155,10 @@ interface EncounterForVisitRecord {
     completedByStaff: { name: string } | null;
     items: { testName: string; resultValue: string | null; resultUnit: string | null; resultFlag: 'NORMAL' | 'ABNORMAL' | 'CRITICAL' | null; resultComment: string | null }[];
   }[];
+  /** Load with visitRecordOrdersInclude; left out, the record has no orders section. */
+  serviceOrders?: { category: ServiceOrderCategory; orderDescription: string }[];
+  /** Load with visitRecordVitalsInclude; left out, the record has no vital signs line. */
+  vitalSigns?: Parameters<typeof vitalSignsLine>[0][];
 }
 
 /**
@@ -93,6 +168,23 @@ interface EncounterForVisitRecord {
  * download, and the checkout-time email) so they can't drift apart on how
  * a visit's data becomes a document.
  */
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Medicines from earlier visits at the same clinic whose course was still running on this visit's date. */
+function otherCurrentMedicines(encounter: EncounterForVisitRecord): string[] {
+  if (!encounter.id || !encounter.clinicId || !encounter.patient.encounters) return [];
+  const at = (encounter.consultedAt ?? encounter.createdAt).getTime();
+  const out: string[] = [];
+  for (const e of encounter.patient.encounters) {
+    if (e.id === encounter.id || e.clinicId !== encounter.clinicId || !e.consultedAt || e.consultedAt.getTime() >= at) continue;
+    for (const item of e.prescriptionItems) {
+      const days = item.durationDays ?? (item.frequency === 'STAT' ? 1 : 30);
+      if (e.consultedAt.getTime() + days * DAY_MS > at) out.push(formatPrescriptionLine(rowToLine(item)));
+    }
+  }
+  return out;
+}
+
 export function buildVisitRecordDataFromEncounter(encounter: EncounterForVisitRecord): VisitRecordData {
   return {
     patientName: `${encounter.patient.firstName} ${encounter.patient.lastName}`,
@@ -122,6 +214,15 @@ export function buildVisitRecordDataFromEncounter(encounter: EncounterForVisitRe
         signedAt: o.completedAt,
       })),
     ),
+    vitalSigns: (encounter.vitalSigns ?? []).map(vitalSignsLine).filter(Boolean),
+    biodata: {
+      dateOfBirth: encounter.patient.dateOfBirth ?? null,
+      sex: encounter.patient.sex ? (SEX_LABEL[encounter.patient.sex] ?? null) : null,
+      idDocument: encounter.patient.idType && encounter.patient.idNumber ? `${ID_LABEL[encounter.patient.idType] ?? encounter.patient.idType} ${encounter.patient.idNumber}` : null,
+    },
+    currentMedicines: otherCurrentMedicines(encounter),
+    carePlan: encounter.carePlan ?? null,
+    otherOrders: (encounter.serviceOrders ?? []).map((o) => `${SERVICE_ORDER_CATEGORIES[o.category].label}: ${o.orderDescription}`),
   };
 }
 
@@ -154,10 +255,26 @@ function drawVisitPage(doc: PDFKit.PDFDocument, data: VisitRecordData): void {
 
   doc.fontSize(11);
   doc.text(`Patient: ${data.patientName} (${data.patientCode})`);
+  if (data.biodata) {
+    const parts = [
+      data.biodata.dateOfBirth ? `Born ${data.biodata.dateOfBirth.toISOString().slice(0, 10)}` : null,
+      data.biodata.sex,
+      data.biodata.idDocument,
+    ].filter(Boolean);
+    if (parts.length) doc.text(parts.join(' · '));
+  }
   doc.text(`Clinic: ${data.clinicName}`);
   doc.text(`Department: ${data.departmentName}`);
-  doc.text(`Visit date: ${data.visitedAt.toLocaleDateString()}`);
+  doc.text(`Visit date: ${data.visitedAt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Africa/Nairobi' })}`);
   doc.moveDown(1.5);
+
+  if (data.vitalSigns && data.vitalSigns.length > 0) {
+    doc.fontSize(13).text('Vital signs', { underline: true });
+    doc.moveDown(0.3);
+    doc.fontSize(11);
+    for (const line of data.vitalSigns) doc.text(line);
+    doc.moveDown(1.5);
+  }
 
   doc.fontSize(13).text('Diagnosis / notes', { underline: true });
   doc.moveDown(0.3);
@@ -184,8 +301,31 @@ function drawVisitPage(doc: PDFKit.PDFDocument, data: VisitRecordData): void {
     }
     const signer = data.labResults.find((r) => r.signedByName && r.signedAt);
     if (signer) {
-      doc.fontSize(10).fillColor('#555555').text(`Lab results signed by ${signer.signedByName} on ${signer.signedAt!.toLocaleString()}`).fillColor('#000000');
+      doc.fontSize(10).fillColor('#555555').text(`Lab results signed by ${signer.signedByName} on ${signer.signedAt!.toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Africa/Nairobi' })}`).fillColor('#000000');
     }
+  }
+
+  if (data.currentMedicines && data.currentMedicines.length > 0) {
+    doc.moveDown(1.5);
+    doc.fontSize(13).text('Other current medicines', { underline: true });
+    doc.moveDown(0.3);
+    doc.fontSize(11);
+    for (const m of data.currentMedicines) doc.text(m);
+  }
+
+  if (data.carePlan) {
+    doc.moveDown(1.5);
+    doc.fontSize(13).text('Plan / follow-up', { underline: true });
+    doc.moveDown(0.3);
+    doc.fontSize(11).text(data.carePlan);
+  }
+
+  if (data.otherOrders && data.otherOrders.length > 0) {
+    doc.moveDown(1.5);
+    doc.fontSize(13).text('Other orders', { underline: true });
+    doc.moveDown(0.3);
+    doc.fontSize(11);
+    for (const o of data.otherOrders) doc.text(o);
   }
 
   if (data.signature) {
@@ -200,7 +340,7 @@ function drawVisitPage(doc: PDFKit.PDFDocument, data: VisitRecordData): void {
     doc.font('Signature').fontSize(26).text(data.signature.doctorName);
     doc.font('Helvetica').fontSize(10).fillColor('#555555');
     doc.text(data.signature.doctorTitle);
-    doc.text(`Signed electronically via ACISI on ${data.signature.signedAt.toLocaleString()}`);
+    doc.text(`Signed electronically via ACISI on ${data.signature.signedAt.toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Africa/Nairobi' })}`);
     doc.fillColor('#000000');
   }
 }

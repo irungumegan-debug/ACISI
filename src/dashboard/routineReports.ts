@@ -2,6 +2,8 @@ import { Request, Response, Router } from 'express';
 import { requireStaffSession, AuthenticatedRequest } from './auth';
 import { buildRoutineReport, InvalidPeriodError, lastFullMonth, parsePeriod, PeriodBounds, routineReportCsv } from '../services/routineReportService';
 import { recordAuditEvent } from '../services/auditService';
+import { buildQualityMeasures, qualityMeasuresCsv } from '../services/qualityMeasureService';
+import { prisma } from '../db/prisma';
 
 /**
  * Routine reports (monthly, quarterly, annual) at /api/staff/routine-reports:
@@ -54,4 +56,29 @@ routineReportsRouter.get('/csv', async (req, res) => {
     metadata: { period: p.period, value: p.value },
   });
   res.type('text/csv; charset=utf-8').attachment(`acisi-${p.period.toLowerCase()}-report-${p.value}.csv`).send(routineReportCsv(report));
+});
+
+/** Quality-of-care measures for the period (counts and percentages, no names). */
+routineReportsRouter.get('/quality', async (req, res) => {
+  const p = periodFrom(req, res);
+  if (!p) return;
+  res.json(await buildQualityMeasures((req as AuthenticatedRequest).dashboardSession.clinicId, p));
+});
+
+routineReportsRouter.get('/quality/csv', async (req, res) => {
+  const p = periodFrom(req, res);
+  if (!p) return;
+  const { clinicId, staffId } = (req as AuthenticatedRequest).dashboardSession;
+  const [report, clinic] = await Promise.all([buildQualityMeasures(clinicId, p), prisma.clinic.findUnique({ where: { id: clinicId }, select: { name: true } })]);
+  await recordAuditEvent({
+    actorType: 'STAFF',
+    actorId: staffId,
+    staffId,
+    clinicId,
+    action: 'QUALITY_MEASURES_DOWNLOADED',
+    entityType: 'Clinic',
+    entityId: clinicId,
+    metadata: { period: p.period, value: p.value },
+  });
+  res.type('text/csv; charset=utf-8').attachment(`acisi-quality-measures-${p.value}.csv`).send(qualityMeasuresCsv(clinic?.name ?? '', report));
 });

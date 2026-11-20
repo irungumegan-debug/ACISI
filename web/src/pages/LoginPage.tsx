@@ -277,7 +277,8 @@ function StaffLoginForm({
   const [error, setError] = useState<string | null>(null);
   const [lockedOut, setLockedOut] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [challenge, setChallenge] = useState<{ challengeId: string; phoneHint: string } | null>(null);
+  const [challenge, setChallenge] = useState<{ challengeId: string; method: 'authenticator' | 'sms'; phoneHint?: string } | null>(null);
+  const [needsSetup, setNeedsSetup] = useState(false);
   const [code, setCode] = useState('');
   const [rememberDevice, setRememberDevice] = useState(true);
 
@@ -303,7 +304,13 @@ function StaffLoginForm({
     try {
       const result = await api.staffLogin(staffCode, pin);
       if ('mfaRequired' in result) {
-        setChallenge({ challengeId: result.challengeId, phoneHint: result.phoneHint });
+        // Setting up an authenticator app (QR code) happens on the staff console.
+        if (result.method === 'setup') {
+          setNeedsSetup(true);
+          setSubmitting(false);
+          return;
+        }
+        setChallenge({ challengeId: result.challengeId, method: result.method === 'authenticator' ? 'authenticator' : 'sms', phoneHint: result.phoneHint });
         setCode('');
         setSubmitting(false);
         return;
@@ -323,6 +330,21 @@ function StaffLoginForm({
     }
   }
 
+  if (needsSetup) {
+    return (
+      <div className="auth-form">
+        <h1 className="auth-h1">Set up your authenticator app</h1>
+        <p className="auth-sub">
+          Your clinic uses an authenticator app (e.g. Google Authenticator) for admin and doctor logins. The one-time setup, with a QR code to scan, is on the
+          staff console.
+        </p>
+        <a className="auth-submit" href="/console/login">
+          Continue to the staff console
+        </a>
+      </div>
+    );
+  }
+
   if (challenge) {
     return (
       <form className="auth-form" onSubmit={(e) => void handleCode(e)}>
@@ -330,9 +352,13 @@ function StaffLoginForm({
           &larr; Start again
         </button>
         <h1 className="auth-h1">Enter your login code</h1>
-        <p className="auth-sub">We sent a 6-digit code by SMS to your phone ({challenge.phoneHint}). It expires in 5 minutes.</p>
+        <p className="auth-sub">
+          {challenge.method === 'authenticator'
+            ? 'Open your authenticator app (e.g. Google Authenticator) and enter the 6-digit code shown for ACISI.'
+            : `We sent a 6-digit code by SMS to your phone (${challenge.phoneHint}). It expires in 5 minutes.`}
+        </p>
         <div className="field">
-          <label htmlFor="staff-login-code">Code from the SMS</label>
+          <label htmlFor="staff-login-code">{challenge.method === 'authenticator' ? 'Code from the app' : 'Code from the SMS'}</label>
           <input
             id="staff-login-code"
             type="text"

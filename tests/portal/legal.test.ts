@@ -242,6 +242,10 @@ describe('web check-in: optional ID document and next of kin', () => {
       idNumber: 'AK123456',
       nextOfKinName: null,
       nextOfKinPhone: null,
+      county: null,
+      subCounty: null,
+      ward: null,
+      village: null,
     });
     expect((prisma.patient.findFirst as jest.Mock).mock.calls[0][0].where).toMatchObject({ id: 'patient-1' });
   });

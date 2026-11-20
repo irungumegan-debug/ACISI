@@ -40,7 +40,40 @@ export interface NotifiableDisease {
   icd11: string[];
   /** Shown to doctors, e.g. what ACISI can't detect. */
   note?: string;
+  /**
+   * International Health Regulations (2005), Annex 2: 'ALWAYS' = always
+   * notifiable to WHO (smallpox, wild poliovirus, new influenza subtype,
+   * SARS); 'ASSESS' = diseases that always go through the Annex 2 decision
+   * instrument (cholera, pneumonic plague, yellow fever, viral haemorrhagic
+   * fevers, and diseases of special regional concern such as dengue, Rift
+   * Valley fever and meningococcal disease), and any public health event of
+   * international concern. The clinic reports to the Sub-County; the national
+   * IHR focal point decides about WHO.
+   */
+  ihr?: 'ALWAYS' | 'ASSESS';
 }
+
+/** IHR flag per disease id (see NotifiableDisease.ihr). */
+const IHR: Record<string, 'ALWAYS' | 'ASSESS'> = {
+  smallpox: 'ALWAYS',
+  afp: 'ALWAYS',
+  'influenza-new-subtype': 'ALWAYS',
+  'sars-covid': 'ALWAYS',
+  cholera: 'ASSESS',
+  plague: 'ASSESS',
+  'yellow-fever': 'ASSESS',
+  vhf: 'ASSESS',
+  dengue: 'ASSESS',
+  rvf: 'ASSESS',
+  'meningococcal-meningitis': 'ASSESS',
+  mers: 'ASSESS',
+  pheic: 'ASSESS',
+};
+
+export const IHR_NOTE = {
+  ALWAYS: 'IHR: always notifiable internationally. Report immediately; the Sub-County passes it to the national IHR focal point.',
+  ASSESS: 'IHR: may be an event of international concern. Report immediately; the Sub-County assesses it for the national IHR focal point.',
+} as const;
 
 /** Date the list was checked against the MOH documents above. */
 export const NOTIFIABLE_LIST_CONFIRMED: string | null = '2026-11-14';
@@ -137,6 +170,8 @@ export const NOTIFIABLE_DISEASES: NotifiableDisease[] = [
     icd11: [],
   },
 ];
+
+for (const d of NOTIFIABLE_DISEASES) if (IHR[d.id]) d.ihr = IHR[d.id];
 
 /**
  * ICD-11 subcodes: "1F40" -> "1F40.Z" (a dot is added); "1D01.0" ->

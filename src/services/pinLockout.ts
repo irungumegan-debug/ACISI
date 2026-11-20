@@ -10,15 +10,17 @@ import { PIN_LOCKOUT } from '../config/constants';
  *
  * Subjects: `patient:<id>`, `staff:<id>`, `owner:<email>`, and for an
  * identifier that matches no account, `unknown:<normalised identifier>`
- * (so probing for accounts is slowed down too).
+ * (so probing for accounts is slowed down too). `mfa:staff:<id>` counts wrong
+ * login codes separately: a correct PIN must not reset it, or someone who
+ * knows the PIN could keep guessing codes.
  */
-export type LockoutSubject = `patient:${string}` | `staff:${string}` | `owner:${string}` | `unknown:${string}`;
+export type LockoutSubject = `patient:${string}` | `staff:${string}` | `owner:${string}` | `unknown:${string}` | `mfa:staff:${string}`;
 
 const failKey = (subject: LockoutSubject) => `lockout:fails:${subject}`;
 const lockKey = (subject: LockoutSubject) => `lockout:locked:${subject}`;
 
 /** "Too many wrong PINs. Try again in 5 minutes." — built from PIN_LOCKOUT. */
-export function lockoutMessage(what: 'PINs' | 'passwords' = 'PINs'): string {
+export function lockoutMessage(what: 'PINs' | 'passwords' | 'codes' = 'PINs'): string {
   const minutes: number = PIN_LOCKOUT.lockMinutes;
   return `Too many wrong ${what}. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`;
 }

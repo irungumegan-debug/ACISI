@@ -154,26 +154,39 @@ enum AppointmentStatus {
 }
 
 model Clinic {
-  id                  String     @id @default(cuid())
-  name                String
-  county              String?
+  id                        String     @id @default(cuid())
+  name                      String
+  county                    String?
   /// Short numeric code staff give patients to select this clinic within
   /// the shared USSD menu, e.g. "482". Not a phone number, not secret.
-  ussdCode            String     @unique
+  ussdCode                  String     @unique
   /// Persistent invite code (e.g. "SUNRISE-7F2K") shared with prospective
   /// doctors/staff so their signup can attach to this clinic. Regenerable by
   /// a clinic admin — regenerating invalidates the old code for future
   /// signups, but never affects staff who already joined with it.
-  inviteCode          String     @unique
-  isActive            Boolean    @default(true)
+  inviteCode                String     @unique
+  isActive                  Boolean    @default(true)
   /// The clinic's ACISI plan (C24). Sets the default monthly SMS allowance;
   /// the owner can change both from the owner site.
-  plan                ClinicPlan @default(STARTER)
+  plan                      ClinicPlan @default(STARTER)
   /// SMS a month included in the plan; above it, each SMS is charged
   /// SMS_OVERAGE_KES. Starts at the plan's amount, can be changed per clinic.
-  smsMonthlyAllowance Int        @default(500)
-  createdAt           DateTime   @default(now())
-  updatedAt           DateTime   @updatedAt
+  smsMonthlyAllowance       Int        @default(500)
+  /// DHA Health Information Exchange: the clinic's Facility Registry code
+  /// (FR code, e.g. "FID-47-115307-8"), set by the clinic admin after a
+  /// Facility Registry lookup. Sent as X-Facility-Id on HIE calls.
+  hieFacilityId             String?
+  /// Official name the Facility Registry returned, shown to confirm the match.
+  hieFacilityName           String?
+  hieFacilityVerifiedAt     DateTime?
+  /// Email of the Sub-County Disease Surveillance Coordinator (SCDSC). When set (clinic admin),
+  /// ACISI emails the weekly MOH 505 summary every Monday and an immediate notice for each
+  /// immediately reportable case or event: counts and disease names only, never patient details.
+  surveillanceEmail         String?
+  /// Week (Monday, YYYY-MM-DD) whose summary was last emailed, so it goes once.
+  surveillanceWeeklySentFor String?
+  createdAt                 DateTime   @default(now())
+  updatedAt                 DateTime   @updatedAt
 
   staff            Staff[]
   checkIns         CheckIn[]
@@ -242,44 +255,60 @@ model StaffDepartment {
 }
 
 model Staff {
-  id                 String                 @id @default(cuid())
-  clinicId           String
-  clinic             Clinic                 @relation(fields: [clinicId], references: [id])
+  id                    String                 @id @default(cuid())
+  clinicId              String
+  clinic                Clinic                 @relation(fields: [clinicId], references: [id])
   /// System-generated login identifier, e.g. "ACI-STF-7F2K". Never
   /// self-chosen or clinic-supplied. This — not phoneNumber — is what staff
   /// and doctors authenticate with, on both the dashboard and USSD.
-  staffCode          String                 @unique
+  staffCode             String                 @unique
   /// E.164 phone number, e.g. "+2547XXXXXXXX". Contact/SMS purposes only —
   /// never used to authenticate.
-  phoneNumber        String                 @unique
+  phoneNumber           String                 @unique
   /// Optional work email. Contact only; never used to log in.
-  email              String?
-  name               String
+  email                 String?
+  name                  String
   /// bcrypt hash of a staff-chosen numeric PIN. Never store or log the raw PIN.
-  pinHash            String
-  role               StaffRole              @default(RECEPTIONIST)
+  pinHash               String
+  /// Authenticator-app (TOTP, RFC 6238) secret for multi-factor login,
+  /// AES-256-GCM encrypted ("enc:v1:..."). Null until the person sets up
+  /// the app at their first login after MFA is switched on, or after their
+  /// clinic admin resets it (lost phone).
+  totpSecret            String?
+  totpEnabledAt         DateTime?
+  /// DHA Health Worker Registry: regulator (KMPDC, COC, NCK, PPB) and
+  /// registration number the clinician entered, and what the registry
+  /// returned: the Practitioner Unique Identifier (PUID) used on HIE calls,
+  /// the registered name, and when the current licence ends.
+  hieRegulator          String?
+  hieRegistrationNumber String?
+  hiePractitionerId     String?
+  hieRegisteredName     String?
+  hieLicenceEnd         DateTime?
+  hieVerifiedAt         DateTime?
+  role                  StaffRole              @default(RECEPTIONIST)
   /// A doctor's "home" department (the one they signed up to), kept in sync
   /// as their first department for display. Scoping and assignment use
   /// `departments` (StaffDepartment), which can hold several. Null for roles
   /// that aren't department-scoped (front desk, admin).
-  departmentId       String?
-  department         Department?            @relation(fields: [departmentId], references: [id])
-  departments        StaffDepartment[]
-  isActive           Boolean                @default(true)
+  departmentId          String?
+  department            Department?            @relation(fields: [departmentId], references: [id])
+  departments           StaffDepartment[]
+  isActive              Boolean                @default(true)
   /// Set on every successful login (DOCTOR role only) — the automatic
   /// "in today" signal. Compared against presenceOverrideAt (whichever is
   /// more recent, restricted to today) to decide current presence; see
   /// staffService.getDoctorPresenceStatus. Not a schedule or a history —
   /// only today's value is ever meaningful.
-  lastLoginAt        DateTime?
+  lastLoginAt           DateTime?
   /// An explicit "mark in" / "mark out" correction, settable by the doctor
   /// themselves or their clinic admin. Only meaningful when
   /// presenceOverrideAt falls on today; a stale value from a previous day
   /// is ignored, not carried forward.
-  presenceOverride   StaffPresenceOverride?
-  presenceOverrideAt DateTime?
-  createdAt          DateTime               @default(now())
-  updatedAt          DateTime               @updatedAt
+  presenceOverride      StaffPresenceOverride?
+  presenceOverrideAt    DateTime?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
 
   checkIns                 CheckIn[]
   checkInsPaymentConfirmed CheckIn[]               @relation("CheckInPaymentConfirmedBy")
@@ -324,6 +353,13 @@ model Patient {
   dateOfBirth        DateTime?
   sex                Sex            @default(UNKNOWN)
   county             String?
+  /// Residence, below county (Kenya administrative units). Optional; wiped on account deletion.
+  subCounty          String?
+  ward               String?
+  /// Village, estate or landmark.
+  village            String?
+  /// Family history the doctor recorded (e.g. "Mother: diabetes; father: hypertension"). Encrypted at rest.
+  familyHistory      String?
   /// Optional — collected only via the web portal signup form (not USSD,
   /// which has no practical way to enter one). Never used for login or any
   /// notification besides the staff-initiated visit-summary email at
@@ -356,6 +392,13 @@ model Patient {
   idType             PatientIdType?
   /// Normalised: upper case, no spaces (see services/patientIdentity.ts).
   idNumber           String?
+  /// DHA Client Registry ID (CR ID, e.g. "CR9795515286992-5"), the national
+  /// patient identifier used on HIE calls. Encrypted at rest. Only valid
+  /// while hieCrSourceHash matches the current idType/idNumber (a changed ID
+  /// document means looking the patient up again); see hie/patientRegistry.ts.
+  hieCrId            String?
+  hieCrSourceHash    String?
+  hieCrVerifiedAt    DateTime?
   /// Optional next of kin, so the clinic can reach someone on the patient's
   /// behalf. Phone is E.164. Wiped on account deletion.
   nextOfKinName      String?
@@ -481,6 +524,8 @@ model Encounter {
   /// Encrypted at rest. `diagnosis` holds the doctor's own notes.
   diagnosisCodes      String?
   prescription        String?
+  /// The doctor's plan and follow-up for the patient (e.g. "Review in 2 weeks with BP readings"). Optional. Encrypted at rest.
+  carePlan            String?
   consultedByStaffId  String?
   consultedByStaff    Staff?          @relation("EncounterConsultedBy", fields: [consultedByStaffId], references: [id])
   consultedAt         DateTime?
@@ -498,6 +543,12 @@ model Encounter {
   labOrders         LabOrder[]
   notifiableCases   NotifiableDiseaseCase[]
   prescriptionItems PrescriptionItem[]
+
+  hieVisit HieVisit?
+
+  serviceOrders ServiceOrder[]
+
+  vitalSigns VitalSigns[]
 
   @@index([patientId])
   @@index([clinicId])
@@ -1053,6 +1104,8 @@ model LabTest {
   nameKey   String
   /// Whole KES.
   priceKes  Int
+  /// LOINC code for the test (international lab coding), e.g. "718-7" for haemoglobin. Optional.
+  loincCode String?
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1123,6 +1176,8 @@ model LabOrderItem {
   /// Copied from the test when ordered, so a later rename or price change
   /// never alters an existing order or bill.
   testName      String
+  /// LOINC code copied from the test when ordered.
+  loincCode     String?
   priceKes      Int
   position      Int
   resultValue   String?
@@ -1252,6 +1307,12 @@ model PrescriptionItem {
   instructions          String?
   /// Why the doctor prescribed it despite a recorded allergy.
   allergyOverrideReason String?
+  /// Dispensing at checkout: DISPENSED (given at the clinic) or NOT_DISPENSED (patient to buy elsewhere). Null: not recorded.
+  dispenseStatus        String?
+  /// How much was given, in `quantityUnit` (or the dose unit).
+  dispensedQuantity     Float?
+  dispensedAt           DateTime?
+  dispensedByStaffId    String?
   createdAt             DateTime  @default(now())
 
   @@index([encounterId])
@@ -1307,4 +1368,192 @@ model PublicHealthEvent {
 
   @@index([clinicId, detectedOn])
   @@map("public_health_events")
+}
+
+enum HieConsentStatus {
+  /// DHA sent the patient a one-time code; waiting for it.
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum HieSendStatus {
+  NOT_SENT
+  /// Queued or being retried.
+  SENDING
+  /// Accepted by the Shared Health Record (DHA processes it asynchronously).
+  SENT
+  /// Gave up after the retries; staff can try again.
+  FAILED
+}
+
+enum HieCloseStatus {
+  OPEN
+  /// DHA sent the patient a code to confirm closing the visit.
+  CODE_SENT
+  CLOSED
+}
+
+/// One visit's link to DHA's Shared Health Record (SHR): the patient's
+/// consent (bound to this visit), sending the visit's record, and closing
+/// the HIE visit. Created when staff ask for consent. See hie/shrService.ts.
+model HieVisit {
+  id                 String           @id @default(cuid())
+  encounterId        String           @unique
+  encounter          Encounter        @relation(fields: [encounterId], references: [id])
+  clinicId           String
+  patientId          String
+  /// DHA's consent request id (e.g. "VCR-20260624-13698E26") and the
+  /// reference that goes back with the patient's code.
+  consentId          String?
+  otpRecord          String?
+  consentStatus      HieConsentStatus @default(PENDING)
+  /// Approved without a code because the patient couldn't consent (emergency).
+  emergency          Boolean          @default(false)
+  /// DHA's visit id (the EpisodeOfCare the Encounter references).
+  hieVisitId         String?
+  /// Per-visit token for reading the patient's national record. Encrypted at rest.
+  consentToken       String?
+  consentDecidedAt   DateTime?
+  requestedByStaffId String
+  /// Bundle id sent to the SHR (echoed back by DHA as mediator_id).
+  bundleId           String?
+  sendStatus         HieSendStatus    @default(NOT_SENT)
+  sendAttempts       Int              @default(0)
+  sentAt             DateTime?
+  closeStatus        HieCloseStatus   @default(OPEN)
+  closeOtpRecord     String?
+  closedAt           DateTime?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@index([clinicId, closeStatus])
+  @@map("hie_visits")
+}
+
+/// Orders a doctor places besides medicines and lab tests (CPOE).
+enum ServiceOrderCategory {
+  RADIOLOGY
+  PHYSIOTHERAPY
+  OCCUPATIONAL_THERAPY
+  NUTRITION
+  SOCIAL_WORK
+  COUNSELLING
+}
+
+enum ServiceOrderStatus {
+  REQUESTED
+  /// Done at the clinic, or the patient was referred/booked (front desk marks it).
+  DONE
+  /// Withdrawn by the doctor before signing, or not needed.
+  CANCELLED
+}
+
+/// A radiology, therapy, nutrition, social work or counselling order for a
+/// visit, placed by the doctor during the consultation. Front desk sees it at
+/// checkout to arrange it (or refer). Never deleted: cancelled ones stay.
+/// Sent as a FHIR ServiceRequest. See services/serviceOrderService.ts.
+model ServiceOrder {
+  id                 String               @id @default(cuid())
+  encounterId        String
+  encounter          Encounter            @relation(fields: [encounterId], references: [id])
+  clinicId           String
+  patientId          String
+  category           ServiceOrderCategory
+  /// What is ordered, e.g. "Chest X-ray PA", "Lower back physiotherapy, 6 sessions". Encrypted at rest.
+  orderDescription   String
+  /// Why / instructions, e.g. "Productive cough 3 weeks". Encrypted at rest.
+  orderNote          String?
+  urgent             Boolean              @default(false)
+  status             ServiceOrderStatus   @default(REQUESTED)
+  requestedByStaffId String
+  requestedAt        DateTime             @default(now())
+  /// Who marked it done or cancelled, and when.
+  closedByStaffId    String?
+  closedAt           DateTime?
+
+  @@index([encounterId])
+  @@index([clinicId, status])
+  @@map("service_orders")
+}
+
+/// One set of vital signs taken during a visit (triage at the front desk or
+/// by the doctor). Every field is optional: record what was measured. BMI is
+/// worked out from weight and height when shown, never stored. Several sets
+/// per visit are allowed (e.g. a repeat BP). See services/vitalSignsService.ts.
+model VitalSigns {
+  id                String    @id @default(cuid())
+  encounterId       String
+  encounter         Encounter @relation(fields: [encounterId], references: [id])
+  clinicId          String
+  patientId         String
+  recordedByStaffId String
+  recordedAt        DateTime  @default(now())
+  /// mmHg
+  systolic          Int?
+  diastolic         Int?
+  /// beats per minute
+  pulse             Int?
+  /// breaths per minute
+  respiratoryRate   Int?
+  /// degrees Celsius
+  temperatureC      Float?
+  /// %
+  oxygenSaturation  Int?
+  weightKg          Float?
+  heightCm          Float?
+  /// Mid-upper arm circumference, cm (children 6-59 months, pregnancy).
+  muacCm            Float?
+
+  @@index([encounterId])
+  @@index([patientId, recordedAt])
+  @@map("vital_signs")
+}
+
+enum ProblemStatus {
+  ACTIVE
+  RESOLVED
+  /// Recorded by mistake: kept, never shown as a current problem.
+  ENTERED_IN_ERROR
+}
+
+/// The patient's problem list: long-term or important conditions that carry
+/// across visits (e.g. hypertension, diabetes, asthma), coded with ICD-11.
+/// Separate from a visit's diagnoses. Never deleted; every change is kept in
+/// PatientProblemChange. Same sharing rule between clinics as allergies.
+model PatientProblem {
+  id                String                 @id @default(cuid())
+  patientId         String
+  /// Clinic where it was first recorded.
+  clinicId          String
+  icd11Code         String
+  /// WHO ICD-11 title at the time (encrypted at rest).
+  problemTitle      String
+  /// Free note, e.g. "On amlodipine since 2024" (encrypted at rest).
+  problemNote       String?
+  status            ProblemStatus          @default(ACTIVE)
+  onsetDate         DateTime?              @db.Date
+  recordedByStaffId String
+  recordedAt        DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  changes           PatientProblemChange[]
+
+  @@index([patientId])
+  @@map("patient_problems")
+}
+
+/// History of a problem: added, resolved, active again, note changed, entered in error.
+model PatientProblemChange {
+  id        String         @id @default(cuid())
+  problemId String
+  problem   PatientProblem @relation(fields: [problemId], references: [id])
+  clinicId  String
+  staffId   String
+  action    String
+  /// Status after the change.
+  status    ProblemStatus
+  at        DateTime       @default(now())
+
+  @@index([problemId])
+  @@map("patient_problem_changes")
 }

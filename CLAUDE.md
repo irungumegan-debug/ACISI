@@ -8,6 +8,12 @@ USSD-first clinic management platform for small clinics in Kenya. See
 - **USSD check-in:** planned for Dec 2026 / early 2027. When live, add the
   USSD code to the walk-in invite SMS (see invite template:
   `buildWalkInInviteSms` in `src/services/smsTemplates.ts`).
+- **ACISI check-in fee on live M-Pesa: confirmed working 20 Nov 2026**
+  (owner paid a real STK prompt from their phone; payment showed on
+  acisi.co.ke). Production Daraja, Buy Goods till (runbook "Switching ACISI's
+  M-Pesa to production"). Note: clinic checkout prompts switch off on a
+  production server (`clinicStkConfigured`), so clinic checkout M-Pesa is
+  cash/manual until the item below is done.
 - **Clinic checkout payments (live):** Go live with M-Pesa STK push per clinic
   (production Daraja credentials or a payment provider like
   IntaSend/Pesapal/Paystack), and add live card payments. Currently sandbox
@@ -20,9 +26,14 @@ USSD-first clinic management platform for small clinics in Kenya. See
   arrive: add the provider in `src/services/smsService.ts` (all SMS go through
   `sendSms`), confirm where message content is stored (must stay in Kenya;
   update the Privacy Notice, DPIA and ODPC records if the processor changes),
-  test real delivery, then turn on multi-factor login (`STAFF_MFA_ENABLED=true`,
-  runbook "Turning on multi-factor login"). Until then MFA stays OFF and the
-  DHA "Multi-Factor Authentication" box stays unticked.
+  test real delivery, then optionally allow SMS login codes as well
+  (`STAFF_MFA_SMS_ENABLED=true`, runbook "Turning on multi-factor login").
+- **Multi-factor login (authenticator app), built 20 Nov 2026:** admins and
+  doctors use an authenticator app (TOTP, `src/utils/totp.ts`,
+  `src/services/staffMfaService.ts`); needs no SMS. Live only once deployed
+  AND `STAFF_MFA_ENABLED=true` on the server (runbook "Turning on
+  multi-factor login"). Tick the DHA "Multi-Factor Authentication" box only
+  after the owner confirms both, then mark DPIA action A2 done (new version).
 
 ## Compliance documents
 
@@ -35,7 +46,8 @@ USSD-first clinic management platform for small clinics in Kenya. See
   Done 14 Nov 2026 (on branch, deploy with the runbook "DHA fixes" release):
   tamper-resistant audit log, 15-min inactivity logoff, under-18 check,
   AES-256-GCM encryption at rest (fields + files); multi-factor login for
-  admins and doctors (off until STAFF_MFA_ENABLED=true, see runbook).
+  admins and doctors (authenticator app since 20 Nov; off until
+  STAFF_MFA_ENABLED=true, see runbook).
   ICD-11 coded diagnoses done 14 Nov (WHO MMS 2025-01 bundled in
   src/assets/icd11/, doctors must pick 1-5 codes; FHIR Condition coded).
   Notifiable-disease alerts + weekly summary built 14 Nov
@@ -45,13 +57,33 @@ USSD-first clinic management platform for small clinics in Kenya. See
   Structured prescriptions + allergy warning built 14 Nov (DHA ePrescription
   IG codes in src/assets/dha/). DHA FHIR guides (Kenya Core 1.0.0, Patient
   Summary 0.1.0, ePrescription 0.1.0) download from fhir.dha.go.ke/ig/...
-  /package.tgz (host now allowed in the ACISI environment); HIE test
-  credentials: interoperability@dha.go.ke.
+  /package.tgz (host now allowed in the ACISI environment). HIE: public API
+  docs at hie-docs.dha.go.ke; credentials and UAT via afyaconnect.dha@gmail.com
+  (interoperability@dha.go.ke bounces). Plan and API summary:
+  docs/compliance/HIE-integration-plan.md (hosts hie-docs, ilm-dev and
+  hie-test .dha.go.ke allowed in the ACISI environment). Steps 1-4 built
+  20 Nov (src/hie/, src/dashboard/hie.ts, console "National HIE" page; off
+  until HIE_ENABLED=true with DHA's credentials, runbook "Connecting to the
+  national HIE"). Steps 5-8 (Shared Health Record: consent per visit, send at
+  checkout via queue hie-shr-send, doctor reads other facilities' records,
+  close visit) built 20 Nov in src/hie/shr*.ts. Owner has no facility codes yet: admins find the clinic by
+  name or MFL code on that page.
   Routine reports (monthly/quarterly/annual, IDSR monthly table) and public
   health events (event-based surveillance, fill MOH 505 event and death rows)
   built 14 Nov (src/services/{routineReportService,publicHealthEventService}.ts).
-  Remaining, in order: (4) automatic weekly IDSR submission once DHA/MOH say
-  where; (5-6) FHIR R4 interface: base built 14 Nov (src/fhir/, /fhir/r4); adapt to
-  DHA's HIE spec (identifiers, profiles, auth, submission) after the owner's
-  call with DHA; (7) retest, update
-  the attestation, submit.
+  20 Nov 2026: DHA never replied (interoperability@dha.go.ke bounces; no
+  answer from raymondbett@dha.go.ke), so the owner is submitting without
+  their answers. Final answer sheet, with open items declared as gaps G1-G9:
+  docs/compliance/DHA-self-attestation-answers-2026-11-20.md. After
+  certification, if DHA ever answers: automatic IDSR/KHIS submission (G3) and
+  connecting the FHIR interface (src/fhir/, /fhir/r4) to the HIE (G2).
+  Goal (owner, 20 Nov): raise the attestation score from ~53% to at least 70%
+  ("ready to launch"). Owner pasted sections 3, 4 and 6 (not yet 1, 2, 5, 7).
+  Built 20-21 Nov for them: service orders, vital signs + warnings, problem
+  list, critical lab alerts, quality measures, fuller visit record + care
+  plan, residence, family history, dispensing, on-screen surveillance banner,
+  IHR flag, emailed SCDSC reports, LOINC lab codes. What to tick once
+  deployed: end of docs/compliance/DHA-self-attestation-answers-2026-11-20.md.
+  Score estimate (formula reverse-engineered from section 4: component on =
+  half, feature share = half, "Required" components weigh double): ~70-75%
+  overall; the HIE critical gap needs DHA credentials regardless.

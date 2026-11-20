@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AdminDepartment, api, ApiError, ClinicStaffListItem, DoctorPresenceStatus } from '../lib/api';
 import { PaymentSettingsSection } from '../components/PaymentSettingsSection';
+import { SurveillanceEmailSection } from '../components/SurveillanceEmailSection';
 import { DepartmentsSection } from '../components/DepartmentsSection';
 import { LabTestsSection } from '../components/LabTestsSection';
 import { Building2, FlaskConical, KeyRound, RefreshCw, UsersRound, Wallet } from 'lucide-react';
@@ -33,6 +34,7 @@ export function SettingsPage() {
   const [staff, setStaff] = useState<ClinicStaffListItem[] | null>(null);
   const [staffError, setStaffError] = useState<string | null>(null);
   const [resettingId, setResettingId] = useState<string | null>(null);
+  const [resettingAppId, setResettingAppId] = useState<string | null>(null);
   const [deactivatingId, setDeactivatingId] = useState<string | null>(null);
   const { session } = useAuth();
   const [resetResult, setResetResult] = useState<{ staffCode: string; name: string; newPin: string } | null>(null);
@@ -99,6 +101,25 @@ export function SettingsPage() {
       setStaffError(err instanceof ApiError ? err.message : 'Failed to reset PIN');
     } finally {
       setResettingId(null);
+    }
+  }
+
+  async function handleResetAuthenticator(member: ClinicStaffListItem): Promise<void> {
+    if (
+      !confirm(
+        `Reset the authenticator app for ${member.name} (${member.staffCode})?\n\nDo this only if they lost or changed their phone, and you have checked it is really them. They are logged out now and set the app up again (scan a new QR code) at their next login.`,
+      )
+    )
+      return;
+    setResettingAppId(member.id);
+    setStaffError(null);
+    try {
+      await api.resetStaffAuthenticator(member.id);
+      setStaff((prev) => prev && prev.map((s) => (s.id === member.id ? { ...s, authenticatorSetUp: false } : s)));
+    } catch (err) {
+      setStaffError(err instanceof ApiError ? err.message : 'Failed to reset the authenticator app');
+    } finally {
+      setResettingAppId(null);
     }
   }
 
@@ -185,6 +206,8 @@ export function SettingsPage() {
           <PaymentSettingsSection />
         </Card>
 
+        <SurveillanceEmailSection />
+
         <Card title="Staff & doctors" icon={UsersRound}>
           <p className="mb-4 text-sm text-ink-500">Reset a staff or doctor&apos;s PIN if they&apos;ve forgotten it, and choose which departments each doctor sees.</p>
 
@@ -257,6 +280,11 @@ export function SettingsPage() {
                     <button onClick={() => void handleResetPin(member)} disabled={resettingId === member.id} className={smallBtn}>
                       {resettingId === member.id ? 'Resetting…' : 'Reset PIN'}
                     </button>
+                    {member.authenticatorSetUp && (
+                      <button onClick={() => void handleResetAuthenticator(member)} disabled={resettingAppId === member.id} className={smallBtn}>
+                        {resettingAppId === member.id ? 'Resetting…' : 'Reset authenticator app'}
+                      </button>
+                    )}
                     {member.isActive && member.id !== session?.staffId && (
                       <button onClick={() => void handleDeactivate(member)} disabled={deactivatingId === member.id} className={smallBtn}>
                         {deactivatingId === member.id ? 'Deactivating…' : 'Deactivate'}

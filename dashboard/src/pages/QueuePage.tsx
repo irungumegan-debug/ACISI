@@ -20,6 +20,7 @@ import {
   UsersRound,
   Wallet,
   XCircle,
+  Activity,
 } from 'lucide-react';
 import { api, ApiError, CheckoutDeliveryMethod, QueueItem, subscribeToQueue } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
@@ -502,6 +503,14 @@ function QueueCard({
           <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800" title="The patient pays this to ACISI from their profile; the clinic doesn't collect it.">
             {acisiFeeLabel(item)}
           </span>
+        )}
+        {isFrontDesk && item.encounterId && (item.encounterStatus === 'WAITING' || item.encounterStatus === 'IN_CONSULTATION') && (
+          <Link
+            to={`/visits/${item.encounterId}/vitals`}
+            className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-slate-300 bg-white px-3.5 py-1 text-[13px] font-semibold text-navy-900 transition hover:border-gold-500"
+          >
+            <Activity size={14} aria-hidden /> Vitals
+          </Link>
         )}
         {canChangeDoctor && (
           <button

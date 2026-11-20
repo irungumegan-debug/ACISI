@@ -5,6 +5,7 @@ import { recordAuditEvent } from './auditService';
 import { sendSms } from './smsService';
 import { buildHealthEventAlertSms } from './smsTemplates';
 import { logger } from '../utils/logger';
+import { emailImmediateNotice } from './surveillanceEmailService';
 
 /**
  * Public health events (event-based surveillance, IDSR Technical Guidelines
@@ -98,7 +99,10 @@ export async function recordPublicHealthEvent(input: RecordEventInput & { clinic
     entityId: event.id,
     metadata: { type: input.type, immediate: EVENT_TYPES[input.type].immediate },
   });
-  if (EVENT_TYPES[input.type].immediate) void alertStaff(input.clinicId, event.id);
+  if (EVENT_TYPES[input.type].immediate) {
+    void alertStaff(input.clinicId, event.id);
+    void emailImmediateNotice({ clinicId: input.clinicId, kind: 'event', items: [{ name: EVENT_TYPES[input.type].label }], at: now, entityType: 'PublicHealthEvent', entityId: event.id });
+  }
   return event;
 }
 

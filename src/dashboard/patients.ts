@@ -3,11 +3,12 @@ import { enterRecordAccessCode, RecordSharingError, requestRecords } from '../se
 import { Prisma } from '@prisma/client';
 import { prisma } from '../db/prisma';
 import { staffPatientScopeWhere } from '../services/staffPatientScope';
-import { buildVisitRecordDataFromEncounter, renderVisitRecordPdf, visitRecordLabInclude } from '../services/visitRecordDocument';
+import { buildVisitRecordDataFromEncounter, renderVisitRecordPdf, visitRecordLabInclude, visitRecordOrdersInclude, visitRecordVitalsInclude, visitRecordPatientInclude } from '../services/visitRecordDocument';
 import { requireStaffSession, AuthenticatedRequest, isFrontDeskRole } from './auth';
 import { getScopedHistory } from '../services/patientService';
 import { recordAuditEvent } from '../services/auditService';
 import { z } from 'zod';
+import { patientCrView } from '../hie/registryService';
 import { identityView, patientIdentityInputSchema, PatientIdentityError, preparePatientIdentity } from '../services/patientIdentity';
 
 export const patientsRouter = Router();
@@ -25,6 +26,19 @@ function visibleToStaffWhere(req: AuthenticatedRequest): Promise<Prisma.PatientW
  * clinic shouldn't be able to browse patients it has no relationship with,
  * even though patient records are portable once a relationship exists.
  */
+/**
+ * Phone numbers are stored as +2547XXXXXXXX, but staff type them the way
+ * patients say them: "0712 345 678", "254712...". Spaces and dashes are
+ * dropped and a leading 0 or 254 becomes the stored form, so a full or
+ * partial number typed either way is found.
+ */
+export function phoneSearchFragment(query: string): string {
+  const digits = query.replace(/[\s-]/g, '');
+  if (/^0[17]\d*$/.test(digits)) return `+254${digits.slice(1)}`;
+  if (/^254[17]\d*$/.test(digits)) return `+${digits}`;
+  return digits;
+}
+
 patientsRouter.get('/', async (req, res) => {
   const query = typeof req.query.q === 'string' ? req.query.q.trim() : '';
 
@@ -39,7 +53,7 @@ patientsRouter.get('/', async (req, res) => {
         await visibleToStaffWhere(req as AuthenticatedRequest),
         {
           OR: [
-            { phoneNumber: { contains: query } },
+            { phoneNumber: { contains: phoneSearchFragment(query) } },
             { firstName: { contains: query, mode: 'insensitive' } },
             { lastName: { contains: query, mode: 'insensitive' } },
           ],
@@ -100,6 +114,7 @@ patientsRouter.get('/:id', async (req, res) => {
     sex: patient.sex,
     smsOptOut: patient.smsOptOut,
     ...identityView(patient),
+    hie: patientCrView(patient),
     history,
     hasHiddenHistoryElsewhere,
     crossClinicBasis,
@@ -194,7 +209,7 @@ patientsRouter.patch('/:id/details', async (req, res) => {
     entityId: patient.id,
     metadata: { fields: Object.keys(update), clinicId },
   });
-  res.json(identityView(updated));
+  res.json({ ...identityView(updated), hie: patientCrView(updated) });
 });
 
 /**
@@ -214,7 +229,7 @@ patientsRouter.get('/:id/visits/:encounterId/record', async (req, res) => {
   const encounter = await prisma.encounter.findFirst({
     where: { id: req.params.encounterId, patientId: req.params.id, clinicId, patient: { deletedAt: null } },
     // The printed copy a patient asked for includes diagnosis and lab results (front desk never sees them on screen).
-    include: { patient: true, clinic: true, checkIn: { include: { department: true } }, consultedByStaff: true, labOrders: visitRecordLabInclude() },
+    include: { patient: visitRecordPatientInclude, clinic: true, checkIn: { include: { department: true } }, consultedByStaff: true, labOrders: visitRecordLabInclude(), serviceOrders: visitRecordOrdersInclude, vitalSigns: visitRecordVitalsInclude },
   });
   if (!encounter) {
     res.status(404).json({ error: 'Visit record not found' });

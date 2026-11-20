@@ -3,6 +3,185 @@
 Plain-language record of what changed in ACISI, which data each change
 touches, and who can use it. Newest first.
 
+## 2026-11-21: LOINC codes for lab tests
+
+One database change, additive (`20261121150000_lab_loinc`: one empty column
+on lab tests and on ordered tests); undo script in `prisma/rollback/`.
+
+| What | Who |
+|---|---|
+| Settings → Lab tests → Edit: **LOINC code** per test, with "Suggest a code" for 24 common tests (Hb, CBC, malaria smear, blood sugar, HbA1c, creatinine, urinalysis, pregnancy test, blood group...). Codes are checked with LOINC's check digit, so typing mistakes are refused. | Clinic admins |
+| The code is copied onto each test when ordered, and lab requests and results go to FHIR (and the national Shared Health Record) LOINC-coded. Vital signs were already LOINC-coded. | |
+
+## 2026-11-21: Reports emailed to the Sub-County surveillance coordinator
+
+One database change, additive (`20261121140000_surveillance_email`: two empty
+columns on clinics); undo script in `prisma/rollback/`.
+
+| What | Data | Who |
+|---|---|---|
+| Settings: **Disease surveillance reporting**, the Sub-County Disease Surveillance Coordinator's (SCDSC) email. Empty = off. | Clinic: coordinator email, last week sent | Clinic admins |
+| **Weekly**: every Monday from 08:00 Kenya time, last week's MOH 505 summary emailed to the coordinator (CSV attached), once per week. | | Automatic |
+| **Immediate**: as soon as an immediately reportable disease is diagnosed or an immediate public health event is recorded, an email with the clinic, the disease or event and the time (IHR diseases marked). | | Automatic |
+| Never patient names, phone numbers or IDs (the email service is outside Kenya); the coordinator calls the clinic for the case form. Staff still phone for immediate cases and mark them reported. Needs email (Resend) configured on the server. | | |
+
+Audit log: `SURVEILLANCE_EMAIL_SET` / `_REMOVED`, `SURVEILLANCE_WEEKLY_EMAIL_SENT`, `SURVEILLANCE_IMMEDIATE_EMAIL_SENT` / `_SKIPPED` / `_FAILED`.
+
+## 2026-11-21: Public health alerts on screen, IHR flag
+
+No database change.
+
+| What | Who |
+|---|---|
+| **On-screen alert on every page** while an immediately reportable case (doctors) or public health event (doctors, clinic admins) hasn't been marked reported to the Sub-County: "Report within 24 hours", with a link to Disease surveillance. Works without SMS (the SMS reminders still go once real SMS is live). | Doctors, clinic admins |
+| **IHR flag** (International Health Regulations 2005, Annex 2) on the notifiable disease list: always notifiable internationally (smallpox, wild polio/AFP, new influenza subtype, SARS) or to be assessed (cholera, plague, yellow fever, viral haemorrhagic fevers, dengue, Rift Valley fever, meningococcal disease, MERS, any event of international concern). Shown when the doctor signs and on Disease surveillance: report immediately; the Sub-County passes it to the national IHR focal point. | Doctors |
+
+## 2026-11-21: Residence, family history, dispensing
+
+One database change, additive (`20261121130000_residence_family_history_dispensing`:
+empty columns on patients and prescription items); undo script in `prisma/rollback/`.
+
+| What | Data | Who |
+|---|---|---|
+| Patient page and walk-in: **residence** (county, sub-county, ward, village/estate). In FHIR as the Patient's address. Wiped on account deletion. | Patients: `subCounty`, `ward`, `village` (county existed) | Front desk; patients on their own page |
+| Consultation page: **Family history** note (who had what). | Patients: `familyHistory`, encrypted at rest | Doctors |
+| Checkout page: **Dispensing**. Each prescribed medicine: "Given" (quantity, default the prescribed amount) or "Buying elsewhere"; recording again corrects it. In FHIR and the Shared Health Record as `MedicationDispense`. | Prescription items: dispense status, quantity, when, by whom | Front desk |
+
+Audit log: `FAMILY_HISTORY_UPDATED` / `_CLEARED`, `MEDICINE_DISPENSED`, `MEDICINE_NOT_DISPENSED`.
+
+## 2026-11-21: Fuller clinical summary (visit record) and plan / follow-up
+
+One database change, additive (`20261121120000_care_plan`: one empty column
+on encounters); undo script in `prisma/rollback/`.
+
+| What | Data | Who |
+|---|---|---|
+| Consultation form: **Plan / follow-up** (optional), e.g. "Review in 2 weeks with home BP readings". Shown on the signing summary. | Encounter `carePlan`, encrypted at rest | Doctors |
+| The visit record (printed, downloaded by the patient, emailed) now also has: **date of birth, sex and ID document**; **vital signs**; **other current medicines** (still running from earlier visits at the same clinic); **plan / follow-up**; other orders. Dates are day-first, Kenya time. | | |
+| FHIR: the plan as a `CarePlan` in `Patient/$everything` (the national Shared Health Record does not take CarePlans). | | |
+
+## 2026-11-21: Quality measures
+
+No database change.
+
+| What | Who |
+|---|---|
+| Routine reports page: **Quality measures** for the chosen month, quarter or year, each with its count and definition: visits with a coded diagnosis; visits with vital signs; hypertension visits with BP measured; malaria diagnoses confirmed by a test (WHO "test before treat"); diabetes visits with blood sugar tested; children 6-59 months screened with MUAC; median wait to see the doctor; median lab turnaround. "n/a" when nothing to measure. **CSV** download. Counts only, no names. | Doctors, clinic admins |
+
+Audit log: `QUALITY_MEASURES_DOWNLOADED`.
+
+## 2026-11-21: Critical lab result warnings
+
+No database change.
+
+| What | Who |
+|---|---|
+| When the lab signs a result flagged **Critical**: a red **"Critical result"** badge on that patient in the doctor's queue, and a red **"Critical lab result: review now"** box at the top of the lab results on the consultation page, naming the test and value. | Doctors |
+| The doctor who requested the test also gets an SMS ("a CRITICAL lab result is ready for one of your patients at <clinic>"), with no name, test or result in it. Works once real SMS is live; the on-screen warnings work now. | Doctors |
+
+Audit log: `LAB_CRITICAL_RESULT_ALERT` (count and whether the SMS went).
+
+## 2026-11-21: Problem list
+
+One database change, additive (`20261121110000_problem_list`: two new tables);
+undo script in `prisma/rollback/`.
+
+| What | Data | Who |
+|---|---|---|
+| Consultation page: **Problem list**, the patient's long-term or important conditions (hypertension, diabetes, asthma...), separate from a visit's diagnoses. Add from the ICD-11 list with an optional note and "since" date; mark **resolved**, **active again**, change the note, or mark **entered in error**. No active duplicates. | New tables `patient_problems` (condition title and note encrypted at rest) and `patient_problem_changes` | Doctors |
+| **History** of each problem (who changed what, when). Nothing is ever deleted. | | |
+| Other clinics see it on the same rule as allergies (patient's sharing consent or a records code used today). | | |
+| In FHIR as `Condition` (category problem-list-item, ICD-11), and sent with each visit to the national Shared Health Record. | | |
+
+Audit log: `PROBLEM_ADDED`, `PROBLEM_RESOLVED`, `PROBLEM_REACTIVATED`, `PROBLEM_NOTE_CHANGED`, `PROBLEM_ENTERED_IN_ERROR`.
+
+## 2026-11-21: Vital signs, BMI and warnings
+
+One database change, additive (`20261121100000_vital_signs`: a new table);
+undo script in `prisma/rollback/`.
+
+| What | Data | Who |
+|---|---|---|
+| **Vital signs** on the consultation page, and "Vitals" on each waiting patient in the queue (triage): BP, pulse, breathing rate, temperature, oxygen, weight, height, MUAC. Only what was measured; impossible numbers refused. Never edited: a new set corrects an old one. | New table `vital_signs` | Front desk, doctors |
+| **BMI** worked out from weight and height. **Weight over time** chart and earlier readings at this clinic. | | |
+| **Warnings**, adjusted for the patient's age: raised or very high BP (adults), low BP, fever and hypothermia, low oxygen, fast breathing (WHO IMCI cut-offs for under-5s), pulse out of range for age, MUAC malnutrition (WHO, 6-59 months), BMI categories (WHO, adults). They prompt; they never decide. | | |
+| On the visit record ("Vital signs"), in FHIR as vital-signs Observations with **LOINC** codes and UCUM units, and in what is sent to the national Shared Health Record. | | |
+
+Audit log: `VITAL_SIGNS_RECORDED` (which fields and how many warnings, never the values).
+
+## 2026-11-21: Radiology, therapy and other orders
+
+One database change, additive (`20261121090000_service_orders`: a new table);
+undo script in `prisma/rollback/`.
+
+| What | Data | Who |
+|---|---|---|
+| Consultation page: **Other orders**. Radiology/imaging, physiotherapy, occupational therapy, nutrition/dietetics, social work, counselling: what is ordered, optional reason, urgent. Withdrawn before signing = kept, marked cancelled. | New table `service_orders`; what is ordered and the reason encrypted at rest | Doctors |
+| Checkout page: **Orders to arrange**, each marked "Done / referred" or "Not needed". | | Front desk |
+| On the printed and downloaded visit record ("Other orders"), in FHIR (`ServiceRequest`, category coded with SNOMED CT) and in what is sent to the national Shared Health Record. | | |
+
+Audit log: `SERVICE_ORDER_CREATED`, `SERVICE_ORDER_DONE`, `SERVICE_ORDER_CANCELLED` (type only, never the text).
+
+## 2026-11-20: National Shared Health Record (consent, sending visits, reading, closing)
+
+One database change, additive (`20261120180000_hie_visits`: a new table);
+undo script in `prisma/rollback/`. **Off** with the rest of the HIE until
+DHA's credentials are in place; the panels stay hidden until then.
+
+| What | Data | Who |
+|---|---|---|
+| **Consent per visit.** "Ask the patient for consent" on the consultation page (doctor) and the checkout page (front desk). DHA texts the patient a code; they read it out and staff enter it. "Send the code again" and "Patient says no" (the refusal is recorded with DHA and in ACISI's audit log). If the patient already has an open HIE visit at the clinic it's reused, no new code. | New table `hie_visits`: DHA's consent and visit ids, status, the consent token (encrypted) | Front desk, doctors |
+| **Emergency consent** (doctors only) for a patient who can't consent, with a short reason sent to DHA; approved at once. | | Doctors |
+| **Sending.** At checkout, a consented visit is queued for the national Shared Health Record: ICD-11 diagnoses, prescriptions (DHA codes), lab requests and results, the clinic's allergy records. National identifiers only (Client Registry ID, facility code, practitioner ID); no Patient resource. Retried 5 times over ~15 minutes if DHA is down; never blocks checkout. Status on the checkout page; "Try sending again" if it failed. | | Front desk |
+| **Reading.** "Show records from other facilities" on the consultation page: the patient's visits, diagnoses, medicines, allergies, results and immunisations from the national record. Needs consent and the doctor's verified registration. Shown only, never saved in ACISI. | | Doctors |
+| **Closing.** "Close the HIE visit" on the checkout page once the visit is sent; DHA may text the patient a closing code. The consent token is deleted on closing. | | Front desk |
+
+Audit log: `HIE_CONSENT_REQUESTED`, `_APPROVED`, `_REFUSED`, `_EMERGENCY`,
+`_CODE_RESENT`, `_CODE_WRONG`, `_REUSED_OPEN_VISIT`, `HIE_SHR_VISIT_SENT`,
+`_SEND_FAILED`, `_RESEND`, `HIE_SHR_RECORDS_VIEWED` (count only),
+`HIE_VISIT_CLOSE_CODE_SENT`, `HIE_VISIT_CLOSED`.
+Not yet: consent through a parent or guardian for children (DHA's
+"dependant" consent needs the guardian's Client Registry ID; ACISI doesn't
+record guardians as separate people yet).
+
+## 2026-11-20: National HIE registries (facility, health workers, patients)
+
+One database change, additive (`20261120150000_hie_registries`: empty
+columns on clinics, staff and patients); undo script in `prisma/rollback/`.
+**Off** until DHA issues ACISI's HIE credentials (`HIE_ENABLED`, runbook
+"Connecting to the national HIE"); until then the pages say "not connected yet".
+
+| What | Data | Who |
+|---|---|---|
+| **National HIE** page. Clinic admin finds the clinic in DHA's Facility Registry (by name, MFL code or FR code) and saves its FR code; every HIE call then carries it. | Clinic: FR code, official name | Clinic admins |
+| Doctors and clinical officers enter their regulator (KMPDC, COC, NCK, PPB) and registration number once; ACISI looks them up in the Health Worker Registry and keeps their practitioner ID (PUID), registered name and licence end date. Expired licence shown in red. | Staff: regulator, registration number, PUID, name, licence end | Doctors, clinical officers |
+| Patient page: "Look up in the national Client Registry" using the ID document on file (national ID, alien ID, birth certificate; not passports). A clear name and date-of-birth match saves the CR ID; otherwise both sets of details are shown side by side to compare, and it's saved only if staff confirm. A changed ID document makes the saved CR ID stop counting. | Patient: CR ID (encrypted), when it was checked | Front desk, clinic admins, clinicians |
+| Only the CR ID, names, date of birth and sex are read from the Client Registry's answer; everything else it returns (income, employer, KRA PIN...) is dropped. | | |
+
+Audit log: `HIE_FACILITY_SET`, `HIE_PRACTITIONER_VERIFIED`,
+`HIE_CLIENT_REGISTRY_LOOKUP` (result only), `HIE_CLIENT_REGISTRY_CONFIRMED`.
+Next (after credentials): Shared Health Record consent, sending visits,
+reading records from other facilities (`docs/compliance/HIE-integration-plan.md`).
+
+## 2026-11-20: Multi-factor login with an authenticator app
+
+One database change, additive (`20261120120000_staff_authenticator`: two
+empty columns on staff); undo script in `prisma/rollback/`. New dependency:
+`qrcode` (draws the setup QR code on the server).
+
+| What | Data | Who |
+|---|---|---|
+| After the PIN, clinic admins and doctors enter a 6-digit code from an authenticator app (Google Authenticator, Microsoft Authenticator...). **Needs no SMS**, so it can be switched on now. | Per person: the app's secret, AES-256-GCM encrypted | Admins, doctors |
+| **First login after switch-on:** a QR code to scan, then the first code from the app. Nothing is saved until that code is right. | | Admins, doctors |
+| "Remember this device for 30 days" as before. A PIN reset, deactivation or authenticator reset forgets remembered devices. | | |
+| 5 wrong codes lock the account for 5 minutes (counted separately from PINs: a correct PIN does not reset it). A code can't be used twice. | | |
+| **Lost phone:** Settings → Staff → "Reset authenticator app" (clinic admin), or `npm run reset-staff-authenticator -- <staff ID>` on the server (e.g. the only admin lost their phone). Logs the person out; they scan a new QR code at the next login. Logged. | | Clinic admins, ACISI |
+| SMS login codes remain available only with `STAFF_MFA_SMS_ENABLED=true` (after real SMS works), for people who haven't set up an app. | | |
+
+Audit log: `STAFF_AUTHENTICATOR_SET_UP`, `STAFF_AUTHENTICATOR_RESET`,
+`STAFF_LOGIN_CODE_WRONG`; `STAFF_LOGIN_CODE_VERIFIED` now records the method.
+Front desk and lab technicians are not affected.
+
 ## 2026-11-17: Front-desk setup code always accepted
 
 No database change. A patient holding a setup code from the front desk

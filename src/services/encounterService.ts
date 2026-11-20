@@ -1,3 +1,7 @@
+import { listServiceOrders, ServiceOrderView } from './serviceOrderService';
+import { listProblemsForClinic, ProblemView } from './problemListService';
+
+import { queueVisitForShr } from '../hie/shrService';
 import { Encounter, EncounterStatus } from '@prisma/client';
 import { doctorQueueFilter } from './doctorScope';
 import { prisma } from '../db/prisma';
@@ -23,7 +27,7 @@ async function allergiesFor(patientId: string, clinicId: string): Promise<{ alle
 }
 import { getScopedHistory, ScopedHistoryEntry } from './patientService';
 import { emailConfigured } from '../config/email';
-import { enqueueVisitSummaryEmail } from '../jobs/queue';
+import { enqueueHieShrSend, enqueueVisitSummaryEmail } from '../jobs/queue';
 import { logger } from '../utils/logger';
 import { sendCheckoutSms } from './checkoutSmsService';
 
@@ -39,6 +43,8 @@ export interface DoctorQueueItem {
   waitingSince: Date;
   /** True when this visit came back from the lab with signed results. */
   backFromLab: boolean;
+  /** How many of this visit's signed lab results the lab flagged critical (decision support: review first). */
+  criticalResults: number;
 }
 
 /**
@@ -61,7 +67,7 @@ export { doctorQueueFilter } from './doctorScope';
 export async function getDoctorQueue(clinicId: string, departmentIds: string[], staffId: string): Promise<DoctorQueueItem[]> {
   const encounters = await prisma.encounter.findMany({
     where: doctorQueueFilter(clinicId, departmentIds, staffId),
-    include: { patient: true, labOrders: { where: { status: 'RESULTS_READY' }, select: { id: true }, take: 1 } },
+    include: { patient: true, labOrders: { where: { status: 'RESULTS_READY' }, select: { id: true, items: { where: { resultFlag: 'CRITICAL' }, select: { id: true } } } } },
     orderBy: { createdAt: 'asc' },
   });
 
@@ -74,6 +80,7 @@ export async function getDoctorQueue(clinicId: string, departmentIds: string[], 
     status: e.status,
     waitingSince: e.createdAt,
     backFromLab: (e.labOrders?.length ?? 0) > 0,
+    criticalResults: (e.labOrders ?? []).reduce((n, o) => n + (o.items?.length ?? 0), 0),
   }));
 }
 
@@ -103,9 +110,16 @@ export interface EncounterDetail {
   allergiesHiddenElsewhere: boolean;
   /** Medicines prescribed in the visits shown in `history` (same sharing rule), newest first; `active` = course not finished. */
   medications: MedicationView[];
+  /** This visit's radiology, therapy and other orders. */
+  serviceOrders: ServiceOrderView[];
+  /** The patient's problem list (same sharing rule as allergies). */
+  problems: ProblemView[];
+  problemsHiddenElsewhere: boolean;
+  /** The patient's family history note. */
+  familyHistory: string | null;
 }
 
-async function assertEncounterInDoctorQueue(encounterId: string, clinicId: string, departmentIds: string[], staffId: string): Promise<Encounter> {
+export async function assertEncounterInDoctorQueue(encounterId: string, clinicId: string, departmentIds: string[], staffId: string): Promise<Encounter> {
   // Only a visit still in the queue: once signed it is front desk's, and a
   // doctor sees it again only as history of a patient back in their queue.
   const encounter = await prisma.encounter.findFirst({
@@ -169,6 +183,9 @@ export async function getEncounterForDoctor(
     labOrders: await getLabOrdersForEncounter(encounter.id),
     ...(await allergiesFor(encounter.patientId, clinicId)),
     medications: await listMedications(history.map((h) => h.encounterId)),
+    serviceOrders: await listServiceOrders(encounter.id),
+    ...(await problemsFor(encounter.patientId, clinicId)),
+    familyHistory: patient.familyHistory,
   };
 }
 
@@ -195,6 +212,8 @@ interface SubmitConsultationInput {
   prescriptionItems: ResolvedPrescriptionItem[];
   /** General advice for the patient, added after the medicine lines (optional). */
   prescriptionAdvice?: string | null;
+  /** Plan / follow-up for the patient (optional). */
+  carePlan?: string | null;
   /**
    * The doctor's own PIN, re-entered as the actual act of signing — the
    * same mechanism as login (staffService.comparePin), just triggered here
@@ -244,6 +263,7 @@ export async function submitConsultation(input: SubmitConsultationInput): Promis
         diagnosis: input.diagnosis || null,
         diagnosisCodes: JSON.stringify(input.diagnosisCodes),
         prescription: formatPrescriptionText(input.prescriptionItems, input.prescriptionAdvice),
+        carePlan: input.carePlan?.trim() || null,
         consultedByStaffId: input.staffId,
         consultedAt,
       },
@@ -335,6 +355,10 @@ export async function checkoutEncounter(
     metadata: { deliveryMethod },
   });
 
+  // National Shared Health Record: only if the patient consented for this
+  // visit; queued (with retries) and never blocks or undoes the checkout.
+  await queueVisitForShr(encounter.id, enqueueHieShrSend);
+
   // One SMS: receipt + visit summary (never the diagnosis or department).
   await sendCheckoutSms(encounter.id);
 
@@ -350,4 +374,10 @@ export async function checkoutEncounter(
   }
 
   return updated;
+}
+
+/** The patient's problem list as this clinic may see it. */
+async function problemsFor(patientId: string, clinicId: string): Promise<{ problems: ProblemView[]; problemsHiddenElsewhere: boolean }> {
+  const { problems, hiddenElsewhere } = await listProblemsForClinic(patientId, clinicId);
+  return { problems, problemsHiddenElsewhere: hiddenElsewhere };
 }

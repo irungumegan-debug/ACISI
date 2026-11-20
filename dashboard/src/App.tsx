@@ -8,6 +8,8 @@ import { QueuePage } from './pages/QueuePage';
 import { PatientsPage } from './pages/PatientsPage';
 import { PatientDetailPage } from './pages/PatientDetailPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { NationalHiePage } from './pages/NationalHiePage';
+import { VisitVitalsPage } from './pages/VisitVitalsPage';
 import { DoctorQueuePage } from './pages/DoctorQueuePage';
 import { DoctorEncounterPage } from './pages/DoctorEncounterPage';
 import { AppointmentsPage } from './pages/AppointmentsPage';
@@ -57,6 +59,8 @@ export function App() {
             <Route path="/patients/:id" element={<PatientDetailPage />} />
             <Route path="/appointments" element={<AppointmentsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/national-hie" element={<NationalHiePage />} />
+            <Route path="/visits/:encounterId/vitals" element={<VisitVitalsPage />} />
             <Route path="/surveillance" element={<SurveillancePage />} />
             <Route path="/doctor/queue" element={<DoctorQueuePage />} />
             <Route path="/doctor/appointments" element={<DoctorAppointmentsPage />} />

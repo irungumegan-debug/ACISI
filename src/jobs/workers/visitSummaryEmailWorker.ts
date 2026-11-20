@@ -2,7 +2,7 @@ import { Worker } from 'bullmq';
 import { redisQueueConnection } from '../../config/redis';
 import { prisma } from '../../db/prisma';
 import { emailClient, emailConfigured, emailFromHeader } from '../../config/email';
-import { buildVisitRecordDataFromEncounter, renderVisitRecordPdf, visitRecordLabInclude } from '../../services/visitRecordDocument';
+import { buildVisitRecordDataFromEncounter, renderVisitRecordPdf, visitRecordLabInclude, visitRecordOrdersInclude, visitRecordVitalsInclude, visitRecordPatientInclude } from '../../services/visitRecordDocument';
 import { logger } from '../../utils/logger';
 import { VisitSummaryEmailJobData } from '../queue';
 
@@ -25,11 +25,12 @@ export function startVisitSummaryEmailWorker(): Worker<VisitSummaryEmailJobData>
       const encounter = await prisma.encounter.findUnique({
         where: { id: job.data.encounterId },
         include: {
-          patient: true,
+          patient: visitRecordPatientInclude,
           clinic: true,
           checkIn: { include: { department: true } },
           consultedByStaff: true,
           labOrders: visitRecordLabInclude({ patientView: true }),
+          serviceOrders: visitRecordOrdersInclude, vitalSigns: visitRecordVitalsInclude,
         },
       });
 

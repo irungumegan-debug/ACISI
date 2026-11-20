@@ -87,7 +87,8 @@ describe('renderVisitRecordPdf', () => {
 
     const text = extractRenderedText(pdf);
     expect(text).toContain('Doctor');
-    expect(text).toContain(`Signed electronically via ACISI on ${signedAt.toLocaleString()}`);
+    // Day first, Kenya time (UTC+3): 09:32 UTC is 12:32 in Nairobi.
+    expect(text).toContain('Signed electronically via ACISI on 15 Jan 2026, 12:32');
 
     // The doctor's printed name itself renders through the embedded
     // signature font (a subsetted TrueType embed uses glyph IDs, not

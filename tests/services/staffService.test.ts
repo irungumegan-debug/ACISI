@@ -172,9 +172,10 @@ describe('listClinicStaff', () => {
           { id: 'd-brc', name: 'Braces' },
         ],
         isActive: true,
+        authenticatorSetUp: false,
         presence: 'IN',
       },
-      { id: 's2', staffCode: 'ACI-STF-B', name: 'B', role: 'RECEPTIONIST', departmentName: null, departments: [], isActive: true, presence: null },
+      { id: 's2', staffCode: 'ACI-STF-B', name: 'B', role: 'RECEPTIONIST', departmentName: null, departments: [], isActive: true, authenticatorSetUp: false, presence: null },
     ]);
   });
 });

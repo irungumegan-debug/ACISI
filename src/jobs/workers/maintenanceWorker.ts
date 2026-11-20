@@ -5,6 +5,7 @@ import { MaintenanceJobData } from '../queue';
 import { sendDueAppointmentReminders } from '../../services/appointmentReminderService';
 import { deleteExpiredPendingSignups } from '../../services/pendingSignupService';
 import { applyFeeRestrictions } from '../../services/feeService';
+import { sendWeeklySurveillanceEmails } from '../../services/surveillanceEmailService';
 
 /**
  * Hourly housekeeping (scheduled by scheduleHourlyMaintenance). Each task
@@ -14,6 +15,7 @@ export const MAINTENANCE_TASKS: { name: string; run: () => Promise<unknown> }[] 
   { name: 'appointment-reminders', run: () => sendDueAppointmentReminders() },
   { name: 'expired-pending-signups', run: () => deleteExpiredPendingSignups() },
   { name: 'fee-restrictions', run: () => applyFeeRestrictions() },
+  { name: 'weekly-surveillance-email', run: () => sendWeeklySurveillanceEmails() },
 ];
 
 export async function runMaintenance(): Promise<void> {

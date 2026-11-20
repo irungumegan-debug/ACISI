@@ -17,6 +17,9 @@ import { listLabTests, requestLabTests } from '../services/labService';
 import { sendLabError } from './lab';
 import { ICD11_RELEASE, Icd11Entry, MAX_DIAGNOSIS_CODES, resolveDiagnosisCodes, searchIcd11 } from '../services/icd11Service';
 import { AllergyError, recordAllergy, removeAllergy } from '../services/allergyService';
+import { closeServiceOrder, createServiceOrder, ServiceOrderError } from '../services/serviceOrderService';
+import { addProblem, ProblemListError, updateProblem } from '../services/problemListService';
+import { FamilyHistoryError, setFamilyHistory } from '../services/familyHistoryService';
 import {
   AllergyOverrideRequiredError,
   checkPrescriptionAllergies,
@@ -114,6 +117,8 @@ const consultSchema = z.object({
   prescriptionItems: prescriptionItemsSchema,
   /** General advice for the patient, printed after the medicines (optional). */
   prescriptionAdvice: z.string().trim().max(1000).nullish(),
+  /** Plan / follow-up for the patient (optional). */
+  carePlan: z.string().trim().max(1000).nullish(),
   // The doctor's own PIN, re-entered as the act of signing — required on
   // every submission, not optional. See encounterService.submitConsultation.
   pin: z.string().min(1),
@@ -148,6 +153,7 @@ doctorRouter.post('/encounters/:id/consult', async (req, res) => {
       diagnosis: parsed.data.diagnosis,
       prescriptionItems: items,
       prescriptionAdvice: parsed.data.prescriptionAdvice,
+      carePlan: parsed.data.carePlan,
       pin: parsed.data.pin,
     });
     res.json({ encounterId: encounter.id, status: encounter.status, notifiable: encounter.notifiable });
@@ -322,5 +328,132 @@ doctorRouter.post('/encounters/:id/allergies/:allergyId/remove', async (req, res
     res.json(await removeAllergy({ allergyId: req.params.allergyId as string, patientId, clinicId, staffId, reason: parsed.data.reason }));
   } catch (err) {
     if (!sendAllergyError(err, res)) throw err;
+  }
+});
+
+const serviceOrderSchema = z.object({
+  category: z.enum(['RADIOLOGY', 'PHYSIOTHERAPY', 'OCCUPATIONAL_THERAPY', 'NUTRITION', 'SOCIAL_WORK', 'COUNSELLING']),
+  description: z.string(),
+  note: z.string().nullish(),
+  urgent: z.boolean().optional(),
+});
+
+function sendServiceOrderError(err: unknown, res: Response): boolean {
+  if (err instanceof ServiceOrderError) {
+    res.status(err.status).json({ error: err.message });
+    return true;
+  }
+  return false;
+}
+
+/** Radiology, therapy, nutrition, social work or counselling order for a visit in this doctor's queue. */
+doctorRouter.post('/encounters/:id/orders', async (req, res) => {
+  const parsed = serviceOrderSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Choose the type of order and say what is ordered' });
+    return;
+  }
+  if (!(await patientInMyQueue(req, res))) {
+    res.status(404).json({ error: 'Patient not found in your queue' });
+    return;
+  }
+  const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  try {
+    res.status(201).json({ orders: await createServiceOrder({ encounterId: req.params.id as string, clinicId, staffId, ...parsed.data }) });
+  } catch (err) {
+    if (!sendServiceOrderError(err, res)) throw err;
+  }
+});
+
+/** Withdraw an order before signing. It stays on the visit, marked cancelled. */
+doctorRouter.post('/encounters/:id/orders/:orderId/cancel', async (req, res) => {
+  if (!(await patientInMyQueue(req, res))) {
+    res.status(404).json({ error: 'Patient not found in your queue' });
+    return;
+  }
+  const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  try {
+    res.json({ orders: await closeServiceOrder({ orderId: req.params.orderId as string, encounterId: req.params.id as string, clinicId, staffId, outcome: 'CANCELLED' }) });
+  } catch (err) {
+    if (!sendServiceOrderError(err, res)) throw err;
+  }
+});
+
+function sendProblemError(err: unknown, res: Response): boolean {
+  if (err instanceof ProblemListError) {
+    res.status(err.status).json({ error: err.message });
+    return true;
+  }
+  return false;
+}
+
+const addProblemSchema = z.object({ icd11Code: z.string().min(1).max(20), note: z.string().nullish(), onsetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish() });
+
+/** Adds a problem (ICD-11) to the problem list of the patient of a visit in this doctor's queue. */
+doctorRouter.post('/encounters/:id/problems', async (req, res) => {
+  const parsed = addProblemSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Choose the condition from the ICD-11 list' });
+    return;
+  }
+  const patientId = await patientInMyQueue(req, res);
+  if (!patientId) {
+    res.status(404).json({ error: 'Patient not found in your queue' });
+    return;
+  }
+  const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  try {
+    res.status(201).json(await addProblem({ patientId, clinicId, staffId, ...parsed.data }));
+  } catch (err) {
+    if (!sendProblemError(err, res)) throw err;
+  }
+});
+
+const updateProblemSchema = z.union([
+  z.object({ status: z.enum(['ACTIVE', 'RESOLVED', 'ENTERED_IN_ERROR']) }),
+  z.object({ note: z.string().nullable() }),
+]);
+
+/** Resolve, make active again, mark entered in error, or change the note. Kept in the problem's history. */
+doctorRouter.patch('/encounters/:id/problems/:problemId', async (req, res) => {
+  const parsed = updateProblemSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Nothing to change' });
+    return;
+  }
+  const patientId = await patientInMyQueue(req, res);
+  if (!patientId) {
+    res.status(404).json({ error: 'Patient not found in your queue' });
+    return;
+  }
+  const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  try {
+    res.json(await updateProblem({ problemId: req.params.problemId as string, patientId, clinicId, staffId, change: parsed.data }));
+  } catch (err) {
+    if (!sendProblemError(err, res)) throw err;
+  }
+});
+
+/** Family history of the patient of a visit in this doctor's queue (one note; empty clears it). */
+doctorRouter.put('/encounters/:id/family-history', async (req, res) => {
+  const parsed = z.object({ text: z.string().nullable() }).safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Enter the family history' });
+    return;
+  }
+  const patientId = await patientInMyQueue(req, res);
+  if (!patientId) {
+    res.status(404).json({ error: 'Patient not found in your queue' });
+    return;
+  }
+  const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  try {
+    res.json(await setFamilyHistory({ patientId, clinicId, staffId, text: parsed.data.text }));
+  } catch (err) {
+    if (err instanceof FamilyHistoryError) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
+    throw err;
   }
 });

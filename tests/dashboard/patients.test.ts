@@ -108,7 +108,7 @@ describe('PATCH /patients/:id/details (ID document and next of kin)', () => {
         .send({ idType: 'NATIONAL_ID', idNumber: '1234 5678', nextOfKinName: 'Peter Otieno', nextOfKinPhone: '0722000111' }),
     );
     expect(res.status).toBe(200);
-    expect(res.body).toEqual(STORED);
+    expect(res.body).toEqual({ ...STORED, county: null, subCounty: null, ward: null, village: null, hie: { crId: null, verifiedAt: null, canLookUp: true } });
     expect(mockUpdate).toHaveBeenCalledWith({ where: { id: 'patient-1' }, data: STORED });
     const audit = (recordAuditEvent as jest.Mock).mock.calls[0][0];
     expect(audit).toMatchObject({ action: 'PATIENT_DETAILS_UPDATED', entityId: 'patient-1' });
@@ -252,5 +252,18 @@ describe('Request records at the front desk (C4)', () => {
     mockLoadSession.mockResolvedValue({ ...SESSION, role: 'DOCTOR' });
     expect((await withCookie(request(buildApp()).post('/patients/patient-1/record-requests'))).status).toBe(403);
     expect((await withCookie(request(buildApp()).post('/patients/patient-1/record-requests/verify').send({ code: '123456' }))).status).toBe(403);
+  });
+});
+
+describe('phoneSearchFragment', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { phoneSearchFragment } = require('../../src/dashboard/patients') as typeof import('../../src/dashboard/patients');
+  it('finds numbers typed the way patients say them', () => {
+    expect(phoneSearchFragment('0712 345 678')).toBe('+254712345678');
+    expect(phoneSearchFragment('0712')).toBe('+254712');
+    expect(phoneSearchFragment('254712345678')).toBe('+254712345678');
+    expect(phoneSearchFragment('+254712345678')).toBe('+254712345678');
+    expect(phoneSearchFragment('345 678')).toBe('345678');
+    expect(phoneSearchFragment('Amina')).toBe('Amina');
   });
 });

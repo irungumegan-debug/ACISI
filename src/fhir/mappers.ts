@@ -1,5 +1,6 @@
 import type * as fhir4 from 'fhir/r4';
-import type { LabResultFlag, PatientIdType, Sex } from '@prisma/client';
+import type { LabResultFlag, PatientIdType, ServiceOrderCategory, Sex } from '@prisma/client';
+import { SERVICE_ORDER_CATEGORIES } from '../services/serviceOrderService';
 import { dhaDisplay, dhaSystem } from '../services/dhaTerminology';
 import { formatPrescriptionLine, FREQUENCIES, FrequencyCode, rowToLine } from '../services/prescriptionService';
 
@@ -58,6 +59,10 @@ export interface PatientRecord {
   nextOfKinName: string | null;
   nextOfKinPhone: string | null;
   deletedAt: Date | null;
+  county?: string | null;
+  subCounty?: string | null;
+  ward?: string | null;
+  village?: string | null;
 }
 
 export function toPatient(p: PatientRecord): fhir4.Patient {
@@ -74,6 +79,20 @@ export function toPatient(p: PatientRecord): fhir4.Patient {
     gender: GENDER[p.sex],
     ...(p.dateOfBirth ? { birthDate: fhirDate(p.dateOfBirth) } : {}),
     telecom,
+    ...(p.county || p.subCounty || p.ward || p.village
+      ? {
+          address: [
+            {
+              use: 'home' as const,
+              text: [p.village, p.ward, p.subCounty, p.county].filter(Boolean).join(', '),
+              ...(p.village || p.ward ? { line: [p.village, p.ward].filter((x): x is string => Boolean(x)) } : {}),
+              ...(p.subCounty ? { district: p.subCounty } : {}),
+              ...(p.county ? { state: p.county } : {}),
+              country: 'KE',
+            },
+          ],
+        }
+      : {}),
     ...(p.nextOfKinName
       ? {
           contact: [
@@ -144,6 +163,9 @@ export interface VisitRecord {
     quantityUnit: string | null;
     instructionCodes: string | null;
     instructions: string | null;
+    dispenseStatus?: string | null;
+    dispensedQuantity?: number | null;
+    dispensedAt?: Date | null;
   }[];
   clinicId: string;
   departmentName: string;
@@ -155,7 +177,34 @@ export interface VisitRecord {
     requestedBy: { id: string; name: string; staffCode: string };
     noteForLab: string | null;
     completedAt: Date | null;
-    items: { id: string; testName: string; resultValue: string | null; resultUnit: string | null; resultFlag: LabResultFlag | null; resultComment: string | null }[];
+    items: { id: string; testName: string; loincCode?: string | null; resultValue: string | null; resultUnit: string | null; resultFlag: LabResultFlag | null; resultComment: string | null }[];
+  }[];
+  /** The doctor's plan / follow-up. */
+  carePlan?: string | null;
+  /** Vital signs taken during the visit. */
+  vitalSigns?: {
+    id: string;
+    recordedAt: Date;
+    systolic: number | null;
+    diastolic: number | null;
+    pulse: number | null;
+    respiratoryRate: number | null;
+    temperatureC: number | null;
+    oxygenSaturation: number | null;
+    weightKg: number | null;
+    heightCm: number | null;
+    muacCm: number | null;
+  }[];
+  /** Radiology, therapy, nutrition, social work and counselling orders. */
+  serviceOrders?: {
+    id: string;
+    category: ServiceOrderCategory;
+    description: string;
+    note: string | null;
+    urgent: boolean;
+    status: 'REQUESTED' | 'DONE' | 'CANCELLED';
+    requestedAt: Date;
+    requestedBy: { id: string; name: string; staffCode: string };
   }[];
 }
 
@@ -273,6 +322,11 @@ const LAB_CATEGORY: fhir4.CodeableConcept = {
   coding: [{ system: 'http://terminology.hl7.org/CodeSystem/observation-category', code: 'laboratory', display: 'Laboratory' }],
 };
 
+/** The test as a CodeableConcept: LOINC-coded when the clinic set a LOINC code for it, otherwise text only. */
+function labCode(item: { testName: string; loincCode?: string | null }): fhir4.CodeableConcept {
+  return item.loincCode ? { coding: [{ system: 'http://loinc.org', code: item.loincCode, display: item.testName }], text: item.testName } : { text: item.testName };
+}
+
 /** One ServiceRequest per test requested, and one Observation per signed result. */
 export function toLabResources(v: VisitRecord, patientId: string): (fhir4.ServiceRequest | fhir4.Observation)[] {
   const out: (fhir4.ServiceRequest | fhir4.Observation)[] = [];
@@ -284,7 +338,7 @@ export function toLabResources(v: VisitRecord, patientId: string): (fhir4.Servic
         status: order.status === 'RESULTS_READY' ? 'completed' : 'active',
         intent: 'order',
         category: [{ coding: [{ system: 'http://snomed.info/sct', code: '108252007', display: 'Laboratory procedure' }] }],
-        code: { text: item.testName },
+        code: labCode(item),
         subject: ref('Patient', patientId),
         encounter: ref('Encounter', v.id),
         authoredOn: order.requestedAt.toISOString(),
@@ -297,7 +351,7 @@ export function toLabResources(v: VisitRecord, patientId: string): (fhir4.Servic
           id: `${item.id}-result`,
           status: 'final',
           category: [LAB_CATEGORY],
-          code: { text: item.testName },
+          code: labCode(item),
           subject: ref('Patient', patientId),
           encounter: ref('Encounter', v.id),
           basedOn: [ref('ServiceRequest', item.id)],
@@ -310,6 +364,166 @@ export function toLabResources(v: VisitRecord, patientId: string): (fhir4.Servic
     }
   }
   return out;
+}
+
+export const LOINC_SYSTEM = 'http://loinc.org';
+const UCUM = 'http://unitsofmeasure.org';
+const VITAL_CATEGORY: fhir4.CodeableConcept = {
+  coding: [{ system: 'http://terminology.hl7.org/CodeSystem/observation-category', code: 'vital-signs', display: 'Vital Signs' }],
+};
+
+/** LOINC codes of the HL7 FHIR vital signs profiles. */
+const VITAL_CODES = {
+  pulse: { code: '8867-4', display: 'Heart rate', unit: '/min', ucum: '/min' },
+  respiratoryRate: { code: '9279-1', display: 'Respiratory rate', unit: '/min', ucum: '/min' },
+  temperatureC: { code: '8310-5', display: 'Body temperature', unit: 'C', ucum: 'Cel' },
+  oxygenSaturation: { code: '59408-5', display: 'Oxygen saturation in Arterial blood by Pulse oximetry', unit: '%', ucum: '%' },
+  weightKg: { code: '29463-7', display: 'Body weight', unit: 'kg', ucum: 'kg' },
+  heightCm: { code: '8302-2', display: 'Body height', unit: 'cm', ucum: 'cm' },
+} as const;
+
+/** Vital signs as FHIR Observations (vital-signs category, LOINC codes, UCUM units); BMI worked out from weight and height. */
+export function toVitalSignsObservations(v: VisitRecord, patientId: string): fhir4.Observation[] {
+  const out: fhir4.Observation[] = [];
+  for (const set of v.vitalSigns ?? []) {
+    const common = {
+      resourceType: 'Observation' as const,
+      status: 'final' as const,
+      category: [VITAL_CATEGORY],
+      subject: ref('Patient', patientId),
+      encounter: ref('Encounter', v.id),
+      effectiveDateTime: set.recordedAt.toISOString(),
+    };
+    const quantity = (value: number, unit: string, ucum: string): fhir4.Quantity => ({ value, unit, system: UCUM, code: ucum });
+    if (set.systolic != null && set.diastolic != null) {
+      out.push({
+        ...common,
+        id: `${set.id}-bp`,
+        code: { coding: [{ system: LOINC_SYSTEM, code: '85354-9', display: 'Blood pressure panel with all children optional' }], text: 'Blood pressure' },
+        component: [
+          { code: { coding: [{ system: LOINC_SYSTEM, code: '8480-6', display: 'Systolic blood pressure' }] }, valueQuantity: quantity(set.systolic, 'mmHg', 'mm[Hg]') },
+          { code: { coding: [{ system: LOINC_SYSTEM, code: '8462-4', display: 'Diastolic blood pressure' }] }, valueQuantity: quantity(set.diastolic, 'mmHg', 'mm[Hg]') },
+        ],
+      });
+    }
+    for (const [key, c] of Object.entries(VITAL_CODES) as [keyof typeof VITAL_CODES, (typeof VITAL_CODES)[keyof typeof VITAL_CODES]][]) {
+      const value = set[key];
+      if (value == null) continue;
+      out.push({ ...common, id: `${set.id}-${key}`, code: { coding: [{ system: LOINC_SYSTEM, code: c.code, display: c.display }], text: c.display }, valueQuantity: quantity(value, c.unit, c.ucum) });
+    }
+    if (set.weightKg && set.heightCm) {
+      const m = set.heightCm / 100;
+      out.push({
+        ...common,
+        id: `${set.id}-bmi`,
+        code: { coding: [{ system: LOINC_SYSTEM, code: '39156-5', display: 'Body mass index (BMI) [Ratio]' }], text: 'BMI' },
+        valueQuantity: quantity(Math.round((set.weightKg / (m * m)) * 10) / 10, 'kg/m2', 'kg/m2'),
+      });
+    }
+    if (set.muacCm != null) {
+      out.push({ ...common, id: `${set.id}-muac`, code: { text: 'Mid-upper arm circumference (MUAC)' }, valueQuantity: quantity(set.muacCm, 'cm', 'cm') });
+    }
+  }
+  return out;
+}
+
+/** The doctor's plan / follow-up as a CarePlan for the visit (FHIR interface only: the Shared Health Record does not take CarePlans). */
+export function toCarePlan(v: VisitRecord, patientId: string): fhir4.CarePlan[] {
+  if (!v.carePlan) return [];
+  return [
+    {
+      resourceType: 'CarePlan',
+      id: `${v.id}-plan`,
+      status: v.status === 'DONE' ? 'completed' : 'active',
+      intent: 'plan',
+      title: 'Plan / follow-up',
+      description: v.carePlan,
+      subject: ref('Patient', patientId),
+      encounter: ref('Encounter', v.id),
+      ...(v.consultedAt ? { created: v.consultedAt.toISOString() } : {}),
+      ...(v.doctor ? { author: ref('Practitioner', v.doctor.id) } : {}),
+    },
+  ];
+}
+
+/** What the clinic gave (or didn't) for each prescribed medicine, as MedicationDispense. */
+export function toMedicationDispenses(v: VisitRecord, patientId: string): fhir4.MedicationDispense[] {
+  return v.prescriptionItems
+    .filter((i) => i.dispenseStatus === 'DISPENSED' || i.dispenseStatus === 'NOT_DISPENSED')
+    .map((i) => {
+      const unit = i.quantityUnit ?? i.doseUnit;
+      return {
+        resourceType: 'MedicationDispense',
+        id: `${i.id}-dispense`,
+        status: i.dispenseStatus === 'DISPENSED' ? 'completed' : 'declined',
+        ...(i.dispenseStatus === 'NOT_DISPENSED' ? { statusReasonCodeableConcept: { text: 'Not dispensed at the clinic (patient to obtain elsewhere)' } } : {}),
+        medicationCodeableConcept: i.productCode ? { coding: [{ system: dhaSystem('products'), code: i.productCode, display: i.drugName }], text: i.drugName } : { text: i.drugName },
+        subject: ref('Patient', patientId),
+        context: ref('Encounter', v.id),
+        authorizingPrescription: [ref('MedicationRequest', i.id)],
+        ...(i.dispensedQuantity ? { quantity: { value: i.dispensedQuantity, system: dhaSystem('units'), code: unit, unit: dhaDisplay('units', unit) ?? unit } } : {}),
+        ...(i.dispensedAt ? { whenHandedOver: i.dispensedAt.toISOString() } : {}),
+      };
+    });
+}
+
+const SERVICE_ORDER_STATUS: Record<'REQUESTED' | 'DONE' | 'CANCELLED', fhir4.ServiceRequest['status']> = {
+  REQUESTED: 'active',
+  DONE: 'completed',
+  CANCELLED: 'revoked',
+};
+
+/** One ServiceRequest per radiology, therapy, nutrition, social work or counselling order (category coded with SNOMED CT). */
+export function toServiceOrderRequests(v: VisitRecord, patientId: string): fhir4.ServiceRequest[] {
+  return (v.serviceOrders ?? []).map((o) => {
+    const cat = SERVICE_ORDER_CATEGORIES[o.category];
+    return {
+      resourceType: 'ServiceRequest',
+      id: o.id,
+      status: SERVICE_ORDER_STATUS[o.status],
+      intent: 'order',
+      priority: o.urgent ? 'urgent' : 'routine',
+      category: [{ coding: [{ system: 'http://snomed.info/sct', code: cat.snomed.code, display: cat.snomed.display }], text: cat.label }],
+      code: { text: o.description },
+      subject: ref('Patient', patientId),
+      encounter: ref('Encounter', v.id),
+      authoredOn: o.requestedAt.toISOString(),
+      requester: ref('Practitioner', o.requestedBy.id),
+      ...(o.note ? { note: [{ text: o.note }] } : {}),
+    };
+  });
+}
+
+export interface ProblemRecord {
+  id: string;
+  icd11Code: string;
+  title: string;
+  note: string | null;
+  status: 'ACTIVE' | 'RESOLVED' | 'ENTERED_IN_ERROR';
+  onsetDate: Date | null;
+  recordedAt: Date;
+  recordedBy: { id: string; name: string; staffCode: string };
+}
+
+/** A problem-list entry as a Condition (category problem-list-item, ICD-11 coded). */
+export function toProblemCondition(p: ProblemRecord, patientId: string): fhir4.Condition {
+  return {
+    resourceType: 'Condition',
+    id: p.id,
+    clinicalStatus: {
+      coding: [{ system: 'http://terminology.hl7.org/CodeSystem/condition-clinical', code: p.status === 'RESOLVED' ? 'resolved' : p.status === 'ACTIVE' ? 'active' : 'inactive' }],
+    },
+    verificationStatus: {
+      coding: [{ system: 'http://terminology.hl7.org/CodeSystem/condition-ver-status', code: p.status === 'ENTERED_IN_ERROR' ? 'entered-in-error' : 'confirmed' }],
+    },
+    category: [{ coding: [{ system: 'http://terminology.hl7.org/CodeSystem/condition-category', code: 'problem-list-item', display: 'Problem List Item' }] }],
+    code: { coding: [{ system: ICD11_MMS_SYSTEM, code: p.icd11Code, display: p.title }], text: p.title },
+    subject: ref('Patient', patientId),
+    ...(p.onsetDate ? { onsetDateTime: p.onsetDate.toISOString().slice(0, 10) } : {}),
+    recordedDate: p.recordedAt.toISOString(),
+    recorder: ref('Practitioner', p.recordedBy.id),
+    ...(p.note ? { note: [{ text: p.note }] } : {}),
+  };
 }
 
 export interface AllergyRecord {
@@ -368,6 +582,7 @@ export function patientEverythingBundle(input: {
   clinics: { id: string; name: string; county: string | null }[];
   visits: VisitRecord[];
   allergies?: AllergyRecord[];
+  problems?: ProblemRecord[];
   now?: Date;
 }): fhir4.Bundle {
   const { baseUrl, patient, visits } = input;
@@ -375,19 +590,26 @@ export function patientEverythingBundle(input: {
   for (const v of visits) {
     if (v.doctor) practitioners.set(v.doctor.id, v.doctor);
     for (const o of v.labOrders) practitioners.set(o.requestedBy.id, o.requestedBy);
+    for (const o of v.serviceOrders ?? []) practitioners.set(o.requestedBy.id, o.requestedBy);
   }
   for (const a of input.allergies ?? []) practitioners.set(a.recordedBy.id, a.recordedBy);
+  for (const p of input.problems ?? []) practitioners.set(p.recordedBy.id, p.recordedBy);
   const resources: fhir4.FhirResource[] = [
     toPatient(patient),
     ...input.clinics.map(toOrganization),
     ...[...practitioners.values()].map(toPractitioner),
     ...(input.allergies ?? []).map((a) => toAllergyIntolerance(a, patient.id)),
+    ...(input.problems ?? []).map((p) => toProblemCondition(p, patient.id)),
   ];
   for (const v of visits) {
     resources.push(toEncounter(v, patient.id));
     resources.push(...toConditions(v, patient.id));
     resources.push(...toMedicationRequests(v, patient.id));
     resources.push(...toLabResources(v, patient.id));
+    resources.push(...toServiceOrderRequests(v, patient.id));
+    resources.push(...toVitalSignsObservations(v, patient.id));
+    resources.push(...toCarePlan(v, patient.id));
+    resources.push(...toMedicationDispenses(v, patient.id));
   }
   return {
     resourceType: 'Bundle',

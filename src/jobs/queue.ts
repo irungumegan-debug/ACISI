@@ -58,6 +58,18 @@ export async function enqueueSmsReceipt(data: SmsReceiptJobData): Promise<void> 
  * the patient has an email on file — a completely separate queue/worker
  * from every SMS.
  */
+export interface HieShrSendJobData {
+  encounterId: string;
+}
+
+/** Sending finished visits to DHA's Shared Health Record (see hie/shrService.ts). */
+export const hieShrSendQueue = new Queue<HieShrSendJobData>('hie-shr-send', queueOptions);
+
+/** Retries with backoff (30 s, 1 min, 2 min, 4 min...) so a short DHA outage doesn't lose the visit. */
+export async function enqueueHieShrSend(encounterId: string): Promise<void> {
+  await hieShrSendQueue.add('send-visit', { encounterId }, { attempts: 5, backoff: { type: 'exponential', delay: 30_000 }, jobId: `shr-${encounterId}-${Date.now()}` });
+}
+
 export async function enqueueVisitSummaryEmail(data: VisitSummaryEmailJobData): Promise<void> {
   await visitSummaryEmailQueue.add('send-visit-summary-email', data, {
     attempts: 3,

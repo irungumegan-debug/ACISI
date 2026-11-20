@@ -1,9 +1,11 @@
-/** Multi-factor login for clinic admins and doctors: SMS code after the PIN, remembered devices. */
+/** Multi-factor login for clinic admins and doctors: SMS code after the PIN (when SMS is allowed and no app is set up), remembered devices. */
 process.env.STAFF_MFA_ENABLED = 'true';
+process.env.STAFF_MFA_SMS_ENABLED = 'true';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 jest.mock('../../src/config/redis', () => require('../helpers/fakeRedis').fakeRedisModule());
 jest.mock('../../src/services/smsService', () => ({ sendSms: jest.fn(async () => 'sent') }));
 jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
+jest.mock('../../src/db/prisma', () => ({ prisma: { staff: { update: jest.fn() } } }));
 jest.mock('../../src/services/sessionRevocation', () => ({ isSessionRevoked: jest.fn(async () => false), revokeSessionsFor: jest.fn() }));
 jest.mock('../../src/services/staffService', () => ({
   ...jest.requireActual('../../src/services/staffService'),
@@ -53,7 +55,7 @@ it('front-desk staff log in with ID and PIN only', async () => {
 
 it('a doctor gets no session after the PIN alone: a code is sent by SMS to their own phone', async () => {
   const res = await request(app()).post('/auth/login').send({ staffCode: DOCTOR.staffCode, pin: '1234' });
-  expect(res.body).toMatchObject({ mfaRequired: true, phoneHint: '••• 678' });
+  expect(res.body).toMatchObject({ mfaRequired: true, method: 'sms', phoneHint: '••• 678' });
   expect(String(res.headers['set-cookie'] ?? '')).not.toContain(SESSION_COOKIE_NAME);
   expect((sendSms as jest.Mock).mock.lastCall[0]).toBe('+254712345678');
   expect((sendSms as jest.Mock).mock.lastCall[2]).toBe('STAFF_LOGIN_CODE');
@@ -73,7 +75,9 @@ it('a wrong code is refused, and after 5 wrong codes even the right one stops wo
   const start = await request(app()).post('/auth/login').send({ staffCode: DOCTOR.staffCode, pin: '1234' });
   const code = codeFromSms();
   const wrong = code === '000000' ? '111111' : '000000';
-  for (let i = 0; i < 5; i++) expect((await request(app()).post('/auth/login/verify').send({ challengeId: start.body.challengeId, code: wrong })).status).toBe(401);
+  for (let i = 0; i < 4; i++) expect((await request(app()).post('/auth/login/verify').send({ challengeId: start.body.challengeId, code: wrong })).status).toBe(401);
+  // The 5th also locks the account for a few minutes (429).
+  expect((await request(app()).post('/auth/login/verify').send({ challengeId: start.body.challengeId, code: wrong })).status).toBe(429);
   expect((await request(app()).post('/auth/login/verify').send({ challengeId: start.body.challengeId, code })).status).toBe(401);
 });
 

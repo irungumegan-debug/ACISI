@@ -153,3 +153,15 @@ describe('weekly summary on a stubbed database', () => {
     expect(s.listConfirmed).toBe('2026-11-14');
   });
 });
+
+describe('International Health Regulations flag', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { NOTIFIABLE_DISEASES, matchNotifiable } = require('../../src/services/notifiableDiseases') as typeof import('../../src/services/notifiableDiseases');
+  const ihr = (id: string) => NOTIFIABLE_DISEASES.find((d) => d.id === id)?.ihr;
+  it('IHR Annex 2: always notifiable vs. assessed with the decision instrument; others unflagged', () => {
+    expect(['smallpox', 'afp', 'influenza-new-subtype', 'sars-covid'].map(ihr)).toEqual(['ALWAYS', 'ALWAYS', 'ALWAYS', 'ALWAYS']);
+    expect(['cholera', 'plague', 'yellow-fever', 'vhf', 'pheic'].map(ihr)).toEqual(['ASSESS', 'ASSESS', 'ASSESS', 'ASSESS', 'ASSESS']);
+    expect(ihr('typhoid')).toBeUndefined();
+    expect(matchNotifiable(['1A00'])[0]!.disease.ihr).toBe('ASSESS');
+  });
+});

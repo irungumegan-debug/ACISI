@@ -6,6 +6,11 @@ jest.mock('../../src/db/prisma', () => ({
     patient: { findUniqueOrThrow: jest.fn() },
     notifiableDiseaseCase: { createMany: jest.fn() },
     prescriptionItem: { createMany: jest.fn() },
+    serviceOrder: { findMany: jest.fn(async () => []) },
+    patientProblem: { findMany: jest.fn(async () => []) },
+    staff: { findMany: jest.fn(async () => []) },
+    // No HIE consent on these visits: nothing goes to the national record.
+    hieVisit: { findUnique: jest.fn(async () => null) },
     // Interactive transactions run against the same mocks.
     $transaction: jest.fn((fn: (tx: unknown) => unknown) => fn(jest.requireMock('../../src/db/prisma').prisma)),
   },
@@ -23,7 +28,7 @@ jest.mock('../../src/services/labService', () => ({
 }));
 jest.mock('../../src/services/allergyService', () => ({ listAllergiesForClinic: jest.fn(async () => ({ allergies: [], hiddenElsewhere: false })) }));
 jest.mock('../../src/services/staffService', () => ({ findActiveStaffById: jest.fn(), comparePin: jest.fn() }));
-jest.mock('../../src/jobs/queue', () => ({ enqueueVisitSummaryEmail: jest.fn() }));
+jest.mock('../../src/jobs/queue', () => ({ enqueueVisitSummaryEmail: jest.fn(), enqueueHieShrSend: jest.fn() }));
 jest.mock('../../src/services/checkoutSmsService', () => ({ sendCheckoutSms: jest.fn() }));
 
 let mockEmailConfigured = true;
@@ -450,7 +455,7 @@ describe('notifiable diseases at signing', () => {
         skipDuplicates: true,
       }),
     );
-    expect(result.notifiable).toEqual([{ diseaseId: 'cholera', name: 'Cholera', reporting: 'IMMEDIATE', icd11Code: '1A00' }]);
+    expect(result.notifiable).toEqual([{ diseaseId: 'cholera', name: 'Cholera', reporting: 'IMMEDIATE', icd11Code: '1A00', ihr: 'ASSESS' }]);
     expect(notifyNotifiableCases).toHaveBeenCalledWith(expect.objectContaining({ clinicId: 'clinic-A', encounterId: 'enc-n' }));
   });
 

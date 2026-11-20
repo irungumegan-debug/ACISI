@@ -31,7 +31,21 @@ export function LabResultLine({ testName, value, unit, flag, comment }: Pick<Lab
 /** This visit's lab requests on the consultation page: waiting at the lab, or the signed results. */
 export function LabOrdersForVisit({ orders }: { orders: LabOrderView[] }) {
   if (orders.length === 0) return null;
+  const critical = orders.filter((o) => o.status === 'RESULTS_READY').flatMap((o) => o.items.filter((i) => i.resultFlag === 'CRITICAL'));
   return (
+    <>
+    {critical.length > 0 && (
+      <div role="alert" className="mb-4 rounded-2xl border border-red-300 bg-red-50 p-4 text-sm text-red-900 shadow-card">
+        <p className="font-display text-base font-semibold">Critical lab result{critical.length > 1 ? 's' : ''}: review now</p>
+        <ul className="mt-1 list-disc pl-5">
+          {critical.map((i) => (
+            <li key={i.id}>
+              {i.testName}: {[i.resultValue, i.resultUnit].filter(Boolean).join(' ') || 'see comment'}
+            </li>
+          ))}
+        </ul>
+      </div>
+    )}
     <section className="mb-6 rounded-2xl border border-blue-200 bg-blue-50/40 p-5 shadow-card">
       <h2 className="mb-3 flex items-center gap-2 font-display text-lg font-semibold text-navy-900">
         <FlaskConical size={18} aria-hidden className="text-blue-700" /> Lab results
@@ -79,6 +93,7 @@ export function LabOrdersForVisit({ orders }: { orders: LabOrderView[] }) {
         ))}
       </div>
     </section>
+    </>
   );
 }
 

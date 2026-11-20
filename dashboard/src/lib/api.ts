@@ -38,6 +38,8 @@ export interface ClinicStaffListItem {
   /** Every department a doctor works in (empty for other roles). */
   departments: { id: string; name: string }[];
   isActive: boolean;
+  /** True once they have set up an authenticator app for multi-factor login. */
+  authenticatorSetUp: boolean;
   presence: DoctorPresenceStatus | null;
 }
 
@@ -63,7 +65,14 @@ export interface NotifiableAlert {
   reporting: NotifiableReporting;
   icd11Code: string;
   note?: string;
+  /** International Health Regulations flag. */
+  ihr?: 'ALWAYS' | 'ASSESS';
 }
+
+export const IHR_TEXT = {
+  ALWAYS: 'IHR: always notifiable internationally. Report immediately; the Sub-County passes it to the national IHR focal point.',
+  ASSESS: 'IHR: may be an event of international concern. Report immediately; the Sub-County assesses it for the national IHR focal point.',
+} as const;
 
 export interface NotifiableCase {
   id: string;
@@ -80,6 +89,7 @@ export interface NotifiableCase {
   reportedAt: string | null;
   reportedBy: string | null;
   reportNote: string | null;
+  ihr?: 'ALWAYS' | 'ASSESS' | null;
 }
 
 export interface HealthEvent {
@@ -244,6 +254,7 @@ export interface LabTestItem {
   name: string;
   priceKes: number;
   isActive: boolean;
+  loincCode?: string | null;
 }
 
 export interface LabResultInput {
@@ -262,6 +273,10 @@ export interface PatientIdentity {
   idNumber: string;
   nextOfKinName: string;
   nextOfKinPhone: string;
+  county?: string;
+  subCounty?: string;
+  ward?: string;
+  village?: string;
 }
 
 /** As stored (null = not on file). */
@@ -270,6 +285,139 @@ export interface PatientIdentityRecord {
   idNumber: string | null;
   nextOfKinName: string | null;
   nextOfKinPhone: string | null;
+  county?: string | null;
+  subCounty?: string | null;
+  ward?: string | null;
+  village?: string | null;
+}
+
+/** The patient's national Client Registry ID (DHA HIE), only while it matches their current ID document. */
+export interface PatientHie {
+  crId: string | null;
+  verifiedAt: string | null;
+  /** They have an ID document the Client Registry can search (not a passport). */
+  canLookUp: boolean;
+}
+
+export interface HieFacility {
+  frCode: string;
+  officialName: string;
+  facilityType: string | null;
+  kephLevel: string | null;
+  county: string | null;
+  subCounty: string | null;
+  licenceStatus: string | null;
+  registrationNumber: string | null;
+}
+
+export interface HiePractitioner {
+  regulator: string | null;
+  registrationNumber: string | null;
+  practitionerId: string | null;
+  registeredName: string | null;
+  licenceEnd: string | null;
+  licenceCurrent: boolean | null;
+  verifiedAt: string | null;
+}
+
+export interface HieStatus {
+  connected: boolean;
+  facility: { frCode: string; name: string | null; verifiedAt: string | null } | null;
+  practitioner: HiePractitioner | null;
+}
+
+export type ClientRegistryLookup =
+  | { result: 'saved'; crId: string }
+  | { result: 'check'; registry: { firstName: string | null; middleName: string | null; lastName: string | null; dateOfBirth: string | null; sex: 'MALE' | 'FEMALE' | null } };
+
+export interface DispenseLine {
+  id: string;
+  text: string;
+  prescribedQuantity: number | null;
+  unit: string | null;
+  dispenseStatus: 'DISPENSED' | 'NOT_DISPENSED' | null;
+  dispensedQuantity: number | null;
+  dispensedAt: string | null;
+}
+
+export interface QualityMeasure {
+  id: string;
+  name: string;
+  definition: string;
+  kind: 'percent' | 'minutes';
+  numerator: number | null;
+  denominator: number | null;
+  value: number | null;
+}
+
+export interface ProblemItem {
+  id: string;
+  icd11Code: string;
+  title: string;
+  note: string | null;
+  status: 'ACTIVE' | 'RESOLVED' | 'ENTERED_IN_ERROR';
+  onsetDate: string | null;
+  recordedAt: string;
+  isOwnClinic: boolean;
+  history: { action: string; status: string; at: string; byName: string }[];
+}
+
+export interface VitalSignsSet {
+  id: string;
+  encounterId: string;
+  recordedAt: string;
+  recordedByName: string;
+  systolic: number | null;
+  diastolic: number | null;
+  pulse: number | null;
+  respiratoryRate: number | null;
+  temperatureC: number | null;
+  oxygenSaturation: number | null;
+  weightKg: number | null;
+  heightCm: number | null;
+  muacCm: number | null;
+  bmi: number | null;
+  warnings: { field: string; level: 'danger' | 'warning'; message: string }[];
+}
+
+export type ServiceOrderCategory = 'RADIOLOGY' | 'PHYSIOTHERAPY' | 'OCCUPATIONAL_THERAPY' | 'NUTRITION' | 'SOCIAL_WORK' | 'COUNSELLING';
+
+export interface ServiceOrderItem {
+  id: string;
+  category: ServiceOrderCategory;
+  categoryLabel: string;
+  description: string;
+  note: string | null;
+  urgent: boolean;
+  status: 'REQUESTED' | 'DONE' | 'CANCELLED';
+  requestedAt: string;
+  requestedByName: string;
+  closedAt: string | null;
+}
+
+export interface HieVisitInfo {
+  consentStatus: 'PENDING' | 'APPROVED' | 'REJECTED';
+  emergency: boolean;
+  canRead: boolean;
+  sendStatus: 'NOT_SENT' | 'SENDING' | 'SENT' | 'FAILED';
+  sentAt: string | null;
+  closeStatus: 'OPEN' | 'CODE_SENT' | 'CLOSED';
+  closedAt: string | null;
+}
+
+export interface HieVisitState {
+  connected: boolean;
+  facilitySet: boolean;
+  patientLinked: boolean;
+  visit: HieVisitInfo | null;
+}
+
+export interface NationalRecordItem {
+  kind: 'Visit' | 'Diagnosis' | 'Medicine' | 'Allergy' | 'Result' | 'Immunisation';
+  date: string | null;
+  title: string;
+  detail: string | null;
+  facility: string | null;
 }
 
 export interface PatientDetail extends PatientIdentityRecord {
@@ -280,6 +428,7 @@ export interface PatientDetail extends PatientIdentityRecord {
   dateOfBirth: string | null;
   sex: string;
   smsOptOut: boolean;
+  hie: PatientHie;
   history: VisitHistoryEntry[];
   hasHiddenHistoryElsewhere: boolean;
   /** How this clinic may see other clinics' visits right now, or null (own visits only). */
@@ -339,6 +488,8 @@ export interface DoctorQueueItem {
   waitingSince: string;
   /** Came back from the lab with signed results. */
   backFromLab?: boolean;
+  /** Signed results the lab flagged critical. */
+  criticalResults?: number;
 }
 
 export type AppointmentStatus = 'REQUESTED' | 'CONFIRMED' | 'CANCELLED' | 'COMPLETED';
@@ -394,6 +545,11 @@ export interface EncounterDetail {
   allergiesHiddenElsewhere?: boolean;
   /** Medicines from the visits shown in `history`, newest first. Doctor view only. */
   medications?: MedicationItem[];
+  /** This visit's radiology, therapy and other orders. */
+  serviceOrders?: ServiceOrderItem[];
+  problems?: ProblemItem[];
+  problemsHiddenElsewhere?: boolean;
+  familyHistory?: string | null;
 }
 
 export interface MedicationItem {
@@ -689,12 +845,19 @@ export interface PatientFileItem {
   uploadedAt: string;
 }
 
-/** Admins and doctors: after the PIN, a 6-digit code is sent by SMS. */
+/**
+ * Admins and doctors: after the PIN, a 6-digit code from their
+ * authenticator app ('authenticator'), setting the app up first
+ * ('setup'), or a code by SMS ('sms').
+ */
 export interface LoginCodeChallenge {
   mfaRequired: true;
   challengeId: string;
-  /** e.g. "••• 678" */
-  phoneHint: string;
+  method: 'authenticator' | 'setup' | 'sms';
+  /** sms only, e.g. "••• 678" */
+  phoneHint?: string;
+  /** setup only. qrCodeSvg is generated by the server (the qrcode library), not user content. */
+  setup?: { qrCodeSvg: string; secret: string; accountName: string };
 }
 
 export const api = {
@@ -782,8 +945,93 @@ export const api = {
     return request<{ ok: true }>('/clinic/payment-settings', { method: 'PUT', body: JSON.stringify(body) });
   },
   /** Saves the ID document and next of kin; fields sent empty are cleared. */
+  addProblem(encounterId: string, p: { icd11Code: string; note?: string; onsetDate?: string }) {
+    return request<{ problems: ProblemItem[]; hiddenElsewhere: boolean }>(`/doctor/encounters/${encodeURIComponent(encounterId)}/problems`, { method: 'POST', body: JSON.stringify(p) });
+  },
+  updateProblem(encounterId: string, problemId: string, change: { status: ProblemItem['status'] } | { note: string | null }) {
+    return request<{ problems: ProblemItem[]; hiddenElsewhere: boolean }>(`/doctor/encounters/${encodeURIComponent(encounterId)}/problems/${encodeURIComponent(problemId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(change),
+    });
+  },
+  setFamilyHistory(encounterId: string, text: string | null) {
+    return request<{ familyHistory: string | null }>(`/doctor/encounters/${encodeURIComponent(encounterId)}/family-history`, { method: 'PUT', body: JSON.stringify({ text }) });
+  },
+  getDispensing(encounterId: string) {
+    return request<{ items: DispenseLine[] }>(`/dispensing/encounters/${encodeURIComponent(encounterId)}`);
+  },
+  recordDispensing(encounterId: string, itemId: string, status: 'DISPENSED' | 'NOT_DISPENSED', quantity?: number | null) {
+    return request<{ items: DispenseLine[] }>(`/dispensing/encounters/${encodeURIComponent(encounterId)}/items/${encodeURIComponent(itemId)}`, {
+      method: 'POST',
+      body: JSON.stringify({ status, quantity }),
+    });
+  },
+  getVitalSigns(encounterId: string) {
+    return request<{ thisVisit: VitalSignsSet[]; history: VitalSignsSet[] }>(`/vitals/encounters/${encodeURIComponent(encounterId)}`);
+  },
+  recordVitalSigns(encounterId: string, values: Record<string, number | null>) {
+    return request<{ thisVisit: VitalSignsSet[]; history: VitalSignsSet[] }>(`/vitals/encounters/${encodeURIComponent(encounterId)}`, { method: 'POST', body: JSON.stringify(values) });
+  },
+  addServiceOrder(encounterId: string, order: { category: ServiceOrderCategory; description: string; note?: string; urgent?: boolean }) {
+    return request<{ orders: ServiceOrderItem[] }>(`/doctor/encounters/${encodeURIComponent(encounterId)}/orders`, { method: 'POST', body: JSON.stringify(order) });
+  },
+  cancelServiceOrder(encounterId: string, orderId: string) {
+    return request<{ orders: ServiceOrderItem[] }>(`/doctor/encounters/${encodeURIComponent(encounterId)}/orders/${encodeURIComponent(orderId)}/cancel`, { method: 'POST' });
+  },
+  getVisitServiceOrders(encounterId: string) {
+    return request<{ orders: ServiceOrderItem[] }>(`/service-orders/encounters/${encodeURIComponent(encounterId)}`);
+  },
+  closeVisitServiceOrder(encounterId: string, orderId: string, outcome: 'DONE' | 'CANCELLED') {
+    return request<{ orders: ServiceOrderItem[] }>(`/service-orders/encounters/${encodeURIComponent(encounterId)}/${encodeURIComponent(orderId)}/close`, {
+      method: 'POST',
+      body: JSON.stringify({ outcome }),
+    });
+  },
+
+  getHieVisit(encounterId: string) {
+    return request<HieVisitState>(`/hie/visits/${encodeURIComponent(encounterId)}`);
+  },
+  hieVisitAction(encounterId: string, action: 'consent' | 'consent/resend' | 'consent/confirm' | 'consent/refuse' | 'send' | 'close' | 'close/confirm', body?: object) {
+    return request<HieVisitInfo | { ok: true }>(`/hie/visits/${encodeURIComponent(encounterId)}/${action}`, { method: 'POST', body: JSON.stringify(body ?? {}) });
+  },
+  getNationalRecord(encounterId: string) {
+    return request<{ items: NationalRecordItem[] }>(`/hie/visits/${encodeURIComponent(encounterId)}/national-record`);
+  },
+
+  getSurveillanceEmail() {
+    return request<{ email: string | null; lastWeekSent: string | null; emailAvailable: boolean }>('/clinic/surveillance-email');
+  },
+  setSurveillanceEmail(email: string | null) {
+    return request<{ email: string | null; emailAvailable: boolean }>('/clinic/surveillance-email', { method: 'PUT', body: JSON.stringify({ email }) });
+  },
+
+  getHieStatus() {
+    return request<HieStatus>('/hie/status');
+  },
+
+  searchHieFacilities(q: { name?: string; identifier?: string; identifierType?: string }) {
+    const params = new URLSearchParams(Object.entries(q).filter(([, v]) => v) as [string, string][]);
+    return request<{ facilities: HieFacility[] }>(`/hie/facilities?${params.toString()}`);
+  },
+
+  setHieFacility(frCode: string) {
+    return request<{ frCode: string; name: string }>('/hie/facility', { method: 'PUT', body: JSON.stringify({ frCode }) });
+  },
+
+  verifyMyPractitionerRecord(regulator: string, registrationNumber: string) {
+    return request<HiePractitioner>('/hie/me/practitioner', { method: 'PUT', body: JSON.stringify({ regulator, registrationNumber }) });
+  },
+
+  lookUpPatientInClientRegistry(patientId: string) {
+    return request<ClientRegistryLookup>(`/hie/patients/${encodeURIComponent(patientId)}/client-registry`, { method: 'POST' });
+  },
+
+  confirmClientRegistryMatch(patientId: string) {
+    return request<{ crId: string }>(`/hie/patients/${encodeURIComponent(patientId)}/client-registry/confirm`, { method: 'POST' });
+  },
+
   updatePatientDetails(patientId: string, identity: PatientIdentity) {
-    return request<PatientIdentityRecord>(`/patients/${encodeURIComponent(patientId)}/details`, {
+    return request<PatientIdentityRecord & { hie: PatientHie }>(`/patients/${encodeURIComponent(patientId)}/details`, {
       method: 'PATCH',
       body: JSON.stringify(identity),
     });
@@ -913,6 +1161,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ newPin }),
     });
+  },
+
+  resetStaffAuthenticator(staffId: string) {
+    return request<{ staffCode: string; name: string }>(`/clinic/staff/${encodeURIComponent(staffId)}/reset-authenticator`, { method: 'POST' });
   },
 
   deactivateStaff(staffId: string) {
@@ -1052,13 +1304,17 @@ export const api = {
     return request<LabTestItem>('/lab-tests', { method: 'POST', body: JSON.stringify(body) });
   },
 
-  updateLabTest(labTestId: string, body: { name?: string; priceKes?: number; isActive?: boolean }) {
+  loincSuggestions(name: string) {
+    return request<{ suggestions: { code: string; name: string }[] }>(`/lab-tests/loinc-suggestions?name=${encodeURIComponent(name)}`);
+  },
+
+  updateLabTest(labTestId: string, body: { name?: string; priceKes?: number; isActive?: boolean; loincCode?: string | null }) {
     return request<LabTestItem>(`/lab-tests/${encodeURIComponent(labTestId)}`, { method: 'PATCH', body: JSON.stringify(body) });
   },
 
   submitConsultation(
     encounterId: string,
-    body: { diagnosisCodes: string[]; diagnosis: string; prescriptionItems: PrescriptionLine[]; prescriptionAdvice: string; pin: string },
+    body: { diagnosisCodes: string[]; diagnosis: string; prescriptionItems: PrescriptionLine[]; prescriptionAdvice: string; carePlan?: string; pin: string },
   ) {
     return request<{ encounterId: string; status: EncounterStatus; notifiable?: NotifiableAlert[] }>(`/doctor/encounters/${encounterId}/consult`, {
       method: 'POST',
@@ -1125,6 +1381,14 @@ export const api = {
   /** Routine report: period MONTH (YYYY-MM), QUARTER (YYYY-Q1..Q4) or YEAR (YYYY). */
   routineReport(period: string, value: string) {
     return request<RoutineReport>(`/routine-reports?period=${period}&value=${encodeURIComponent(value)}`);
+  },
+
+  qualityMeasures(period: string, value: string) {
+    return request<{ label: string; startDate: string; endDate: string; measures: QualityMeasure[] }>(`/routine-reports/quality?period=${period}&value=${encodeURIComponent(value)}`);
+  },
+
+  qualityMeasuresCsvUrl(period: string, value: string) {
+    return `/api/staff/routine-reports/quality/csv?period=${period}&value=${encodeURIComponent(value)}`;
   },
 
   routineReportCsvUrl(period: string, value: string) {
