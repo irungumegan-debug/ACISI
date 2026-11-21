@@ -63,8 +63,11 @@ USSD-first clinic management platform for small clinics in Kenya. See
   IG codes in src/assets/dha/). DHA FHIR guides (Kenya Core 1.0.0, Patient
   Summary 0.1.0, ePrescription 0.1.0) download from fhir.dha.go.ke/ig/...
   /package.tgz (host now allowed in the ACISI environment). HIE: public API
-  docs at hie-docs.dha.go.ke; credentials and UAT via afyaconnect.dha@gmail.com
-  (interoperability@dha.go.ke bounces). Plan and API summary:
+  docs at hie-docs.dha.go.ke. Sandbox (AfyaConnect) credentials appear on the
+  DHA portal's "HIE sandbox" page automatically once the attestation is
+  submitted and the application fee paid (seen 21 Nov 2026); UAT booking via
+  afyaconnect.dha@gmail.com (interoperability@dha.go.ke bounces). Score at
+  submission time: 76% (owner, 21 Nov). Plan and API summary:
   docs/compliance/HIE-integration-plan.md (hosts hie-docs, ilm-dev and
   hie-test .dha.go.ke allowed in the ACISI environment). Steps 1-4 built
   20 Nov (src/hie/, src/dashboard/hie.ts, console "National HIE" page; off
