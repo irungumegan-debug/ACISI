@@ -96,3 +96,24 @@ USSD-first clinic management platform for small clinics in Kenya. See
   Score estimate (formula reverse-engineered from section 4: component on =
   half, feature share = half, "Required" components weigh double): ~70-75%
   overall; the HIE critical gap needs DHA credentials regardless.
+
+- **DHA Phase-3 documents (started 21 Nov 2026, owner wants them done by end
+  of 22 Nov):** DHA's blank templates in `docs/compliance/dha/templates/`,
+  filled versions in `docs/compliance/dha/`, fill scripts and diagram
+  generator in `docs/compliance/dha/tools/` (python-docx; diagrams are SVG
+  rendered to PNG with Playwright). Done: System Architecture Document
+  (owner must still sign/date, and confirm the server's Node.js version with
+  `node -v`: if v20 it is end-of-life, upgrade). Next, in order: Technical
+  Specifications, Encryption Implementation Spec, Audit Trail Spec, Backup &
+  Recovery Policy, Disaster Recovery Plan, DR Test Report (needs a real
+  restore test, checklist H2). Then non-template documents: System User
+  Manual, Information Security Policy, Incident Response Plan, Access Control
+  Policy, Data Retention & Disposal Policy, Disease Reporting / IDSR
+  Reporting Specs, KENHDD compliance (find out what KENHDD is first), HIE
+  Integration Test Results (after sandbox credentials). Owner supplies:
+  business name certificate (BN-L3SMWLDM, not incorporated: tell DHA), KRA
+  PIN, tax compliance, ODPC certificate. Mark anything not in place as "No" /
+  "Planned"; never overstate.
+- **Waiting on owner:** approval of the Privacy Notice draft (21 Nov,
+  `web/src/content/privacy.md`) and DPIA v1.4 signature; then one PR for both.
+
