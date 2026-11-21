@@ -6,6 +6,12 @@ for interoperability@dha.go.ke (that address bounces).
 
 ## How DHA's process works
 
+**21 Nov 2026:** the DHA portal's "HIE sandbox" page says sandbox (AfyaConnect)
+credentials are created when the application fee is paid and the attestation
+submitted. So: submit and pay first, then the credentials appear there. No
+email request is needed for them.
+
+
 1. **Development:** DHA issues test credentials (`client_id`, `client_secret`).
    Build and test against the development middleware.
 2. **UAT demo** with the HIE integration team: **afyaconnect.dha@gmail.com**

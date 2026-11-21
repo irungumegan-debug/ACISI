@@ -37,6 +37,11 @@ USSD-first clinic management platform for small clinics in Kenya. See
 
 ## Compliance documents
 
+- **Patient address / residence is NOT collected** (owner, 21 Nov 2026): not in
+  the Privacy Notice, DPIA or ODPC registration; no GPS. Never add address or
+  location fields for patients without the owner first updating those. The
+  DHA "Residence/Address" box stays unticked.
+
 - **DPIA (Data Protection Impact Assessment), 13 Nov 2026:**
   `docs/compliance/DPIA-2026-11-13.md`. Show it in full whenever the owner
   asks for "the DPIA" or "the DPI report". Update it (new version and date)
@@ -58,8 +63,11 @@ USSD-first clinic management platform for small clinics in Kenya. See
   IG codes in src/assets/dha/). DHA FHIR guides (Kenya Core 1.0.0, Patient
   Summary 0.1.0, ePrescription 0.1.0) download from fhir.dha.go.ke/ig/...
   /package.tgz (host now allowed in the ACISI environment). HIE: public API
-  docs at hie-docs.dha.go.ke; credentials and UAT via afyaconnect.dha@gmail.com
-  (interoperability@dha.go.ke bounces). Plan and API summary:
+  docs at hie-docs.dha.go.ke. Sandbox (AfyaConnect) credentials appear on the
+  DHA portal's "HIE sandbox" page automatically once the attestation is
+  submitted and the application fee paid (seen 21 Nov 2026); UAT booking via
+  afyaconnect.dha@gmail.com (interoperability@dha.go.ke bounces). Score at
+  submission time: 76% (owner, 21 Nov). Plan and API summary:
   docs/compliance/HIE-integration-plan.md (hosts hie-docs, ilm-dev and
   hie-test .dha.go.ke allowed in the ACISI environment). Steps 1-4 built
   20 Nov (src/hie/, src/dashboard/hie.ts, console "National HIE" page; off
@@ -81,7 +89,7 @@ USSD-first clinic management platform for small clinics in Kenya. See
   ("ready to launch"). Owner pasted sections 3, 4 and 6 (not yet 1, 2, 5, 7).
   Built 20-21 Nov for them: service orders, vital signs + warnings, problem
   list, critical lab alerts, quality measures, fuller visit record + care
-  plan, residence, family history, dispensing, on-screen surveillance banner,
+  plan, family history, dispensing, on-screen surveillance banner,
   IHR flag, emailed SCDSC reports, LOINC lab codes. What to tick once
   deployed: end of docs/compliance/DHA-self-attestation-answers-2026-11-20.md.
   Score estimate (formula reverse-engineered from section 4: component on =

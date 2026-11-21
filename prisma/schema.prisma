@@ -353,11 +353,6 @@ model Patient {
   dateOfBirth        DateTime?
   sex                Sex            @default(UNKNOWN)
   county             String?
-  /// Residence, below county (Kenya administrative units). Optional; wiped on account deletion.
-  subCounty          String?
-  ward               String?
-  /// Village, estate or landmark.
-  village            String?
   /// Family history the doctor recorded (e.g. "Mother: diabetes; father: hypertension"). Encrypted at rest.
   familyHistory      String?
   /// Optional — collected only via the web portal signup form (not USSD,

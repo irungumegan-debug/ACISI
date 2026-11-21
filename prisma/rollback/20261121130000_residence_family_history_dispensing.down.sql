@@ -8,6 +8,6 @@
 -- Deletes patients' sub-county, ward, village and family history, and what was dispensed.
 
 BEGIN;
-ALTER TABLE "patients" DROP COLUMN IF EXISTS "subCounty", DROP COLUMN IF EXISTS "ward", DROP COLUMN IF EXISTS "village", DROP COLUMN IF EXISTS "familyHistory";
+ALTER TABLE "patients" DROP COLUMN IF EXISTS "subCounty", DROP COLUMN IF EXISTS "ward", DROP COLUMN IF EXISTS "village", DROP COLUMN IF EXISTS "familyHistory"; -- residence already dropped by 20261121160000
 ALTER TABLE "prescription_items" DROP COLUMN IF EXISTS "dispenseStatus", DROP COLUMN IF EXISTS "dispensedQuantity", DROP COLUMN IF EXISTS "dispensedAt", DROP COLUMN IF EXISTS "dispensedByStaffId";
 COMMIT;
