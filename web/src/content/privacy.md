@@ -22,15 +22,17 @@ Each clinic signs a Data Processing Agreement with ACISI before any real patient
 
 We collect only what the clinic and ACISI need to check you in, keep your records and handle payments.
 
-From patients, we collect your name, phone number, sex, date of birth and residence, and the name and phone number of your next of kin. To identify you correctly, we also record your national ID, passport, birth certificate or alien number. You give us these yourself, or clinic staff record them when you check in.
+From patients, we collect your name, phone number, sex and date of birth, and the name and phone number of your next of kin. To identify you correctly, we also record your national ID, passport, birth certificate or alien number. You give us these yourself, or clinic staff record them when you check in. We do not ask for or record where you live, and ACISI never uses your phone's location.
 
-For each visit, we record the clinic, department, reason for visit, check-in time and your place in the queue. The clinic and the doctors who treat you add your health data: consultation notes, diagnosis, prescriptions, test results and appointments.
+For each visit, we record the clinic, department, reason for visit, check-in time and your place in the queue. The clinic and the health workers who treat you add your health data: consultation notes, diagnosis, prescriptions and the medicines handed to you, test results, vital signs (such as blood pressure, temperature, weight and height), any X-ray, therapy, nutrition, social work or counselling the doctor orders, the doctor's plan and follow-up, and appointments. The doctor may also keep a list of your long-term conditions (such as high blood pressure or diabetes) that matter beyond one visit.
+
+Your doctor may write a short note about illnesses that run in your family (for example "mother: diabetes"), because it can affect your care. This note is about your relatives' health, so we keep it short, usually say only how the person is related to you rather than their name, and show it only to the doctors treating you.
 
 We also keep payment records: the check-in fee, your visit bill, how you paid, the amount and the M-Pesa or card reference. These come from you, the clinic and Safaricom. We record the choices you make too, such as opting out of SMS, agreeing to the check-in invitation, or consenting to share your records with another clinic.
 
 From clinic staff, we collect name, role, work email, phone number, login details and the actions they take in ACISI. From clinics, we collect the clinic's name, location, departments, contact person and till or paybill number. From website visitors, we collect device and browser details, pages visited and any messages sent through our contact form.
 
-Health data, your sex and family details such as next of kin are sensitive personal data under the Data Protection Act. We give them extra protection, and treat identity numbers with the same care. We never ask for or store card numbers or M-Pesa PINs.
+Health data, your sex and family details such as next of kin and family history are sensitive personal data under the Data Protection Act. We give them extra protection, and treat identity numbers with the same care. We never ask for or store card numbers or M-Pesa PINs.
 
 ## Why do we use it, and on what legal basis?
 
@@ -48,7 +50,7 @@ We keep staff accounts, logins and activity logs, and use the least data needed 
 
 You can still be seen at the clinic, but some things may not work.
 
-Your name and phone number are needed to check you in, keep your records together and reach you; without them, the clinic may need to register you on paper. Your ID number, date of birth, sex and residence help the clinic identify you correctly, so without them your records may be harder to match and the clinic may ask again. Next of kin details are optional, but without them the clinic cannot reach anyone on your behalf. SMS is optional too: if you opt out, ask the clinic for a printed or on-screen receipt and summary.
+Your name and phone number are needed to check you in, keep your records together and reach you; without them, the clinic may need to register you on paper. Your ID number, date of birth and sex help the clinic identify you correctly, so without them your records may be harder to match and the clinic may ask again. Next of kin details are optional, but without them the clinic cannot reach anyone on your behalf. SMS is optional too: if you opt out, ask the clinic for a printed or on-screen receipt and summary.
 
 ## What messages do we send you?
 
@@ -76,7 +78,11 @@ Your clinic's staff see what their role needs, and doctors see only patients in 
 
 Our servers are hosted by HostAfrica in its data centre in Kenya. Our SMS provider, Africa's Talking, receives your phone number and the text of the messages we send, which carry as little health information as possible. Safaricom receives the payment amount, your phone number and the M-Pesa reference when you pay, and handles them under its own legal obligations.
 
-We share data with courts, the Office of the Data Protection Commissioner or the Digital Health Agency only when the law requires it, on a lawful request.
+**Public health reporting.** The law requires clinics to report some infectious diseases (for example cholera or measles) and some health events to the Ministry of Health's public health officers. Your clinic does this. If your clinic asks us to, ACISI also emails its Sub-County public health officer weekly counts and a short notice when such a disease is diagnosed: these name the clinic and the disease, never you, your phone number or your ID. The officer contacts the clinic for anything more, as the law allows. These emails go through our email provider, Resend, which may be outside Kenya, and carry no patient details.
+
+**Kenya's national health record.** Kenya's Digital Health Agency (DHA) runs a national Health Information Exchange so that your records can follow you between health facilities. When your clinic is connected to it, the clinic may look you up in the national Client Registry using the ID document you gave, to find your national patient number. Your visit is added to your national health record, and the doctor can see your records from other facilities, **only if you agree for that visit**: DHA sends you a one-time code by SMS and you give it to the clinic staff. You can say no, and you will still be treated. If you cannot agree yourself in an emergency, a doctor may record that, with the reason. The Digital Health Agency holds this national record in Kenya under the Digital Health Act, 2023.
+
+We share data with courts, the Office of the Data Protection Commissioner or the Digital Health Agency only when the law requires it, on a lawful request, apart from the national health record above, which needs your agreement for each visit.
 
 We do not sell or rent personal data to anyone.
 
@@ -86,13 +92,15 @@ All patient data is stored and processed on servers in a data centre in Nairobi,
 
 Website traffic travels encrypted straight between your device and our server in Kenya. Our domain provider, Cloudflare, only directs visitors to the server and never sees the content. SMS messages are sent through Africa's Talking, a Kenyan company. We do not transfer patient records outside Kenya.
 
+The public health emails described above go through Resend, which may be outside Kenya, and contain counts and disease names only, never patient details.
+
 If you email us, or send a message through our contact form, it reaches our email provider, Google, which may store it outside Kenya. Please do not send health details by email; your clinic and ACISI keep those inside the system. If that ever changes, we will meet the Data Protection Act's conditions for cross-border transfers first, including your explicit consent for health data, and update this notice.
 
 ## How do we keep your data safe?
 
 We use technical and organisational measures suited to health data.
 
-Your data is encrypted while it travels between your device and ACISI. Our server is protected by a firewall, accepts administrator logins only with a security key, and installs security updates automatically. Every staff member has a personal login, and each role sees only what it needs. Patients log in to the portal with a PIN, and can reset it with a one-time code sent to their phone. Every view and change of records and payments is logged, and payments entered by mistake are voided with a reason, never deleted. Backups are made every night, encrypted, and kept in Kenya for 14 days.
+Your data is encrypted while it travels between your device and ACISI. Our server is protected by a firewall, accepts administrator logins only with a security key, and installs security updates automatically. Every staff member has a personal login, and each role sees only what it needs; clinic administrators and doctors can be required to confirm their login with a code from an authenticator app on their phone. Health data is also encrypted while stored. Patients log in to the portal with a PIN, and can reset it with a one-time code sent to their phone. Every view and change of records and payments is logged, and payments entered by mistake are voided with a reason, never deleted. Backups are made every night, encrypted, and kept in Kenya for 14 days.
 
 Everyone with access to ACISI signs a confidentiality undertaking, and staff access is removed as soon as someone leaves a clinic. SMS carry as little health information as possible. We review our security, and this notice, at least once a year.
 
@@ -142,4 +150,4 @@ You can reach the ODPC through its website, [odpc.go.ke](https://www.odpc.go.ke)
 
 We review this notice at least once a year and whenever how we use data changes. We post the new version here with its date and tell clinics and patients about important changes by email or SMS.
 
-**Last updated:** 8 October 2026
+**Last updated:** 21 November 2026

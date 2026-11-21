@@ -38,7 +38,8 @@ USSD-first clinic management platform for small clinics in Kenya. See
 ## Compliance documents
 
 - **Patient address / residence is NOT collected** (owner, 21 Nov 2026): not in
-  the Privacy Notice, DPIA or ODPC registration; no GPS. Never add address or
+  the ODPC registration or DPIA; no GPS. (The Privacy Notice of 8 Oct 2026 said
+  "residence"; corrected in the 21 Nov 2026 version.) Never add address or
   location fields for patients without the owner first updating those. The
   DHA "Residence/Address" box stays unticked.
 

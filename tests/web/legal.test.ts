@@ -23,7 +23,7 @@ const read = (file: string) => fs.readFileSync(path.join(root, file), 'utf8');
  * file, its "Last updated" date, src/config/legal.ts and this hash together.
  */
 const APPROVED = {
-  'web/src/content/privacy.md': '12977722c89130ae6968af15c28ff9480d5d0f5c7e9413be59f12e643d6d668c',
+  'web/src/content/privacy.md': 'c81850e9306beee700888661c40f7060d976fb2a10d7840c5bced8206bedcb2b',
   'web/src/content/terms.md': '0f2c2a98e3d3b11b88403a6cd7e63cd9a0b4327ce33684a86530879d4219bdde',
 };
 
