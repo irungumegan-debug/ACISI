@@ -3,6 +3,18 @@
 Plain-language record of what changed in ACISI, which data each change
 touches, and who can use it. Newest first.
 
+## 2026-11-21: Patient residence removed
+
+One database change (`20261121160000_remove_patient_residence`): drops the
+sub-county, ward and village columns added earlier today, with anything typed
+into them.
+
+Patient address is **not collected**: it is not in the Privacy Notice, the
+DPIA or the ODPC registration (owner's decision). The residence fields are gone
+from the patient page, walk-in, the patient's own page, the API (anything sent
+is ignored) and FHIR. ACISI never uses GPS or device location. The only
+location ACISI keeps is the clinic's own, given at clinic sign-up.
+
 ## 2026-11-21: LOINC codes for lab tests
 
 One database change, additive (`20261121150000_lab_loinc`: one empty column
@@ -43,7 +55,7 @@ empty columns on patients and prescription items); undo script in `prisma/rollba
 
 | What | Data | Who |
 |---|---|---|
-| Patient page and walk-in: **residence** (county, sub-county, ward, village/estate). In FHIR as the Patient's address. Wiped on account deletion. | Patients: `subCounty`, `ward`, `village` (county existed) | Front desk; patients on their own page |
+| ~~Residence (county, sub-county, ward, village)~~: removed the same day, see "Patient residence removed". | | |
 | Consultation page: **Family history** note (who had what). | Patients: `familyHistory`, encrypted at rest | Doctors |
 | Checkout page: **Dispensing**. Each prescribed medicine: "Given" (quantity, default the prescribed amount) or "Buying elsewhere"; recording again corrects it. In FHIR and the Shared Health Record as `MedicationDispense`. | Prescription items: dispense status, quantity, when, by whom | Front desk |
 

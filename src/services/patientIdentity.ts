@@ -24,10 +24,6 @@ export const patientIdentityInputSchema = z.object({
   idNumber: z.string().max(40).nullish(),
   nextOfKinName: z.string().max(100).nullish(),
   nextOfKinPhone: z.string().max(20).nullish(),
-  county: z.string().max(60).nullish(),
-  subCounty: z.string().max(60).nullish(),
-  ward: z.string().max(60).nullish(),
-  village: z.string().max(80).nullish(),
 });
 
 export type PatientIdentityInput = z.infer<typeof patientIdentityInputSchema>;
@@ -37,14 +33,7 @@ export interface PatientIdentityUpdate {
   idNumber?: string | null;
   nextOfKinName?: string | null;
   nextOfKinPhone?: string | null;
-  county?: string | null;
-  subCounty?: string | null;
-  ward?: string | null;
-  village?: string | null;
 }
-
-/** Residence fields (county, sub-county, ward, village/estate): free text, tidied. */
-export const RESIDENCE_FIELDS = ['county', 'subCounty', 'ward', 'village'] as const;
 
 export class PatientIdentityError extends Error {
   constructor(message: string) {
@@ -117,17 +106,6 @@ export function preparePatientIdentity(input: PatientIdentityInput, mode: 'fillI
     update.nextOfKinPhone = null;
   }
 
-  for (const f of RESIDENCE_FIELDS) {
-    const v = input[f];
-    if (!blank(v)) {
-      const clean = v!.trim().replace(/\s+/g, ' ');
-      if (!/^[\p{L}\p{N} .,'()/-]+$/u.test(clean)) throw new PatientIdentityError('Use letters and numbers only in the address');
-      update[f] = clean;
-    } else if (mode === 'replace' && v !== undefined) {
-      update[f] = null;
-    }
-  }
-
   return update;
 }
 
@@ -137,19 +115,11 @@ export function identityView(patient: {
   idNumber: string | null;
   nextOfKinName: string | null;
   nextOfKinPhone: string | null;
-  county?: string | null;
-  subCounty?: string | null;
-  ward?: string | null;
-  village?: string | null;
 }) {
   return {
     idType: patient.idType,
     idNumber: patient.idNumber,
     nextOfKinName: patient.nextOfKinName,
     nextOfKinPhone: patient.nextOfKinPhone,
-    county: patient.county ?? null,
-    subCounty: patient.subCounty ?? null,
-    ward: patient.ward ?? null,
-    village: patient.village ?? null,
   };
 }

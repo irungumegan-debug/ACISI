@@ -46,18 +46,12 @@ describe('preparePatientIdentity', () => {
   });
 });
 
-describe('residence', () => {
+describe('no residence or address', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { preparePatientIdentity, PatientIdentityError } = require('../../src/services/patientIdentity') as typeof import('../../src/services/patientIdentity');
-  it('tidies county, sub-county, ward and village; empty clears only in replace mode', () => {
-    expect(preparePatientIdentity({ county: ' Nairobi ', subCounty: 'Lang’ata'.replace('’', "'"), ward: 'Karen', village: 'Hardy  estate' }, 'fillIn')).toEqual({
-      county: 'Nairobi',
-      subCounty: "Lang'ata",
-      ward: 'Karen',
-      village: 'Hardy estate',
-    });
-    expect(preparePatientIdentity({ village: '' }, 'fillIn')).toEqual({});
-    expect(preparePatientIdentity({ village: '' }, 'replace')).toEqual({ village: null });
-    expect(() => preparePatientIdentity({ village: '<script>' }, 'fillIn')).toThrow(PatientIdentityError);
+  const { patientIdentityInputSchema, preparePatientIdentity } = require('../../src/services/patientIdentity') as typeof import('../../src/services/patientIdentity');
+  it('address fields sent by a browser are dropped, never stored (not in the Privacy Notice or ODPC record)', () => {
+    const parsed = patientIdentityInputSchema.parse({ nextOfKinName: 'Peter Otieno', county: 'Nairobi', village: 'Hardy' });
+    expect(parsed).toEqual({ nextOfKinName: 'Peter Otieno' });
+    expect(preparePatientIdentity(parsed, 'fillIn')).toEqual({ nextOfKinName: 'Peter Otieno' });
   });
 });

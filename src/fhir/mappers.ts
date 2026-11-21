@@ -59,10 +59,6 @@ export interface PatientRecord {
   nextOfKinName: string | null;
   nextOfKinPhone: string | null;
   deletedAt: Date | null;
-  county?: string | null;
-  subCounty?: string | null;
-  ward?: string | null;
-  village?: string | null;
 }
 
 export function toPatient(p: PatientRecord): fhir4.Patient {
@@ -79,20 +75,6 @@ export function toPatient(p: PatientRecord): fhir4.Patient {
     gender: GENDER[p.sex],
     ...(p.dateOfBirth ? { birthDate: fhirDate(p.dateOfBirth) } : {}),
     telecom,
-    ...(p.county || p.subCounty || p.ward || p.village
-      ? {
-          address: [
-            {
-              use: 'home' as const,
-              text: [p.village, p.ward, p.subCounty, p.county].filter(Boolean).join(', '),
-              ...(p.village || p.ward ? { line: [p.village, p.ward].filter((x): x is string => Boolean(x)) } : {}),
-              ...(p.subCounty ? { district: p.subCounty } : {}),
-              ...(p.county ? { state: p.county } : {}),
-              country: 'KE',
-            },
-          ],
-        }
-      : {}),
     ...(p.nextOfKinName
       ? {
           contact: [

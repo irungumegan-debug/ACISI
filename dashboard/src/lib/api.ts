@@ -273,10 +273,6 @@ export interface PatientIdentity {
   idNumber: string;
   nextOfKinName: string;
   nextOfKinPhone: string;
-  county?: string;
-  subCounty?: string;
-  ward?: string;
-  village?: string;
 }
 
 /** As stored (null = not on file). */
@@ -285,10 +281,6 @@ export interface PatientIdentityRecord {
   idNumber: string | null;
   nextOfKinName: string | null;
   nextOfKinPhone: string | null;
-  county?: string | null;
-  subCounty?: string | null;
-  ward?: string | null;
-  village?: string | null;
 }
 
 /** The patient's national Client Registry ID (DHA HIE), only while it matches their current ID document. */

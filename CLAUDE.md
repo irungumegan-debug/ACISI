@@ -37,6 +37,11 @@ USSD-first clinic management platform for small clinics in Kenya. See
 
 ## Compliance documents
 
+- **Patient address / residence is NOT collected** (owner, 21 Nov 2026): not in
+  the Privacy Notice, DPIA or ODPC registration; no GPS. Never add address or
+  location fields for patients without the owner first updating those. The
+  DHA "Residence/Address" box stays unticked.
+
 - **DPIA (Data Protection Impact Assessment), 13 Nov 2026:**
   `docs/compliance/DPIA-2026-11-13.md`. Show it in full whenever the owner
   asks for "the DPIA" or "the DPI report". Update it (new version and date)
@@ -81,7 +86,7 @@ USSD-first clinic management platform for small clinics in Kenya. See
   ("ready to launch"). Owner pasted sections 3, 4 and 6 (not yet 1, 2, 5, 7).
   Built 20-21 Nov for them: service orders, vital signs + warnings, problem
   list, critical lab alerts, quality measures, fuller visit record + care
-  plan, residence, family history, dispensing, on-screen surveillance banner,
+  plan, family history, dispensing, on-screen surveillance banner,
   IHR flag, emailed SCDSC reports, LOINC lab codes. What to tick once
   deployed: end of docs/compliance/DHA-self-attestation-answers-2026-11-20.md.
   Score estimate (formula reverse-engineered from section 4: component on =

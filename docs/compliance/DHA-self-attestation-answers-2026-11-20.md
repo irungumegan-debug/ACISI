@@ -126,7 +126,7 @@ checklist). Not yet live on the day of writing.
 
 | Component | Tick | Feature in ACISI |
 |---|---|---|
-| Demographics | + Residence/Address | County, sub-county, ward, village on the patient page and walk-in |
+| Demographics | Residence/Address: **leave unticked** | Not collected: not in the Privacy Notice, DPIA or ODPC registration (owner, 21 Nov 2026) |
 | CPOE | + Medications | Structured prescriptions (already live) |
 | CPOE | + Dispensing | Checkout: "Given" (quantity) / "Buying elsewhere" |
 | CPOE | + Radiology, Physiotherapy, Occupational Therapy, Nutrition/Dietetics, Social Work, Counselling | Consultation: Other orders |
