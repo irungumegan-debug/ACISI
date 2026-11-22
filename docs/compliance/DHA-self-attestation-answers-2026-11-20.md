@@ -68,7 +68,7 @@ device; no automated diagnosis.
 | Audit trail | ✅ | Every view/change of clinical records logged; append-only (database refuses update/delete) and hash-chained; `npm run verify-audit-log` |
 | Consent for sharing between clinics | ✅ | Off by default; patient consent or same-day code; logged |
 | Minors | ✅ | Portal signup refuses under-18s; children registered at the clinic with a guardian |
-| Backups and restore test | ✅ | Nightly encrypted backups (age), 14 days; restore test **date: fill in from checklist H2** |
+| Backups and restore test | ✅ | Nightly encrypted backups (age): database 14 days, uploaded files last 3 copies; restore test **date: fill in from checklist H2** |
 | Off-site backup | ❌ | Gap G5 |
 | Breach procedure | ✅ | Clinic within 48 h, ODPC within 72 h, affected patients when at real risk (add DHA notification to the procedure: G9) |
 | DPIA | ✅ | `docs/compliance/DPIA-2026-11-13.md` |
@@ -137,12 +137,12 @@ checklist). Not yet live on the day of writing.
 | Problem list | KNHTS: **leave unticked** | Needs the HIE Terminology Service (DHA credentials) |
 | Medication management | + Active Medication List, Medication History | Already live (doctor's page) |
 | Medication management | HPT Registry / HPT Allergy Integration: **leave unticked** | Not integrated |
-| Clinical decision support | **Switch on**; + Uses Problem List, Uses Allergy List, Uses Demographics, Uses Lab Results, Uses Vital Signs | Allergy warning at prescribing; notifiable-disease alert from diagnoses; age-adjusted vital-sign warnings; critical lab result alerts |
+| Clinical decision support | **Switch on**; + Uses Allergy List, Uses Demographics, Uses Lab Results, Uses Vital Signs. **Uses Problem List: leave unticked** (checked 22 Nov: no warning reads the problem list; the notifiable-disease alert uses the visit's diagnoses) | Allergy warning at prescribing; notifiable-disease alert from diagnoses; age-adjusted vital-sign warnings; critical lab result alerts |
 | Clinical decision support | Evidence-Based Interventions: judgement call | Warnings use WHO cut-offs (IMCI, MUAC, BMI); no treatment guidance. Leave unticked unless DHA's definition is just "evidence-based alerts" |
 | Clinical decision support | Uses HPT Registry: **leave unticked** | |
 | Clinical summary | + Includes Biodata, Includes Medications, Includes Care Plan | Visit record: date of birth, sex, ID; other current medicines; plan / follow-up |
 | Clinical summary | Kenya HIE Exchangeable: **after DHA connection** | |
-| Electronic prescribing | + Includes Diagnostic Tests, Includes Problem List, Includes Medication Lists | The visit record with the prescription carries diagnoses, lab results and current medicines |
+| Electronic prescribing | + Includes Diagnostic Tests, Includes Medication Lists. **Includes Problem List: leave unticked** (checked 22 Nov: the visit record carries the visit's diagnoses, not the problem list) | The visit record with the prescription carries diagnoses, lab results and current medicines |
 | Electronic prescribing | Electronic Transmission: **after DHA connection** | |
 | Quality measures | **Switch on**; + Capture, Calculate, Export | Routine reports → Quality measures, CSV |
 | Quality measures | Import, Electronic Submission: **leave unticked** | |
@@ -164,3 +164,20 @@ checklist). Not yet live on the day of writing.
 | LOINC | **Yes** once lab tests have LOINC codes in Settings (vital signs are LOINC-coded already) |
 | Other terminology | Also add: "WHO ICD-11 MMS 2025-01; SNOMED CT categories for service orders" (only if you also tick SNOMED: leave SNOMED unticked) |
 | Level 4, Able to connect to Kenya HIE | **After** the first successful test with DHA's credentials |
+
+---
+
+## Check before paying (22 Nov 2026)
+
+Checked against the code and the live site acisi.co.ke on 22 Nov 2026:
+- Sections 1-6 claims match the code (bcrypt, 5 PINs/5 min lock, 15-min
+  logoff, AES-256-GCM fields and files, append-only hash-chained audit log,
+  sharing consent off by default, under-18 refusal, 5 roles, ICD-11 1-5 codes,
+  FHIR doctors only, TLS 1.2/1.3 + HSTS live).
+- The 20-21 Nov release **is installed** on acisi.co.ke (its screens are in
+  the live console; no patient residence fields).
+- Two ticks removed above: CDS "Uses Problem List", ePrescribing "Includes
+  Problem List".
+- Only the owner can confirm: MFA switched on (`STAFF_MFA_ENABLED=true`),
+  restore-test date (H2), SCDSC email set + server email working (for
+  Real-Time Reporting / Weekly Submission), LOINC codes entered on lab tests.
