@@ -24,7 +24,8 @@ USSD-first clinic management platform for small clinics in Kenya. See
 
 - **Switch SMS provider (to-do, owner, target ~21 Nov 2026):** SMS still run
   on Africa's Talking **sandbox** (no real delivery). Owner's SMS provider is
-  **Mobile Sasa** (owner, 22 Nov 2026; not yet in the code). When credentials
+  **Mobile Sasa** (owner, 22 Nov 2026; not yet in the code). Sender ID applied
+  for 22 Nov 2026, awaiting approval; free test credit for an OTP test. When credentials
   arrive: add the provider in `src/services/smsService.ts` (all SMS go through
   `sendSms`), confirm where message content is stored (must stay in Kenya;
   update the Privacy Notice, DPIA and ODPC records if the processor changes),
