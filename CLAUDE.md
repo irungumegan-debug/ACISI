@@ -5,7 +5,9 @@ USSD-first clinic management platform for small clinics in Kenya. See
 
 ## Planned features
 
-- **USSD check-in:** planned for Dec 2026 / early 2027. When live, add the
+- **USSD check-in:** planned for Dec 2026 / early 2027. Not in the ODPC
+  registration: never mention USSD in DHA/ODPC documents until it is onboarded
+  (owner, 22 Nov 2026). When live, add the
   USSD code to the walk-in invite SMS (see invite template:
   `buildWalkInInviteSms` in `src/services/smsTemplates.ts`).
 - **ACISI check-in fee on live M-Pesa: confirmed working 20 Nov 2026**
@@ -21,8 +23,8 @@ USSD-first clinic management platform for small clinics in Kenya. See
   `sandbox` today.)
 
 - **Switch SMS provider (to-do, owner, target ~21 Nov 2026):** SMS still run
-  on Africa's Talking **sandbox** (no real delivery). Owner is applying for a
-  sender ID with a Kenyan SMS provider (TextSMS mentioned). When credentials
+  on Africa's Talking **sandbox** (no real delivery). Owner's SMS provider is
+  **Mobile Sasa** (owner, 22 Nov 2026; not yet in the code). When credentials
   arrive: add the provider in `src/services/smsService.ts` (all SMS go through
   `sendSms`), confirm where message content is stored (must stay in Kenya;
   update the Privacy Notice, DPIA and ODPC records if the processor changes),
