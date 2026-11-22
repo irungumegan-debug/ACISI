@@ -65,7 +65,7 @@ device; no automated diagnosis.
 | **Multi-Factor Authentication** | ⏳ **tick once live** | Authenticator app (TOTP) for admins and doctors, built 20 Nov 2026, no SMS needed. Tick only after the release is installed, `STAFF_MFA_ENABLED=true` is set and checklist section F passes; until then gap G1 |
 | Encryption in transit | ✅ | HTTPS only, TLS 1.2/1.3, HSTS |
 | Encryption at rest | ✅ | AES-256-GCM for health fields, ID numbers, next of kin (`src/utils/fieldCrypto.ts`) and uploaded files; key offline |
-| Audit trail | ✅ | Every view/change of clinical records logged; append-only (database refuses update/delete) and hash-chained; `npm run verify-audit-log` |
+| Audit trail | ✅ | Logins, record views, exports and changes logged; append-only (database refuses update/delete) and hash-chained; `npm run verify-audit-log`. Checked 22 Nov: saving a consultation is recorded on the visit (doctor, time) but not as its own audit row; logout and refused (403) requests are not logged. See `dha-phase3/` Audit Trail Specification |
 | Consent for sharing between clinics | ✅ | Off by default; patient consent or same-day code; logged |
 | Minors | ✅ | Portal signup refuses under-18s; children registered at the clinic with a guardian |
 | Backups and restore test | ✅ | Nightly encrypted backups (age): database 14 days, uploaded files last 3 copies; restore test **date: fill in from checklist H2** |
@@ -154,8 +154,8 @@ checklist). Not yet live on the day of writing.
 | Routine Reporting | **Switch on**; Monthly, Quarterly, Annual | Already live |
 | Public Health Events | **Switch on**; Event Detection (live), Alert Mechanism (on-screen banner, new) | |
 | Events of International Concern | **Switch on**; IHR Compliant | IHR flag on notifiable diseases |
-| Immediate | + Real-Time Reporting | Only once the coordinator's email is set (Settings) **and** email works on the server |
-| IDSR Weekly | + Weekly Submission | Same condition: Monday email of MOH 505 |
+| Immediate | Real-Time Reporting: **leave unticked** (22 Nov) | Needs the coordinator's email set (Settings) **and** email on the server, but email is deliberately **off** (`RESEND_API_KEY` not set, runbook "Data stays in Kenya": Resend is in the US) |
+| IDSR Weekly | Weekly Submission: **leave unticked** (22 Nov) | Same reason: the Monday MOH 505 email cannot send while email is off |
 
 ### Section 6: Interoperability
 
@@ -179,5 +179,6 @@ Checked against the code and the live site acisi.co.ke on 22 Nov 2026:
 - Two ticks removed above: CDS "Uses Problem List", ePrescribing "Includes
   Problem List".
 - Only the owner can confirm: MFA switched on (`STAFF_MFA_ENABLED=true`),
-  restore-test date (H2), SCDSC email set + server email working (for
-  Real-Time Reporting / Weekly Submission), LOINC codes entered on lab tests.
+  restore-test date (H2), LOINC codes entered on lab tests.
+- Real-Time Reporting / Weekly Submission: leave unticked. Email is off on
+  the server (runbook "Data stays in Kenya"), so the SCDSC emails cannot send.
