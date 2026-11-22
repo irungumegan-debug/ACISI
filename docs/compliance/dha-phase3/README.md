@@ -12,6 +12,7 @@ against the code and `deploy/RUNBOOK.md`. Upload the `.docx` (or the PDF in
 | ACISI-Audit-Trail-Specification.docx | Audit Trail Specification | Ready to sign |
 | ACISI-Backup-and-Recovery-Policy.docx | Backup and Recovery Policy | Fill "Last Tested" dates (section 5) after `sudo acisi-restore-test` |
 | ACISI-Disaster-Recovery-Plan.docx | Disaster Recovery Plan | Ready to sign |
+| ACISI-DR-Test-Report.docx | Disaster Recovery Test Report (not in the 21-document list) | DRAFT: fill results after the restore test |
 
 Signature blocks: Prepared, Approved and Authorised by Megan Irungu; no "Reviewed by"
 
