@@ -98,3 +98,21 @@ USSD-first clinic management platform for small clinics in Kenya. See
   Score estimate (formula reverse-engineered from section 4: component on =
   half, feature share = half, "Required" components weigh double): ~70-75%
   overall; the HIE critical gap needs DHA credentials regardless.
+
+## Where we left off (22 Nov 2026, evening)
+
+- DHA documents done, PDFs on branch claude/focused-cori-macx3n:
+  `docs/compliance/dha-phase3/pdf/` (7 template documents, DR test passed
+  22 Nov) and `docs/compliance/dha-required/pdf/` (Privacy Policy, DPIA 1.4,
+  Information Security Policy, Incident Response Plan, System User Manual).
+  Owner's style: brief, few brackets/slashes, no code, no "Reviewed by",
+  no "or earlier when the system changes", no USSD, SMS provider Mobile Sasa.
+- Owner calls DHA (23 Nov): Certificate of Registration instead of
+  Incorporation? Is KES 10,000 the full fee? Does lab field testing cost extra?
+- Leave unticked in the portal: Real-Time Reporting, Weekly Submission
+  (email off); CDS "Uses Problem List"; ePrescribing "Includes Problem List".
+- Waiting on: HostAfrica backup add-on answers (off-server copy, gap G5 /
+  finding F-001); Mobile Sasa sender ID, API key and data-location statement.
+- To do: owner approves and deploys the Privacy Notice change (version
+  2026-11-22); audit row for consultation save, logout and 403s (gap noted in
+  the Audit Trail Specification); connect Mobile Sasa in smsService.
