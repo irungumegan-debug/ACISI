@@ -3,6 +3,14 @@
 Plain-language record of what changed in ACISI, which data each change
 touches, and who can use it. Newest first.
 
+## 2026-11-22: Privacy Notice updated
+
+No database change. The Privacy Notice (acisi.co.ke/privacy) now names
+**Mobile Sasa** as the SMS provider instead of Africa's Talking, and no longer
+lists residence among the data collected (it is not collected since
+21 November). New version 2026-11-22: patients acknowledge it again at their
+next check-in at each clinic. DPIA updated to version 1.4 to match.
+
 ## 2026-11-21: Patient residence removed
 
 One database change (`20261121160000_remove_patient_residence`): drops the
