@@ -13,9 +13,7 @@ against the code and `deploy/RUNBOOK.md`. Upload the `.docx` (or the PDF in
 | ACISI-Backup-and-Recovery-Policy.docx | Backup and Recovery Policy | Fill "Last Tested" dates (section 5) after `sudo acisi-restore-test` |
 | ACISI-Disaster-Recovery-Plan.docx | Disaster Recovery Plan | Ready to sign |
 
-Signature blocks: Prepared / Approved / Authorised by Megan Irungu; "Reviewed
-by" left for an independent legal or data-protection reviewer, as the portal
-recommends. Dates are filled when signing.
+Signature blocks: Prepared, Approved and Authorised by Megan Irungu; no "Reviewed by"
 
 Rebuild: `build/` (python-docx; diagrams drawn as SVG and rendered with
 Playwright: `python3 build/diagrams.py fig && node build/render.js fig`, then
