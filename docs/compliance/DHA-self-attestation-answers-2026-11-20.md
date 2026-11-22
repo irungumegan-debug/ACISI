@@ -68,7 +68,7 @@ device; no automated diagnosis.
 | Audit trail | ✅ | Logins, record views, exports and changes logged; append-only (database refuses update/delete) and hash-chained; `npm run verify-audit-log`. Checked 22 Nov: saving a consultation is recorded on the visit (doctor, time) but not as its own audit row; logout and refused (403) requests are not logged. See `dha-phase3/` Audit Trail Specification |
 | Consent for sharing between clinics | ✅ | Off by default; patient consent or same-day code; logged |
 | Minors | ✅ | Portal signup refuses under-18s; children registered at the clinic with a guardian |
-| Backups and restore test | ✅ | Nightly encrypted backups (age): database 14 days, uploaded files last 3 copies; restore test **date: fill in from checklist H2** |
+| Backups and restore test | ✅ | Nightly encrypted backups (age): database 14 days, uploaded files last 3 copies; restore test passed **22 Nov 2026** (all 36 tables matched, audit chain intact) |
 | Off-site backup | ❌ | Gap G5 |
 | Breach procedure | ✅ | Clinic within 48 h, ODPC within 72 h, affected patients when at real risk (add DHA notification to the procedure: G9) |
 | DPIA | ✅ | `docs/compliance/DPIA-2026-11-13.md` |

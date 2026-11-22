@@ -133,7 +133,7 @@ You need Google Authenticator or Microsoft Authenticator on your phone.
 ## H. Server and backups
 
 - [ ] **H1. Backup.** `sudo systemctl start acisi-backup && sudo journalctl -u acisi-backup -n 5 --no-pager` *Expect:* "Backup written", no "Failed".
-- [ ] **H2. Restore test.** `sudo acisi-restore-test` (needs your backup private key). *Expect:* row counts match. **Write down the date** for the DHA form.
+- [x] **H2. Restore test.** Passed 22 Nov 2026, 19:17–19:22. `sudo acisi-restore-test` (needs your backup private key). *Expect:* row counts match. **Write down the date** for the DHA form.
 - [ ] **H3. Redis memory.** `redis-cli info memory | grep used_memory_human` *Expect:* a few MB, well under 64 MB; check again a week later, should stay small.
 - [ ] **H4. Disk.** `df -h /` *Expect:* under 50% used; check weekly.
 - [ ] **H5. Log size.** `sudo ls -lh /var/log/syslog*` *Expect:* no file over a few hundred MB.
@@ -223,7 +223,7 @@ answers and the code will be updated.
 - [ ] **T6. Privacy Notice.** Approve adding a sentence such as: *"Your clinic must report some infectious diseases (for example cholera or measles) to the Ministry of Health's public health officers, as the law requires."* (Then the ODPC record may need the same update.)
 - [ ] **T7. DPIA v1.3.** Read and sign: notifiable disease reporting (v1.2) and public health events (v1.3) were added (sections 2.4, 2.5, 2.6, 4.2, action A9).
 - [ ] **T8. Real SMS.** When TextSMS is connected, re-run every *(simulator)* item (B9, K3, L8, M4, M5, N3) with real phones, then section F.
-- [ ] **T9. Restore test date** (H2) for the DHA form.
+- [x] **T9. Restore test date** (22 Nov 2026) (H2) for the DHA form.
 - [ ] **T10. 2012 vs 2022 lists.** The older chart you sent (2012) differs from the 3rd edition (e.g. rabies, typhoid and dysentery are now immediate; COVID-19, chikungunya, Zika and smallpox were added). ACISI follows the 3rd edition. If your Sub-County still uses the older chart, tell Claude.
 - [ ] **T11. Medicines list terms.** DHA's ePrescription guide is CC-BY 4.0, but says the medicine list (from the Pharmacy and Poisons Board) is "subject to separate terms". Ask DHA whether ACISI may use and keep a copy of the list.
 - [ ] **T12. Monthly report to MOH.** The guidelines' monthly table goes to the Sub-County. Ask DHA/MOH: which form (MOH 705A/B in KHIS?) and should ACISI send it automatically?

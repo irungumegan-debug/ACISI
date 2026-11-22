@@ -10,9 +10,9 @@ against the code and `deploy/RUNBOOK.md`. Upload the `.docx` (or the PDF in
 | ACISI-Technical-Specifications.docx | Technical Specifications Document (Required) | Ready to sign |
 | ACISI-Encryption-Implementation-Specification.docx | Encryption Implementation Specification | Ready to sign |
 | ACISI-Audit-Trail-Specification.docx | Audit Trail Specification | Ready to sign |
-| ACISI-Backup-and-Recovery-Policy.docx | Backup and Recovery Policy | Fill "Last Tested" dates (section 5) after `sudo acisi-restore-test` |
+| ACISI-Backup-and-Recovery-Policy.docx | Backup and Recovery Policy | Ready to sign; database restore tested 22 Nov 2026 |
 | ACISI-Disaster-Recovery-Plan.docx | Disaster Recovery Plan | Ready to sign |
-| ACISI-DR-Test-Report.docx | Disaster Recovery Test Report (not in the 21-document list) | DRAFT: fill results after the restore test |
+| ACISI-DR-Test-Report.docx | Disaster Recovery Test Report (not in the 21-document list) | Final: database restore passed 22 Nov 2026 |
 
 Signature blocks: Prepared, Approved and Authorised by Megan Irungu; no "Reviewed by"
 
