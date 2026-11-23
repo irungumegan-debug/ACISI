@@ -50,7 +50,8 @@ export function LoginPage() {
             onForgotPin={() => setStep({ kind: 'forgot-pin', role: step.kind as 'doctor' | 'staff' })}
           />
         )}
-        {step.kind === 'forgot-pin' && (
+        {step.kind === 'forgot-pin' && step.role !== 'patient' && <StaffPinHelp onBack={() => setStep({ kind: step.role })} />}
+        {step.kind === 'forgot-pin' && step.role === 'patient' && (
           <ForgotPinForm
             role={step.role}
             onBack={() => setStep({ kind: step.role })}
@@ -72,15 +73,36 @@ export function LoginPage() {
  * PINs): says how long the lock lasts and offers the SMS reset right there,
  * since a successful reset lifts the lock immediately.
  */
-function LockedOutMessage({ onForgotPin }: { onForgotPin: () => void }) {
+function LockedOutMessage({ onForgotPin, isStaff = false }: { onForgotPin: () => void; isStaff?: boolean }) {
   return (
     <p className="auth-error">
       Too many wrong PINs, so login is paused for up to 15 minutes. Forgot your PIN?{' '}
       <button type="button" className="auth-inline-link" onClick={onForgotPin}>
-        Reset it by SMS now
+        {isStaff ? 'Ask your clinic admin to reset it' : 'Reset it by SMS now'}
       </button>{' '}
       to get back in straight away.
     </p>
+  );
+}
+
+/**
+ * Staff and doctors don't reset their own PIN: their clinic admin does, in
+ * Settings → Staff (and another admin, or ACISI, resets an admin's).
+ */
+function StaffPinHelp({ onBack }: { onBack: () => void }) {
+  return (
+    <div className="auth-form">
+      <button type="button" className="auth-back" onClick={onBack}>
+        &larr; Back
+      </button>
+      <h1 className="auth-h1">Forgot your PIN?</h1>
+      <p className="auth-sub">Staff and doctor PINs are reset by your clinic admin.</p>
+      <ol className="auth-sub">
+        <li>Ask your clinic admin to open Settings &rarr; Staff and tap &ldquo;Reset PIN&rdquo; next to your name.</li>
+        <li>They will give you a new PIN. Log in with it straight away.</li>
+      </ol>
+      <p className="auth-sub">If you are the clinic admin, ask another admin at your clinic, or contact ACISI support.</p>
+    </div>
   );
 }
 
@@ -402,7 +424,7 @@ function StaffLoginForm({
         <input type="password" inputMode="numeric" required maxLength={6} placeholder="6-digit PIN" value={pin} onChange={(e) => setPin(e.target.value)} />
       </div>
 
-      {lockedOut && <LockedOutMessage onForgotPin={onForgotPin} />}
+      {lockedOut && <LockedOutMessage onForgotPin={onForgotPin} isStaff />}
       {error && <p className="auth-error">{error}</p>}
       <button className="auth-submit" type="submit" disabled={submitting}>
         {submitting ? 'Logging in…' : 'Log in'}

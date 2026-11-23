@@ -370,6 +370,21 @@ Disease surveillance shows a **Public health events** card with "Record an
 event". Front desk sees neither. The monthly disease list is in
 `src/services/routineReportService.ts` (`MONTHLY_DISEASES`).
 
+## Resetting a staff PIN (staff can't reset their own)
+
+Staff and doctors reset nothing themselves: their clinic admin uses Settings
+→ Staff → **Reset PIN** and gives them the new PIN. An admin's PIN is reset by
+another admin at the same clinic (every clinic should keep 2; the console
+reminds a clinic with only 1). Only if the clinic has no other admin who can
+do it, reset it from the server (check first that it is really them, e.g.
+call them on the number you have for the clinic):
+```
+sudo bash -c 'set -a; . /etc/acisi/acisi.env; set +a; cd /opt/acisi/app && npm run -s reset-staff-pin -- ACI-STF-XXXX 123456'
+```
+Use a 6-digit PIN they can't guess (not a birthday or 123456), tell them by
+phone, and ask them to change it with a reset by the second admin once there
+is one. The reset lifts any lockout and logs them out everywhere.
+
 ## Turning on multi-factor login (admins and doctors)
 
 After the PIN, clinic admins and doctors enter a 6-digit code from an

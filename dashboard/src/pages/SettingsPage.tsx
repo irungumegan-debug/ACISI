@@ -36,6 +36,7 @@ export function SettingsPage() {
   const [resettingId, setResettingId] = useState<string | null>(null);
   const [resettingAppId, setResettingAppId] = useState<string | null>(null);
   const [deactivatingId, setDeactivatingId] = useState<string | null>(null);
+  const [makingAdminId, setMakingAdminId] = useState<string | null>(null);
   const { session } = useAuth();
   const [resetResult, setResetResult] = useState<{ staffCode: string; name: string; newPin: string } | null>(null);
   const [togglingPresenceId, setTogglingPresenceId] = useState<string | null>(null);
@@ -120,6 +121,25 @@ export function SettingsPage() {
       setStaffError(err instanceof ApiError ? err.message : 'Failed to reset the authenticator app');
     } finally {
       setResettingAppId(null);
+    }
+  }
+
+  async function handleMakeAdmin(member: ClinicStaffListItem): Promise<void> {
+    if (
+      !confirm(
+        `Make ${member.name} (${member.staffCode}) a clinic admin?\n\nThey will be able to manage staff, reset PINs and change clinic settings, and will no longer work as ${ROLE_LABEL[member.role] ?? member.role}. They are logged out now and see the admin console at their next login.`,
+      )
+    )
+      return;
+    setMakingAdminId(member.id);
+    setStaffError(null);
+    try {
+      await api.makeStaffAdmin(member.id);
+      setStaff((prev) => prev && prev.map((s) => (s.id === member.id ? { ...s, role: 'ADMIN' } : s)));
+    } catch (err) {
+      setStaffError(err instanceof ApiError ? err.message : 'Failed to make admin');
+    } finally {
+      setMakingAdminId(null);
     }
   }
 
@@ -209,7 +229,11 @@ export function SettingsPage() {
         <SurveillanceEmailSection />
 
         <Card title="Staff & doctors" icon={UsersRound}>
-          <p className="mb-4 text-sm text-ink-500">Reset a staff or doctor&apos;s PIN if they&apos;ve forgotten it, and choose which departments each doctor sees.</p>
+          <p className="mb-4 text-sm text-ink-500">
+            Reset a staff or doctor&apos;s PIN if they&apos;ve forgotten it (staff can&apos;t reset their own), and choose which departments each doctor
+            sees. Keep at least 2 clinic admins, so one can reset the other&apos;s PIN: use &ldquo;Make admin&rdquo; on a front desk, clinician or
+            lab staff member.
+          </p>
 
           {resetResult && (
             <div className="mb-4 rounded-2xl border border-gold-500/50 bg-gold-tint p-4" role="status">
@@ -283,6 +307,11 @@ export function SettingsPage() {
                     {member.authenticatorSetUp && (
                       <button onClick={() => void handleResetAuthenticator(member)} disabled={resettingAppId === member.id} className={smallBtn}>
                         {resettingAppId === member.id ? 'Resetting…' : 'Reset authenticator app'}
+                      </button>
+                    )}
+                    {member.isActive && member.role !== 'ADMIN' && member.role !== 'DOCTOR' && (
+                      <button onClick={() => void handleMakeAdmin(member)} disabled={makingAdminId === member.id} className={smallBtn}>
+                        {makingAdminId === member.id ? 'Saving…' : 'Make admin'}
                       </button>
                     )}
                     {member.isActive && member.id !== session?.staffId && (

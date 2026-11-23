@@ -20,16 +20,27 @@ USSD-first clinic management platform for small clinics in Kenya. See
   only. (See `src/mpesa/clinicStk.ts`; `CLINIC_MPESA_ENV` only allows
   `sandbox` today.)
 
-- **SMS provider: Mobile Sasa, built 23 Nov 2026** (sender ID "ACISI",
-  approved on Safaricom only). `src/services/mobileSasaClient.ts`, used by
+- **SMS provider: Mobile Sasa, live and confirmed working 23 Nov 2026**
+  (PR #69 merged and deployed, token on the server; owner received the test
+  SMS and a real OTP from "ACISI" and used it). Sender ID approved on
+  Safaricom only. `src/services/mobileSasaClient.ts`, used by
   `sendSms` whenever `MOBILESASA_API_TOKEN` is set on the server (Africa's
   Talking kept for USSD). Non-Safaricom numbers are not tried
   (`MOBILESASA_SAFARICOM_ONLY`, default true); screens explain and offer the
-  fallback. Live once deployed + token added + test SMS received (runbook
-  "Switching SMS to Mobile Sasa"). Still to do (owner): confirm where Mobile
+  fallback (runbook "Switching SMS to Mobile Sasa"). Still to do (owner): confirm where Mobile
   Sasa stores message content (must stay in Kenya) and update the Privacy
   Notice, DPIA and ODPC records for the new processor; then optionally
   `STAFF_MFA_SMS_ENABLED=true`.
+- **Staff PIN reset by clinic admin only (owner, 23 Nov 2026):** staff and
+  doctors can't reset their own PIN by SMS; the clinic admin does it (Settings
+  → Staff → Reset PIN). An admin's PIN: another admin of the clinic, else the
+  owner with `npm run reset-staff-pin` (runbook "Resetting a staff PIN").
+  Patients keep the SMS reset.
+- **At least 2 admins per clinic (owner, 23 Nov 2026):** `MIN_CLINIC_ADMINS`.
+  Reminder banner while a clinic has 1; an admin can't be deactivated below
+  2. "Make admin" (`makeStaffAdmin`) promotes front desk / clinician / lab
+  staff, never doctors (one role per account). Invite-code signup can't
+  choose ADMIN, on purpose.
 - **Multi-factor login (authenticator app), built 20 Nov 2026:** admins and
   doctors use an authenticator app (TOTP, `src/utils/totp.ts`,
   `src/services/staffMfaService.ts`); needs no SMS. Live only once deployed
@@ -57,6 +68,9 @@ USSD-first clinic management platform for small clinics in Kenya. See
   STAFF_MFA_ENABLED=true, see runbook).
   ICD-11 coded diagnoses done 14 Nov (WHO MMS 2025-01 bundled in
   src/assets/icd11/, doctors must pick 1-5 codes; FHIR Condition coded).
+  Owner considered making ICD-11 optional (23 Nov) and decided to keep it
+  required: notifiable-disease alerts and IDSR/MOH 505 reports depend on
+  the codes, and the DHA answers say it is required.
   Notifiable-disease alerts + weekly summary built 14 Nov
   (src/services/notifiableDiseases.ts), list from the IDSR Technical
   Guidelines 3rd ed. (2022) Table 5 + MOH 505 form (owner uploaded the PDFs).

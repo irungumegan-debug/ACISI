@@ -1,64 +1,22 @@
-import express from 'express';
-import cookieParser from 'cookie-parser';
-import request from 'supertest';
-
-const mockRedisStore = new Map<string, string>();
-
-jest.mock('../../src/config/redis', () => ({
-  redis: {
-    get: jest.fn(async (key: string) => mockRedisStore.get(key) ?? null),
-    set: jest.fn(async (key: string, value: string) => {
-      mockRedisStore.set(key, value);
-      return 'OK';
-    }),
-    incr: jest.fn(async (key: string) => {
-      const next = Number(mockRedisStore.get(key) ?? 0) + 1;
-      mockRedisStore.set(key, String(next));
-      return next;
-    }),
-    expire: jest.fn(async () => 1),
-    del: jest.fn(async (key: string) => {
-      mockRedisStore.delete(key);
-      return 1;
-    }),
-  },
-}));
-
+/**
+ * Staff and doctors don't reset their own PIN by SMS (owner, 23 Nov 2026):
+ * their clinic admin does (Settings → Staff → Reset PIN, tested in
+ * clinicSettings tests). The old endpoints only point people there.
+ */
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+jest.mock('../../src/config/redis', () => require('../helpers/fakeRedis').fakeRedisModule());
+jest.mock('../../src/services/smsService', () => ({ sendSms: jest.fn(), sendPatientSms: jest.fn() }));
 jest.mock('../../src/services/staffService', () => ({
   ...jest.requireActual('../../src/services/staffService'),
   findActiveStaffWithClinicByCode: jest.fn(),
-  verifyStaffPin: jest.fn(),
-  resetStaffPinBySelf: jest.fn(),
-}));
-jest.mock('../../src/services/otpService', () => ({
-  requestStaffPinResetOtp: jest.fn(),
-  verifyStaffPinResetOtp: jest.fn(),
 }));
 
-import { findActiveStaffWithClinicByCode, resetStaffPinBySelf, verifyStaffPin, InvalidPinFormatError } from '../../src/services/staffService';
-import { requestStaffPinResetOtp, verifyStaffPinResetOtp } from '../../src/services/otpService';
-import { createDashboardSession, loadDashboardSession } from '../../src/dashboard/session';
-import { authRouter } from '../../src/dashboard/auth';
-import { PIN_LOCKOUT, OTP_REQUEST_RATE_LIMIT_MAX_ATTEMPTS } from '../../src/config/constants';
-import { clearLockout } from '../../src/services/pinLockout';
-import { revokeSessionsFor } from '../../src/services/sessionRevocation';
-
-const mockFindStaff = findActiveStaffWithClinicByCode as jest.Mock;
-const mockVerifyPin = verifyStaffPin as jest.Mock;
-const mockResetPin = resetStaffPinBySelf as jest.Mock;
-const mockRequestOtp = requestStaffPinResetOtp as jest.Mock;
-const mockVerifyOtp = verifyStaffPinResetOtp as jest.Mock;
-
-const STAFF = {
-  id: 'staff-1',
-  staffCode: 'ACI-STF-TEST',
-  name: 'Test Receptionist',
-  role: 'RECEPTIONIST',
-  clinicId: 'clinic-A',
-  departmentId: null,
-  phoneNumber: '+254700000001',
-  clinic: { name: 'Sunrise Family Clinic' },
-};
+import express from 'express';
+import cookieParser from 'cookie-parser';
+import request from 'supertest';
+import { sendSms } from '../../src/services/smsService';
+import { findActiveStaffWithClinicByCode } from '../../src/services/staffService';
+import { authRouter, STAFF_PIN_RESET_BY_ADMIN_MESSAGE } from '../../src/dashboard/auth';
 
 function buildApp() {
   const app = express();
@@ -68,111 +26,19 @@ function buildApp() {
   return app;
 }
 
-beforeEach(() => {
-  jest.clearAllMocks();
-  jest.useRealTimers();
-  mockRedisStore.clear();
+beforeEach(() => jest.clearAllMocks());
+
+it('"Forgot PIN" for staff sends no SMS and says to ask the clinic admin', async () => {
+  const res = await request(buildApp()).post('/auth/forgot-pin').send({ staffCode: 'ACI-STF-TEST' });
+  expect(res.status).toBe(200);
+  expect(res.body.message).toBe(STAFF_PIN_RESET_BY_ADMIN_MESSAGE);
+  expect(res.body.message).toMatch(/clinic admin.*Settings → Staff.*Reset PIN/);
+  expect(sendSms).not.toHaveBeenCalled();
+  expect(findActiveStaffWithClinicByCode).not.toHaveBeenCalled();
 });
 
-describe('POST /auth/forgot-pin', () => {
-  it('texts a code to an active staff member, with a generic response', async () => {
-    mockFindStaff.mockResolvedValue(STAFF);
-    const res = await request(buildApp()).post('/auth/forgot-pin').send({ staffCode: 'aci-stf-test' });
-    expect(res.status).toBe(200);
-    expect(mockFindStaff).toHaveBeenCalledWith('ACI-STF-TEST');
-    expect(mockRequestOtp).toHaveBeenCalledWith(STAFF);
-  });
-
-  it('gives the same response for an unknown staff ID, without sending anything', async () => {
-    mockFindStaff.mockResolvedValue(null);
-    const known = await request(buildApp()).post('/auth/forgot-pin').send({ staffCode: 'ACI-STF-NOPE' });
-    expect(known.status).toBe(200);
-    expect(known.body.message).toMatch(/If that staff ID exists/);
-    expect(mockRequestOtp).not.toHaveBeenCalled();
-  });
-
-  it('limits how many codes can be requested, so nobody can flood a phone with SMS', async () => {
-    mockFindStaff.mockResolvedValue(STAFF);
-    const app = buildApp();
-    for (let i = 0; i < OTP_REQUEST_RATE_LIMIT_MAX_ATTEMPTS; i++) {
-      await request(app).post('/auth/forgot-pin').send({ staffCode: 'ACI-STF-TEST' });
-    }
-    const res = await request(app).post('/auth/forgot-pin').send({ staffCode: 'ACI-STF-TEST' });
-    expect(res.status).toBe(429);
-    expect(mockRequestOtp).toHaveBeenCalledTimes(OTP_REQUEST_RATE_LIMIT_MAX_ATTEMPTS);
-  });
-});
-
-describe('POST /auth/reset-pin', () => {
-  it('rejects a wrong or expired code', async () => {
-    mockFindStaff.mockResolvedValue(STAFF);
-    mockVerifyOtp.mockResolvedValue(false);
-    const res = await request(buildApp()).post('/auth/reset-pin').send({ staffCode: 'ACI-STF-TEST', code: '000000', newPin: '730194' });
-    expect(res.status).toBe(400);
-    expect(mockResetPin).not.toHaveBeenCalled();
-  });
-
-  it("refuses an easy-to-guess PIN without using up the staff member's one-time code", async () => {
-    mockFindStaff.mockResolvedValue(STAFF);
-    const res = await request(buildApp()).post('/auth/reset-pin').send({ staffCode: 'ACI-STF-TEST', code: '123456', newPin: '123456' });
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/repeated or sequential/);
-    expect(mockVerifyOtp).not.toHaveBeenCalled();
-    expect(mockResetPin).not.toHaveBeenCalled();
-  });
-
-  it('rejects a badly formatted new PIN', async () => {
-    mockFindStaff.mockResolvedValue(STAFF);
-    mockVerifyOtp.mockResolvedValue(true);
-    mockResetPin.mockRejectedValue(new InvalidPinFormatError('Your PIN must be exactly 6 digits.'));
-    const res = await request(buildApp()).post('/auth/reset-pin').send({ staffCode: 'ACI-STF-TEST', code: '123456', newPin: 'abc' });
-    expect(res.status).toBe(400);
-    expect(res.body.error).toBe('Your PIN must be exactly 6 digits.');
-  });
-
-  it('automatically unlocks a locked-out staff member once they reset', async () => {
-    const app = buildApp();
-    mockFindStaff.mockResolvedValue(STAFF);
-    mockVerifyPin.mockResolvedValue(false);
-    for (let i = 0; i < PIN_LOCKOUT.maxAttempts; i++) {
-      await request(app).post('/auth/login').send({ staffCode: 'ACI-STF-TEST', pin: '0000' });
-    }
-    mockVerifyPin.mockResolvedValue(true);
-    expect((await request(app).post('/auth/login').send({ staffCode: 'ACI-STF-TEST', pin: '730194' })).status).toBe(429);
-
-    mockVerifyOtp.mockResolvedValue(true);
-    // The real resetStaffPinBySelf lifts the lock (staffService.test.ts); stand that in here.
-    mockResetPin.mockImplementation(async (id: string) => {
-      await clearLockout(`staff:${id}`);
-      return STAFF;
-    });
-    const reset = await request(app).post('/auth/reset-pin').send({ staffCode: 'ACI-STF-TEST', code: '123456', newPin: '730194' });
-    expect(reset.status).toBe(200);
-    expect(mockResetPin).toHaveBeenCalledWith('staff-1', '730194');
-
-    expect((await request(app).post('/auth/login').send({ staffCode: 'ACI-STF-TEST', pin: '730194' })).status).toBe(200);
-  });
-
-  it('logs out sessions that were open with the old PIN', async () => {
-    jest.useFakeTimers({ now: 1_000, doNotFake: ['nextTick', 'setImmediate'] });
-    const oldSession = await createDashboardSession({
-      staffId: 'staff-1',
-      staffCode: 'ACI-STF-TEST',
-      staffName: 'Test',
-      role: 'RECEPTIONIST',
-      clinicId: 'clinic-A',
-      clinicName: 'Sunrise',
-      departmentId: null,
-    });
-    jest.setSystemTime(2_000);
-    mockFindStaff.mockResolvedValue(STAFF);
-    mockVerifyOtp.mockResolvedValue(true);
-    // The real resetStaffPinBySelf revokes every session (staffService.test.ts); stand that in here.
-    mockResetPin.mockImplementation(async (id: string) => {
-      await revokeSessionsFor(`staff:${id}`);
-      return STAFF;
-    });
-    await request(buildApp()).post('/auth/reset-pin').send({ staffCode: 'ACI-STF-TEST', code: '123456', newPin: '730194' });
-    expect(await loadDashboardSession(oldSession)).toBeNull();
-  });
+it('a staff PIN can no longer be changed with a code', async () => {
+  const res = await request(buildApp()).post('/auth/reset-pin').send({ staffCode: 'ACI-STF-TEST', code: '123456', newPin: '730194' });
+  expect(res.status).toBe(410);
+  expect(res.body.error).toBe(STAFF_PIN_RESET_BY_ADMIN_MESSAGE);
 });

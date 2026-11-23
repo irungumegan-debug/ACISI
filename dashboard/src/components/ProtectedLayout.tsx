@@ -125,6 +125,40 @@ function ReportNowBanner() {
   );
 }
 
+/** Clinic admins: a reminder on every page while the clinic has fewer than 2 active admins. */
+const MIN_CLINIC_ADMINS = 2;
+
+function SecondAdminBanner() {
+  const { session } = useAuth();
+  const { pathname } = useLocation();
+  const [activeAdmins, setActiveAdmins] = useState<number | null>(null);
+  useEffect(() => {
+    if (session?.role !== 'ADMIN') return;
+    let cancelled = false;
+    api
+      .getClinicStaff()
+      .then((r) => !cancelled && setActiveAdmins(r.staff.filter((s) => s.role === 'ADMIN' && s.isActive).length))
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.role, pathname]);
+  if (session?.role !== 'ADMIN' || activeAdmins === null || activeAdmins >= MIN_CLINIC_ADMINS) return null;
+  return (
+    <div role="status" className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-gold-400 bg-gold-tint px-4 py-3 text-sm text-navy-900 print:hidden">
+      <p className="flex items-center gap-2 font-semibold">
+        <ShieldAlert size={18} aria-hidden className="flex-none" />
+        Add a second clinic admin. If you forget your PIN, only another admin at your clinic can reset it.
+      </p>
+      {pathname !== '/settings' && (
+        <NavLink to="/settings" className="rounded-full bg-navy-900 px-4 py-1.5 text-sm font-semibold text-white hover:bg-navy-800">
+          Open Settings
+        </NavLink>
+      )}
+    </div>
+  );
+}
+
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const { session, logout } = useAuth();
   const { pathname } = useLocation();
@@ -459,6 +493,7 @@ export function ProtectedLayout() {
           {termsStatus === 'accepted' ? (
             <>
               <ReportNowBanner />
+              <SecondAdminBanner />
               <Outlet />
             </>
           ) : termsStatus === 'required' ? (

@@ -26,6 +26,7 @@ import {
   StaffIsNotADoctorError,
   StaffNotFoundError,
   deactivateStaffByAdmin,
+  makeStaffAdmin,
   listClinicStaff,
   resetStaffPinByAdmin,
   setDoctorPresenceByAdmin,
@@ -120,9 +121,27 @@ clinicSettingsRouter.post('/staff/:id/reset-authenticator', async (req, res) => 
   res.json({ staffCode: target.staffCode, name: target.name });
 });
 
+/** Makes an active non-doctor member of this clinic an admin too (a clinic keeps at least 2). */
+clinicSettingsRouter.post('/staff/:id/make-admin', async (req, res) => {
+  const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;
+  try {
+    res.json(await makeStaffAdmin({ clinicId, staffId: req.params.id as string, requestedByStaffId: staffId }));
+  } catch (err) {
+    if (err instanceof StaffNotFoundError) {
+      res.status(404).json({ error: err.message });
+      return;
+    }
+    if (err instanceof StaffDeactivationError) {
+      res.status(409).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
+});
+
 /**
  * Deactivates one staff member of the admin's own clinic (e.g. they left):
- * logs them out now, keeps their records. Not yourself, not the last admin.
+ * logs them out now, keeps their records. Not yourself, and never below 2 admins.
  */
 clinicSettingsRouter.post('/staff/:id/deactivate', async (req, res) => {
   const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;

@@ -202,11 +202,8 @@ export function LoginPage() {
             )}
             {lockedOut && (
               <p className="rounded-xl border border-red-400/40 bg-red-500/10 px-3.5 py-2.5 text-sm text-red-100" role="alert">
-                Too many wrong PINs, so login is paused for up to 15 minutes. Forgot your PIN?{' '}
-                <a href="/login?reset=staff" className="font-semibold text-gold-300 underline">
-                  Reset it by SMS now
-                </a>{' '}
-                to get back in straight away.
+                Too many wrong PINs, so login is paused for up to 15 minutes. Forgot your PIN? Ask your clinic admin to reset it
+                (Settings → Staff → Reset PIN) to get back in straight away.
               </p>
             )}
             {error && (
@@ -220,13 +217,10 @@ export function LoginPage() {
             </button>
           </form>
           )}
-          {/* The reset form lives on the main site's login page (web/), shared
-              with patients — a full navigation, since it's a different app. */}
+          {/* Staff PINs are reset by the clinic admin, never by SMS. */}
           <p className="mt-5 text-center text-sm text-slate-300">
-            Forgot your PIN?{' '}
-            <a href="/login?reset=staff" className="font-semibold text-gold-300 hover:underline">
-              Reset it by SMS
-            </a>
+            Forgot your PIN? Ask your clinic admin to reset it in Settings → Staff. Clinic admins: ask another admin at your clinic, or
+            contact ACISI support.
           </p>
         </div>
         <p className="mt-6 text-center text-sm text-gold-400/80">Healthcare, within reach.</p>

@@ -3,6 +3,26 @@
 Plain-language record of what changed in ACISI, which data each change
 touches, and who can use it. Newest first.
 
+## 2026-11-23: At least 2 admins per clinic
+
+No database change.
+
+| What | Who |
+|---|---|
+| Settings → Staff → **Make admin** turns a front desk, clinician or lab staff member into a clinic admin (they are logged out and see the admin console at their next login). Doctors can't be made admins: an account has one role, and they would stop seeing patients. Audit-logged. | Clinic admins |
+| While a clinic has only 1 admin, every console page shows "Add a second clinic admin". | Clinic admins |
+| An admin can't be deactivated if that would leave the clinic with fewer than 2 admins: make someone else an admin first. | Clinic admins |
+
+## 2026-11-23: Staff PINs are reset by the clinic admin only
+
+No database change.
+
+| What | Who |
+|---|---|
+| Staff and doctors can no longer reset their own PIN by SMS code. "Forgot PIN" on the staff login says: ask your clinic admin to reset it in Settings → Staff → Reset PIN. A reset also lifts a lockout and logs the person out everywhere, as before. | Staff, doctors |
+| An admin's PIN is reset by another admin at the same clinic, or by ACISI from the server (`npm run reset-staff-pin`). | Clinic admins, owner |
+| Patients still reset their own PIN with an SMS code (or at the clinic front desk). | Patients |
+
 ## 2026-11-23: Live SMS through Mobile Sasa (sender ID "ACISI")
 
 No database change. Switched on by the server setting `MOBILESASA_API_TOKEN`
