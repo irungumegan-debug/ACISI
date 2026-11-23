@@ -112,7 +112,7 @@ export async function startPendingSignup(input: PendingSignupInput): Promise<{ p
 }
 
 /** "Send the code again": a fresh code, at most OTP_REQUEST_RATE_LIMIT_MAX_ATTEMPTS per window. */
-export async function resendSignupCode(pendingId: string): Promise<{ smsSent: boolean }> {
+export async function resendSignupCode(pendingId: string): Promise<{ smsSent: boolean; phoneNumber: string }> {
   const pending = await prisma.pendingPatientSignup.findFirst({ where: { id: pendingId, expiresAt: { gt: new Date() } } });
   if (!pending) throw new PendingSignupError('This signup has expired. Please sign up again.', 404);
 
@@ -126,7 +126,7 @@ export async function resendSignupCode(pendingId: string): Promise<{ smsSent: bo
     where: { id: pending.id },
     data: { codeHash, codeExpiresAt: new Date(Date.now() + ONE_TIME_CODE_TTL_SECONDS * 1000), codeAttempts: 0 },
   });
-  return { smsSent: await sendSignupCode(pending.phoneNumber, code) };
+  return { smsSent: await sendSignupCode(pending.phoneNumber, code), phoneNumber: pending.phoneNumber };
 }
 
 /** Turns a verified pending signup into a real patient account and deletes the pending row. */

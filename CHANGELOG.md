@@ -3,6 +3,18 @@
 Plain-language record of what changed in ACISI, which data each change
 touches, and who can use it. Newest first.
 
+## 2026-11-23: Live SMS through Mobile Sasa (sender ID "ACISI")
+
+No database change. Switched on by the server setting `MOBILESASA_API_TOKEN`
+(runbook "Switching SMS to Mobile Sasa"); without it nothing changes.
+
+| What | Who |
+|---|---|
+| All SMS (PIN reset codes, signup codes, login codes, receipts, reminders, alerts) go through Mobile Sasa from sender ID ACISI, so they reach real phones. Africa's Talking stays for USSD only. | Everyone |
+| The sender ID works on Safaricom only for now. Codes are not tried on other networks; the screen says "ACISI codes can only be sent to Safaricom numbers for now" and offers the way round: patients go to the clinic front desk, staff ask their clinic admin to reset the PIN, admins/doctors logging in set up an authenticator app instead of waiting for an SMS. A failed SMS never locks anyone out. | Patients, staff |
+| Logs keep only whether an SMS went, its purpose and a masked number (`2547******78`): never the text, the code or the token. | |
+| Server check: `npm run send-test-sms -- 07XXXXXXXX`. | Owner |
+
 ## 2026-11-21: Patient residence removed
 
 One database change (`20261121160000_remove_patient_residence`): drops the

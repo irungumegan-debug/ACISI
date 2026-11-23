@@ -4,10 +4,14 @@ import { CLINIC_COUNTED_SMS_PURPOSES, SMS_FAILURE_WARNING_THRESHOLD } from '../c
 import { prisma } from '../db/prisma';
 import { smsPartCount } from './smsTemplates';
 import { logger } from '../utils/logger';
+import { env } from '../config/env';
+import { isSafaricomNumber, maskPhoneForLog } from '../utils/phone';
+import { mobileSasaConfigured, sendViaMobileSasa } from './mobileSasaClient';
 
 /**
  * The one place ACISI sends an SMS. Every message goes through sendSms, so
- * Africa's Talking failures are counted in one place: after
+ * provider failures (Mobile Sasa when MOBILESASA_API_TOKEN is set, else
+ * Africa's Talking) are counted in one place: after
  * SMS_FAILURE_WARNING_THRESHOLD failures in a row the owner page shows a
  * warning, and the next successful send clears it.
  *
@@ -53,22 +57,62 @@ async function noteSuccess(): Promise<void> {
   }
 }
 
+export type SmsProvider = 'mobilesasa' | 'africastalking';
+
+export function smsProvider(): SmsProvider {
+  return mobileSasaConfigured() ? 'mobilesasa' : 'africastalking';
+}
+
 /**
- * Sends one SMS. Never throws: returns 'sent' or 'failed' (failures are
- * counted for the owner warning and logged by purpose only, never the
- * number or the text).
+ * Whether an SMS can reach this number at all. With Mobile Sasa the ACISI
+ * sender ID is approved on Safaricom only (MOBILESASA_SAFARICOM_ONLY), so
+ * Airtel/Telkom numbers are not tried; screens use this to explain why no
+ * code will arrive and point to the fallback (clinic, admin, authenticator).
+ */
+export function smsSafaricomOnly(): boolean {
+  return smsProvider() === 'mobilesasa' && env.MOBILESASA_SAFARICOM_ONLY;
+}
+
+export function smsCanReach(phone: string): boolean {
+  return !smsSafaricomOnly() || isSafaricomNumber(phone);
+}
+
+/** Shown on screen when a code can't go to a non-Safaricom number. */
+export const SMS_SAFARICOM_ONLY_NOTE = 'ACISI codes can only be sent to Safaricom numbers for now.';
+
+/** A "code not sent" screen message, saying why when the number isn't on Safaricom. */
+export function codeNotSentMessage(phone: string, fallback: string): string {
+  return smsCanReach(phone) ? fallback : `${SMS_SAFARICOM_ONLY_NOTE} ${fallback}`;
+}
+
+/**
+ * Sends one SMS. Never throws: returns 'sent' or 'failed'. Logs only the
+ * outcome, purpose, provider and a masked number: never the full number,
+ * the text or any credential.
  */
 export async function sendSms(to: string, message: string, purpose: string, clinicId?: string): Promise<'sent' | 'failed'> {
+  const provider = smsProvider();
+  const phone = maskPhoneForLog(to);
+  if (!smsCanReach(to)) {
+    // Not a provider failure, so it doesn't count towards the owner warning.
+    logger.warn({ purpose, provider, phone, reason: 'network_not_supported' }, 'SMS not sent');
+    return 'failed';
+  }
   try {
-    const response = await smsClient.send({ to: [to], message });
-    if (!smsWasAccepted(response)) throw new Error('Recipient rejected by SMS provider');
+    if (provider === 'mobilesasa') {
+      await sendViaMobileSasa(to, message);
+    } else {
+      const response = await smsClient.send({ to: [to], message });
+      if (!smsWasAccepted(response)) throw new Error('Recipient rejected by SMS provider');
+    }
     // Health tracking runs in the background: it never delays or breaks a send.
     void noteSuccess();
+    logger.info({ purpose, provider, phone }, 'SMS sent');
     await countClinicSms(clinicId, purpose, message);
     return 'sent';
   } catch (err) {
     void noteFailure();
-    logger.error({ err, purpose }, 'SMS send failed');
+    logger.error({ err, purpose, provider, phone }, 'SMS send failed');
     return 'failed';
   }
 }

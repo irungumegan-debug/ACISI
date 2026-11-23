@@ -204,6 +204,11 @@ const forgotPinSchema = z.object({ staffCode: z.string().min(1) });
  * discover valid staff IDs. Rate-limited per staff ID so it can't be used
  * to flood someone's phone with SMS.
  */
+/** Same for every staff ID (no account probing), with the way out if no SMS comes. */
+const STAFF_FORGOT_PIN_MESSAGE =
+  'If that staff ID exists, we sent a one-time code by SMS to the phone number on the account. ' +
+  "If no code arrives (codes only go to Safaricom numbers for now, or SMS may be down), ask your clinic admin to reset your PIN in Settings → Staff.";
+
 authRouter.post('/forgot-pin', async (req, res) => {
   const parsed = forgotPinSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -233,7 +238,7 @@ authRouter.post('/forgot-pin', async (req, res) => {
     }
   }
 
-  res.json({ message: 'If that staff ID exists, we sent a one-time code by SMS to the phone number on the account.' });
+  res.json({ message: STAFF_FORGOT_PIN_MESSAGE });
 });
 
 const resetPinSchema = z.object({
