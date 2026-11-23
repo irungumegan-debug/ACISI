@@ -20,13 +20,14 @@ USSD-first clinic management platform for small clinics in Kenya. See
   only. (See `src/mpesa/clinicStk.ts`; `CLINIC_MPESA_ENV` only allows
   `sandbox` today.)
 
-- **SMS provider: Mobile Sasa, built 23 Nov 2026** (sender ID "ACISI",
-  approved on Safaricom only). `src/services/mobileSasaClient.ts`, used by
+- **SMS provider: Mobile Sasa, live and confirmed working 23 Nov 2026**
+  (PR #69 merged and deployed, token on the server; owner received the test
+  SMS and a real OTP from "ACISI" and used it). Sender ID approved on
+  Safaricom only. `src/services/mobileSasaClient.ts`, used by
   `sendSms` whenever `MOBILESASA_API_TOKEN` is set on the server (Africa's
   Talking kept for USSD). Non-Safaricom numbers are not tried
   (`MOBILESASA_SAFARICOM_ONLY`, default true); screens explain and offer the
-  fallback. Live once deployed + token added + test SMS received (runbook
-  "Switching SMS to Mobile Sasa"). Still to do (owner): confirm where Mobile
+  fallback (runbook "Switching SMS to Mobile Sasa"). Still to do (owner): confirm where Mobile
   Sasa stores message content (must stay in Kenya) and update the Privacy
   Notice, DPIA and ODPC records for the new processor; then optionally
   `STAFF_MFA_SMS_ENABLED=true`.
