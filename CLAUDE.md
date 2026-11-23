@@ -37,8 +37,9 @@ USSD-first clinic management platform for small clinics in Kenya. See
   owner with `npm run reset-staff-pin` (runbook "Resetting a staff PIN").
   Patients keep the SMS reset.
 - **At least 2 admins per clinic (owner, 23 Nov 2026):** `MIN_CLINIC_ADMINS`.
-  Reminder banner while a clinic has 1; an admin can't be deactivated below
-  2. "Make admin" (`makeStaffAdmin`) promotes front desk / clinician / lab
+  Reminder banner while a clinic has 1. Deactivating an admin is allowed
+  down to 1 (owner: someone fired must lose access at once); only the last
+  admin can't be deactivated. "Make admin" (`makeStaffAdmin`) promotes front desk / clinician / lab
   staff, never doctors (one role per account). Invite-code signup can't
   choose ADMIN, on purpose.
 - **Multi-factor login (authenticator app), built 20 Nov 2026:** admins and

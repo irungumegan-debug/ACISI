@@ -1,7 +1,7 @@
 jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
 jest.mock('../../src/services/sessionRevocation', () => ({ revokeSessionsFor: jest.fn() }));
 
-// A tiny in-memory staff table, so the "at least 2 admins" rule is tested on real rows.
+// A tiny in-memory staff table, so the "last admin" rule is tested on real rows.
 type Row = { id: string; clinicId: string; role: string; isActive: boolean; name: string };
 let mockRows: Row[] = [];
 const mockLocks: string[] = [];
@@ -76,18 +76,17 @@ describe('deactivateStaffByAdmin', () => {
     expect(mockAudit).not.toHaveBeenCalled();
   });
 
-  it('refuses to take a clinic below 2 active admins', async () => {
-    await expect(by('admin-1', 'admin-2')).rejects.toThrow(/at least 2 admins.*Make someone else an admin first/);
-    expect(row('admin-2').isActive).toBe(true);
-    expect(mockRevoke).not.toHaveBeenCalled();
+  it('can deactivate an admin (e.g. fired) even if that leaves only 1 admin', async () => {
+    await by('admin-1', 'admin-2');
+    expect(row('admin-2').isActive).toBe(false);
+    expect(mockRevoke).toHaveBeenCalledWith('staff:admin-2');
   });
 
-  it('can deactivate an admin while 2 other active admins remain', async () => {
-    mockRows.push({ id: 'admin-3', clinicId: 'clinic-A', role: 'ADMIN', isActive: true, name: 'Admin Three' });
-    await by('admin-1', 'admin-3');
-    expect(row('admin-3').isActive).toBe(false);
-    // ...and now, with 2 left, neither can be removed
-    await expect(by('admin-1', 'admin-2')).rejects.toThrow(StaffDeactivationError);
+  it("refuses to deactivate the clinic's last active admin", async () => {
+    row('admin-2').isActive = false;
+    // A stale screen of the now-inactive admin can't remove the only active one.
+    await expect(by('admin-2', 'admin-1')).rejects.toThrow(/last admin/);
+    expect(row('admin-1').isActive).toBe(true);
   });
 
   it('only within the admin\'s own clinic: another clinic\'s staff is "not found"', async () => {

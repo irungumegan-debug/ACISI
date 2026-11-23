@@ -11,7 +11,7 @@ No database change.
 |---|---|
 | Settings → Staff → **Make admin** turns a front desk, clinician or lab staff member into a clinic admin (they are logged out and see the admin console at their next login). Doctors can't be made admins: an account has one role, and they would stop seeing patients. Audit-logged. | Clinic admins |
 | While a clinic has only 1 admin, every console page shows "Add a second clinic admin". | Clinic admins |
-| An admin can't be deactivated if that would leave the clinic with fewer than 2 admins: make someone else an admin first. | Clinic admins |
+| An admin who leaves or is fired can be deactivated straight away, even if that leaves 1 admin (the reminder then shows). Only the clinic's last admin can't be deactivated. | Clinic admins |
 
 ## 2026-11-23: Staff PINs are reset by the clinic admin only
 
