@@ -15,6 +15,7 @@ jest.mock('../../src/services/staffService', () => ({
   listClinicStaff: jest.fn(),
   resetStaffPinByAdmin: jest.fn(),
   deactivateStaffByAdmin: jest.fn(),
+  makeStaffAdmin: jest.fn(),
   StaffDeactivationError: class StaffDeactivationError extends Error {
     constructor(message: string) {
       super(message);
@@ -43,6 +44,7 @@ import { loadDashboardSession, SESSION_COOKIE_NAME } from '../../src/dashboard/s
 import { regenerateInviteCode } from '../../src/services/clinicService';
 import {
   deactivateStaffByAdmin,
+  makeStaffAdmin,
   listClinicStaff,
   resetStaffPinByAdmin,
   StaffDeactivationError,
@@ -218,6 +220,35 @@ describe('POST /clinic/staff/:id/deactivate', () => {
     expect(self.body.error).toMatch(/own account/);
 
     mockDeactivate.mockRejectedValueOnce(new StaffNotFoundError());
+    expect((await post('elsewhere')).status).toBe(404);
+  });
+});
+
+describe('POST /clinic/staff/:id/make-admin', () => {
+  const mockMakeAdmin = makeStaffAdmin as jest.Mock;
+  const post = (id: string) => request(buildApp()).post(`/clinic/staff/${id}/make-admin`).set('Cookie', `${SESSION_COOKIE_NAME}=tok`);
+
+  it('is admin-only: front desk can never make anyone (or themselves) an admin', async () => {
+    mockLoadSession.mockResolvedValue(RECEPTIONIST_SESSION);
+    expect((await post('rec-1')).status).toBe(403);
+    expect(mockMakeAdmin).not.toHaveBeenCalled();
+  });
+
+  it("makes a member of the admin's own clinic an admin", async () => {
+    mockLoadSession.mockResolvedValue(ADMIN_SESSION);
+    mockMakeAdmin.mockResolvedValue({ id: 'rec-1', role: 'ADMIN' });
+    const res = await post('rec-1');
+    expect(res.status).toBe(200);
+    expect(mockMakeAdmin).toHaveBeenCalledWith({ clinicId: 'clinic-1', staffId: 'rec-1', requestedByStaffId: 'staff-1' });
+  });
+
+  it('answers 409 with the reason (e.g. a doctor), and 404 for someone not in the clinic', async () => {
+    mockLoadSession.mockResolvedValue(ADMIN_SESSION);
+    mockMakeAdmin.mockRejectedValueOnce(new StaffDeactivationError("A doctor can't also be the clinic admin."));
+    const doc = await post('doc-1');
+    expect(doc.status).toBe(409);
+    expect(doc.body.error).toMatch(/doctor/);
+    mockMakeAdmin.mockRejectedValueOnce(new StaffNotFoundError());
     expect((await post('elsewhere')).status).toBe(404);
   });
 });

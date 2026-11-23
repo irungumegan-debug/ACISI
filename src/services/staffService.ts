@@ -1,3 +1,4 @@
+import { MIN_CLINIC_ADMINS } from '../config/constants';
 import bcrypt from 'bcrypt';
 import dayjs from 'dayjs';
 import { prisma } from '../db/prisma';
@@ -446,8 +447,9 @@ export class StaffDeactivationError extends Error {
  * kept). They can't log in any more, aren't assigned new patients, and are
  * logged out everywhere straight away. Audit-logged.
  *
- * Refused for the admin themselves, and for the clinic's last active admin
- * (so a clinic is never left with nobody to manage it). Two admins
+ * Refused for the admin themselves, and for an admin when the clinic would
+ * drop below MIN_CLINIC_ADMINS (so one admin can always reset the other's
+ * PIN). Two admins
  * deactivating each other at the same moment can't both succeed: the check
  * and the change run under one per-clinic lock.
  */
@@ -468,8 +470,10 @@ export async function deactivateStaffByAdmin(input: {
 
     if (staff.role === 'ADMIN') {
       const activeAdmins = await tx.staff.count({ where: { clinicId: input.clinicId, role: 'ADMIN', isActive: true } });
-      if (activeAdmins <= 1) {
-        throw new StaffDeactivationError("This is the clinic's last admin, so they can't be deactivated.");
+      if (activeAdmins <= MIN_CLINIC_ADMINS) {
+        throw new StaffDeactivationError(
+          `A clinic keeps at least ${MIN_CLINIC_ADMINS} admins, so this admin can't be deactivated yet. Make someone else an admin first (Make admin), then deactivate them.`,
+        );
       }
     }
     await tx.staff.update({ where: { id: staff.id }, data: { isActive: false } });
@@ -490,4 +494,40 @@ export async function deactivateStaffByAdmin(input: {
     });
   }
   return { id: input.staffId, isActive: false };
+}
+
+/**
+ * A clinic admin making an active member of their own clinic an admin too,
+ * so the clinic has the MIN_CLINIC_ADMINS it needs. Staff can't choose
+ * "admin" when they join with the invite code (anyone holding the code
+ * could), so this is the only way to add one. Doctors are refused: an
+ * account has one role, and making a doctor an admin would stop them
+ * consulting. They are logged out so their next login opens the admin
+ * console (and asks for multi-factor login, when it's on). Audit-logged.
+ */
+export async function makeStaffAdmin(input: { clinicId: string; staffId: string; requestedByStaffId: string }): Promise<{ id: string; role: 'ADMIN' }> {
+  const staff = await prisma.staff.findFirst({ where: { id: input.staffId, clinicId: input.clinicId } });
+  if (!staff) throw new StaffNotFoundError();
+  if (staff.role === 'ADMIN') return { id: staff.id, role: 'ADMIN' };
+  if (!staff.isActive) throw new StaffDeactivationError('This account is deactivated, so it can\'t be made an admin.');
+  if (staff.role === 'DOCTOR') {
+    throw new StaffDeactivationError(
+      "A doctor can't also be the clinic admin (an account has one role, and they would stop seeing patients). Choose a front desk, clinician or lab staff member.",
+    );
+  }
+
+  const { staffCode, role: previousRole } = staff;
+  await prisma.staff.update({ where: { id: staff.id }, data: { role: 'ADMIN' } });
+  await revokeSessionsFor(`staff:${staff.id}`);
+  await recordAuditEvent({
+    actorType: 'STAFF',
+    actorId: input.requestedByStaffId,
+    staffId: input.requestedByStaffId,
+    clinicId: input.clinicId,
+    action: 'STAFF_MADE_ADMIN',
+    entityType: 'Staff',
+    entityId: staff.id,
+    metadata: { staffCode, previousRole },
+  });
+  return { id: staff.id, role: 'ADMIN' };
 }

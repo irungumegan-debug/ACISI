@@ -1161,6 +1161,10 @@ export const api = {
     return request<{ staffCode: string; name: string }>(`/clinic/staff/${encodeURIComponent(staffId)}/reset-authenticator`, { method: 'POST' });
   },
 
+  makeStaffAdmin(staffId: string) {
+    return request<{ id: string; role: 'ADMIN' }>(`/clinic/staff/${encodeURIComponent(staffId)}/make-admin`, { method: 'POST' });
+  },
+
   deactivateStaff(staffId: string) {
     return request<{ id: string; isActive: false }>(`/clinic/staff/${encodeURIComponent(staffId)}/deactivate`, { method: 'POST' });
   },

@@ -1,7 +1,7 @@
 jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
 jest.mock('../../src/services/sessionRevocation', () => ({ revokeSessionsFor: jest.fn() }));
 
-// A tiny in-memory staff table, so the "last admin" rule is tested on real rows.
+// A tiny in-memory staff table, so the "at least 2 admins" rule is tested on real rows.
 type Row = { id: string; clinicId: string; role: string; isActive: boolean; name: string };
 let mockRows: Row[] = [];
 const mockLocks: string[] = [];
@@ -25,12 +25,12 @@ const mockTx = {
   },
 };
 jest.mock('../../src/db/prisma', () => ({
-  prisma: { $transaction: jest.fn(async (fn: (tx: unknown) => unknown) => fn(mockTx)) },
+  prisma: { $transaction: jest.fn(async (fn: (tx: unknown) => unknown) => fn(mockTx)), staff: mockTx.staff },
 }));
 
 import { recordAuditEvent } from '../../src/services/auditService';
 import { revokeSessionsFor } from '../../src/services/sessionRevocation';
-import { deactivateStaffByAdmin, StaffDeactivationError, StaffNotFoundError } from '../../src/services/staffService';
+import { deactivateStaffByAdmin, makeStaffAdmin, StaffDeactivationError, StaffNotFoundError } from '../../src/services/staffService';
 
 const mockAudit = recordAuditEvent as jest.Mock;
 const mockRevoke = revokeSessionsFor as jest.Mock;
@@ -76,19 +76,18 @@ describe('deactivateStaffByAdmin', () => {
     expect(mockAudit).not.toHaveBeenCalled();
   });
 
-  it('refuses to deactivate the clinic\'s last active admin', async () => {
-    row('admin-2').isActive = false;
-    // A second admin account (already inactive) tries via a stale screen; even
-    // the check by another requester can't remove the only active admin.
-    await expect(by('admin-2', 'admin-1')).rejects.toThrow("last admin");
-    expect(row('admin-1').isActive).toBe(true);
+  it('refuses to take a clinic below 2 active admins', async () => {
+    await expect(by('admin-1', 'admin-2')).rejects.toThrow(/at least 2 admins.*Make someone else an admin first/);
+    expect(row('admin-2').isActive).toBe(true);
+    expect(mockRevoke).not.toHaveBeenCalled();
   });
 
-  it('can deactivate an admin while another active admin remains', async () => {
-    await by('admin-1', 'admin-2');
-    expect(row('admin-2').isActive).toBe(false);
-    // ...and then admin-2 can no longer remove admin-1 (now the last one)
-    await expect(by('admin-2', 'admin-1')).rejects.toThrow(StaffDeactivationError);
+  it('can deactivate an admin while 2 other active admins remain', async () => {
+    mockRows.push({ id: 'admin-3', clinicId: 'clinic-A', role: 'ADMIN', isActive: true, name: 'Admin Three' });
+    await by('admin-1', 'admin-3');
+    expect(row('admin-3').isActive).toBe(false);
+    // ...and now, with 2 left, neither can be removed
+    await expect(by('admin-1', 'admin-2')).rejects.toThrow(StaffDeactivationError);
   });
 
   it('only within the admin\'s own clinic: another clinic\'s staff is "not found"', async () => {
@@ -104,6 +103,35 @@ describe('deactivateStaffByAdmin', () => {
   it('is a no-op for someone already deactivated (no second audit row)', async () => {
     row('rec-1').isActive = false;
     await expect(by('admin-1', 'rec-1')).resolves.toEqual({ id: 'rec-1', isActive: false });
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+});
+
+describe('makeStaffAdmin (so a clinic can have its 2 admins)', () => {
+  const make = (staffId: string) => makeStaffAdmin({ clinicId: 'clinic-A', staffId, requestedByStaffId: 'admin-1' });
+
+  it('makes a front-desk member an admin, logs them out so the new role applies, and audit-logs it', async () => {
+    await expect(make('rec-1')).resolves.toEqual({ id: 'rec-1', role: 'ADMIN' });
+    expect(row('rec-1').role).toBe('ADMIN');
+    expect(mockRevoke).toHaveBeenCalledWith('staff:rec-1');
+    expect(mockAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'STAFF_MADE_ADMIN', actorId: 'admin-1', entityId: 'rec-1', metadata: expect.objectContaining({ previousRole: 'RECEPTIONIST' }) }),
+    );
+  });
+
+  it('refuses a doctor (one role per account: they would stop seeing patients)', async () => {
+    await expect(make('doc-1')).rejects.toThrow(/doctor can't also be the clinic admin/);
+    expect(row('doc-1').role).toBe('DOCTOR');
+  });
+
+  it('refuses a deactivated account, and another clinic\'s staff is "not found"', async () => {
+    row('rec-1').isActive = false;
+    await expect(make('rec-1')).rejects.toThrow(StaffDeactivationError);
+    await expect(make('other-1')).rejects.toThrow(StaffNotFoundError);
+  });
+
+  it('is a no-op for someone already an admin', async () => {
+    await expect(make('admin-2')).resolves.toEqual({ id: 'admin-2', role: 'ADMIN' });
     expect(mockAudit).not.toHaveBeenCalled();
   });
 });

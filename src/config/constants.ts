@@ -124,3 +124,10 @@ export const SMS_OVERAGE_KES = 2;
  * ACISI check-in fee SMS, the account-deleted notice) is never counted.
  */
 export const CLINIC_COUNTED_SMS_PURPOSES: readonly string[] = ['PAYMENT_RECEIPT', 'CHECKOUT_SUMMARY', 'APPOINTMENT_REMINDER', 'WALK_IN_INVITE', 'LAB_RESULTS_READY', 'QUEUE_NEARLY_NEXT'];
+
+/**
+ * Every clinic should keep at least this many active admins (owner, 23 Nov
+ * 2026), so one can reset the other's PIN. Below it the console shows a
+ * reminder; at it, an admin can't be deactivated.
+ */
+export const MIN_CLINIC_ADMINS = 2;
