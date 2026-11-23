@@ -36,6 +36,30 @@ export function toE164(rawInput: string): string {
   return `+${KENYA_COUNTRY_CODE}${localDigits}`;
 }
 
+/**
+ * Safaricom's number ranges (Communications Authority of Kenya allocation):
+ * 0700-0729, 0740-0743, 0745, 0746, 0748, 0757-0759, 0768, 0769,
+ * 0790-0799 and 0110-0115. Based on the prefix only, so a number ported in
+ * from Airtel or Telkom (rare) is not recognised.
+ */
+const SAFARICOM_PREFIX = /^(?:7(?:[0-2]\d|4[0-35-68]|5[7-9]|6[89]|9\d)|11[0-5])/;
+
+/** Whether a Kenyan number (any format toE164 accepts) is on Safaricom. False for anything invalid. */
+export function isSafaricomNumber(rawInput: string): boolean {
+  try {
+    return SAFARICOM_PREFIX.test(toE164(rawInput).slice(1 + KENYA_COUNTRY_CODE.length));
+  } catch {
+    return false;
+  }
+}
+
+/** For logs: "+254712345678" -> "2547******78". Never the full number. */
+export function maskPhoneForLog(phone: string): string {
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length < 6) return '***';
+  return `${digits.slice(0, 4)}${'*'.repeat(digits.length - 6)}${digits.slice(-2)}`;
+}
+
 /** Converts an E.164 number to Daraja's expected format, e.g. "254712345678". */
 export function toDarajaFormat(e164: string): string {
   return e164.replace(/^\+/, '');

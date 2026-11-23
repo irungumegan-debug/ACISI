@@ -101,6 +101,7 @@ export function LoginPage() {
             {challenge.method === 'setup' && challenge.setup && (
               <div className="space-y-3 rounded-xl border border-gold-400/40 bg-gold-400/10 px-3.5 py-3 text-sm text-gold-100" role="status">
                 <p className="font-semibold text-white">Set up your authenticator app (one time only)</p>
+                {challenge.notice && <p className="text-gold-100">{challenge.notice}</p>}
                 <ol className="list-decimal space-y-1 pl-5 text-slate-100">
                   <li>On your own phone, install Google Authenticator or Microsoft Authenticator (free).</li>
                   <li>In the app, tap + and scan this QR code.</li>

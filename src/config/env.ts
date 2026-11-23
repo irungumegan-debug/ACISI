@@ -14,6 +14,23 @@ const envSchema = z.object({
   AT_USERNAME: z.string().min(1, 'AT_USERNAME is required'),
   AT_API_KEY: z.string().min(1, 'AT_API_KEY is required'),
   AT_USSD_SERVICE_CODE: z.string().optional(),
+
+  /**
+   * Mobile Sasa (live SMS, sender ID "ACISI"). When the token is set, every
+   * SMS goes through Mobile Sasa instead of Africa's Talking (still used for
+   * USSD). The token is a secret: only in /etc/acisi/acisi.env, never logged.
+   */
+  MOBILESASA_API_TOKEN: z.preprocess((v) => (typeof v === 'string' && v.trim() === '' ? undefined : v), z.string().trim().optional()),
+  MOBILESASA_SENDER_ID: z.string().trim().min(1).default('ACISI'),
+  /**
+   * The ACISI sender ID is approved on Safaricom only, so codes are not even
+   * tried on other networks (the screen explains instead). Set to "false"
+   * once Airtel/Telkom approve the sender ID too.
+   */
+  MOBILESASA_SAFARICOM_ONLY: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
   // USSD is not in use yet: /api/ussd answers 404 unless this is exactly
   // "true". The USSD code itself stays in src/ussd/, untouched, ready to be
   // switched back on.

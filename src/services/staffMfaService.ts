@@ -8,7 +8,7 @@ import { generateTotpSecret, matchTotp, otpauthUrl } from '../utils/totp';
 import { recordAuditEvent } from './auditService';
 import { isSessionRevoked, revokeSessionsFor } from './sessionRevocation';
 import { clearLockout, isLockedOut, lockoutMessage, recordWrongPin } from './pinLockout';
-import { sendSms } from './smsService';
+import { sendSms, smsCanReach, SMS_SAFARICOM_ONLY_NOTE } from './smsService';
 
 /**
  * Multi-factor login for the roles that can see or manage the most (clinic
@@ -85,6 +85,8 @@ export interface LoginChallengeResponse {
   method: MfaMethod;
   /** sms only. */
   phoneHint?: string;
+  /** Why the person is setting up an app (e.g. the SMS code couldn't be sent). */
+  notice?: string;
   /** setup only: what the app needs. */
   setup?: { qrCodeSvg: string; secret: string; accountName: string };
 }
@@ -112,7 +114,10 @@ export async function startLoginChallenge(staff: StaffForMfa): Promise<LoginChal
     return { mfaRequired: true, challengeId, method: 'authenticator' };
   }
 
-  if (env.STAFF_MFA_SMS_ENABLED) {
+  // SMS codes only where the SMS can arrive; otherwise (not Safaricom, or
+  // the send fails) the person sets up an authenticator app instead, so a
+  // failed SMS never stops them logging in.
+  if (env.STAFF_MFA_SMS_ENABLED && smsCanReach(staff.phoneNumber)) {
     const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
     await saveChallenge(challengeId, { ...base, method: 'sms', codeHash: sha256(`${challengeId}:${code}`) }, MFA_CODE_TTL_SECONDS);
     const sent = await sendSms(staff.phoneNumber, `ACISI: Your login code is ${code}. It expires in 5 minutes. Never share it with anyone.`, 'STAFF_LOGIN_CODE');
@@ -125,18 +130,24 @@ export async function startLoginChallenge(staff: StaffForMfa): Promise<LoginChal
       entityType: 'Staff',
       entityId: staff.id,
     });
-    if (sent !== 'sent') {
-      await redis.del(challengeKey(challengeId));
-      throw new MfaError("We couldn't send your login code by SMS. Please try again in a minute.", 502);
-    }
-    return { mfaRequired: true, challengeId, method: 'sms', phoneHint: phoneHint(staff.phoneNumber) };
+    if (sent === 'sent') return { mfaRequired: true, challengeId, method: 'sms', phoneHint: phoneHint(staff.phoneNumber) };
+    await redis.del(challengeKey(challengeId));
+    return startAppSetup(base, "We couldn't send your login code by SMS, so set up an authenticator app instead (it works without SMS).");
   }
 
-  // No app yet: set one up now. The secret is saved only once the first code checks out.
+  return startAppSetup(
+    base,
+    env.STAFF_MFA_SMS_ENABLED ? `${SMS_SAFARICOM_ONLY_NOTE} Set up an authenticator app instead (it works without SMS).` : undefined,
+  );
+}
+
+/** No app yet: set one up now. The secret is saved only once the first code checks out. */
+async function startAppSetup(base: Omit<Challenge, 'method'>, notice?: string): Promise<LoginChallengeResponse> {
+  const challengeId = crypto.randomBytes(24).toString('hex');
   const secret = generateTotpSecret();
   await saveChallenge(challengeId, { ...base, method: 'setup', secret: encryptValue(secret) }, MFA_SETUP_TTL_SECONDS);
-  const qrCodeSvg = await QRCode.toString(otpauthUrl(secret, staff.staffCode), { type: 'svg', margin: 1, errorCorrectionLevel: 'M' });
-  return { mfaRequired: true, challengeId, method: 'setup', setup: { qrCodeSvg, secret: secret.replace(/(.{4})/g, '$1 ').trim(), accountName: staff.staffCode } };
+  const qrCodeSvg = await QRCode.toString(otpauthUrl(secret, base.staffCode), { type: 'svg', margin: 1, errorCorrectionLevel: 'M' });
+  return { mfaRequired: true, challengeId, method: 'setup', setup: { qrCodeSvg, secret: secret.replace(/(.{4})/g, '$1 ').trim(), accountName: base.staffCode }, ...(notice ? { notice } : {}) };
 }
 
 async function checkAppCode(challenge: Challenge, code: string): Promise<boolean> {

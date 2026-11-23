@@ -20,14 +20,16 @@ USSD-first clinic management platform for small clinics in Kenya. See
   only. (See `src/mpesa/clinicStk.ts`; `CLINIC_MPESA_ENV` only allows
   `sandbox` today.)
 
-- **Switch SMS provider (to-do, owner, target ~21 Nov 2026):** SMS still run
-  on Africa's Talking **sandbox** (no real delivery). Owner is applying for a
-  sender ID with a Kenyan SMS provider (TextSMS mentioned). When credentials
-  arrive: add the provider in `src/services/smsService.ts` (all SMS go through
-  `sendSms`), confirm where message content is stored (must stay in Kenya;
-  update the Privacy Notice, DPIA and ODPC records if the processor changes),
-  test real delivery, then optionally allow SMS login codes as well
-  (`STAFF_MFA_SMS_ENABLED=true`, runbook "Turning on multi-factor login").
+- **SMS provider: Mobile Sasa, built 23 Nov 2026** (sender ID "ACISI",
+  approved on Safaricom only). `src/services/mobileSasaClient.ts`, used by
+  `sendSms` whenever `MOBILESASA_API_TOKEN` is set on the server (Africa's
+  Talking kept for USSD). Non-Safaricom numbers are not tried
+  (`MOBILESASA_SAFARICOM_ONLY`, default true); screens explain and offer the
+  fallback. Live once deployed + token added + test SMS received (runbook
+  "Switching SMS to Mobile Sasa"). Still to do (owner): confirm where Mobile
+  Sasa stores message content (must stay in Kenya) and update the Privacy
+  Notice, DPIA and ODPC records for the new processor; then optionally
+  `STAFF_MFA_SMS_ENABLED=true`.
 - **Multi-factor login (authenticator app), built 20 Nov 2026:** admins and
   doctors use an authenticator app (TOTP, `src/utils/totp.ts`,
   `src/services/staffMfaService.ts`); needs no SMS. Live only once deployed

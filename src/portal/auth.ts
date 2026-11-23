@@ -20,6 +20,7 @@ import {
   verifyPendingSignup,
 } from '../services/pendingSignupService';
 import { requestPinResetOtp, verifyPinResetOtp } from '../services/otpService';
+import { codeNotSentMessage, SMS_SAFARICOM_ONLY_NOTE, smsCanReach, smsSafaricomOnly } from '../services/smsService';
 import { deletePatientAccount, PatientNotFoundError } from '../services/patientDeletionService';
 import { prisma } from '../db/prisma';
 import {
@@ -138,7 +139,7 @@ portalAuthRouter.post('/register', async (req, res) => {
       identity,
       crossClinicConsent: parsed.data.crossClinicConsent ?? false,
     });
-    res.status(202).json({ pendingId, smsSent, ...(smsSent ? {} : { message: CODE_NOT_SENT_MESSAGE }) });
+    res.status(202).json({ pendingId, smsSent, ...(smsSent ? {} : { message: codeNotSentMessage(phoneE164, CODE_NOT_SENT_MESSAGE) }) });
   } catch (err) {
     if (err instanceof PendingSignupError) {
       res.status(err.status).json({ error: err.message });
@@ -218,8 +219,8 @@ portalAuthRouter.post('/register/resend', async (req, res) => {
     return;
   }
   try {
-    const { smsSent } = await resendSignupCode(pendingId);
-    res.json({ smsSent, ...(smsSent ? {} : { message: CODE_NOT_SENT_MESSAGE }) });
+    const { smsSent, phoneNumber } = await resendSignupCode(pendingId);
+    res.json({ smsSent, ...(smsSent ? {} : { message: codeNotSentMessage(phoneNumber, CODE_NOT_SENT_MESSAGE) }) });
   } catch (err) {
     if (err instanceof PendingSignupError) {
       res.status(err.status).json({ error: err.message });
@@ -293,6 +294,23 @@ portalAuthRouter.get('/me', requirePatientSession, (req, res) => {
 
 const forgotPinSchema = z.object({ identifier: z.string().min(1) });
 
+const VISIT_CLINIC = 'visit your clinic – the front desk will verify your phone and help you set a new PIN.';
+
+/** The "Forgot PIN" answer. A typed non-Safaricom number gets told plainly that no SMS is coming. */
+export function patientForgotPinMessage(identifier: string): string {
+  let typedPhone: string | null = null;
+  try {
+    typedPhone = toE164(identifier);
+  } catch {
+    // A patient ID, not a phone number.
+  }
+  if (typedPhone && !smsCanReach(typedPhone)) {
+    return `${SMS_SAFARICOM_ONLY_NOTE} No code can be sent to this number, so please ${VISIT_CLINIC}`;
+  }
+  const networkNote = smsSafaricomOnly() ? ` ${SMS_SAFARICOM_ONLY_NOTE}` : '';
+  return `If that account exists, we sent a one-time code by SMS.${networkNote} If no code arrives, ${VISIT_CLINIC}`;
+}
+
 /**
  * Always returns the same generic response whether or not the identifier
  * matched a patient — same no-enumeration principle as the staff dashboard
@@ -325,10 +343,8 @@ portalAuthRouter.post('/forgot-pin', async (req, res) => {
 
   // Same answer whether or not the account exists, or the SMS went out, so
   // nobody can probe for accounts. The clinic fallback is always offered.
-  res.json({
-    message:
-      'If that account exists, we sent a one-time code by SMS. If no code arrives, visit your clinic – the front desk will verify your phone and finish setting up your account.',
-  });
+  // The network note depends only on what was typed, never on the account.
+  res.json({ message: patientForgotPinMessage(identifier) });
 });
 
 const resetPinSchema = z.object({

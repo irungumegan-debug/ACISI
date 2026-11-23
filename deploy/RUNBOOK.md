@@ -400,15 +400,62 @@ sudo bash -c 'set -a; . /etc/acisi/acisi.env; set +a; cd /opt/acisi/app && npm r
 ```
 They scan a new QR code at the next login.
 
-**SMS codes as well (optional, later):** once real SMS works (`AT_USERNAME`
-is not `sandbox` and a test SMS reaches a real phone), add
+**SMS codes as well (optional, later):** once real SMS works (runbook
+"Switching SMS to Mobile Sasa", test SMS received), add
 `STAFF_MFA_SMS_ENABLED=true` and restart: people who haven't set up an app
-get a code by SMS instead of the QR code.
+get a code by SMS instead of the QR code. If their number isn't Safaricom, or
+the SMS fails, they are shown the QR code instead, so nobody is locked out.
 
 To turn multi-factor login off: change the line to `STAFF_MFA_ENABLED=false`
 and restart. Saved app setups are kept, so turning it back on doesn't need a
 new QR scan. A PIN reset, deactivation or authenticator reset forgets
 remembered devices.
+
+## Switching SMS to Mobile Sasa (sender ID "ACISI")
+
+Once `MOBILESASA_API_TOKEN` is set, **every** SMS (PIN reset codes, signup
+codes, login codes, receipts, reminders) goes through Mobile Sasa from sender
+ID **ACISI**. Africa's Talking stays only for USSD (`AT_*` lines stay as they
+are). The sender ID is approved on **Safaricom only**: codes are not tried on
+Airtel/Telkom numbers, and the screen says so and offers the way round
+(patients: the clinic front desk; staff: their clinic admin resets the PIN;
+admins/doctors at login: an authenticator app instead of an SMS code).
+
+1. Install the release (runbook "Updating the app").
+2. Add the token **without it appearing on screen or in shell history**
+   (paste it at the prompt; nothing is shown while you paste, then press Enter):
+   ```
+   read -rsp 'Mobile Sasa API token: ' T; echo; sudo sed -i '/^MOBILESASA_/d' /etc/acisi/acisi.env; printf 'MOBILESASA_API_TOKEN=%s\nMOBILESASA_SENDER_ID=ACISI\nMOBILESASA_SAFARICOM_ONLY=true\n' "$T" | sudo tee -a /etc/acisi/acisi.env >/dev/null; unset T
+   ```
+   Check it's there (prints the length only, never the token):
+   ```
+   sudo awk -F= '/^MOBILESASA_/{print $1, ($1=="MOBILESASA_API_TOKEN" ? "length " length($2) : $2)}' /etc/acisi/acisi.env
+   ```
+3. Restart: `sudo systemctl restart acisi`, then after 15 seconds
+   `curl -s https://acisi.co.ke/healthz; echo`.
+4. Send a test SMS to your own Safaricom number:
+   ```
+   sudo bash -c 'set -a; . /etc/acisi/acisi.env; set +a; cd /opt/acisi/app && npm run -s send-test-sms -- 07XXXXXXXX'
+   ```
+   It prints `Provider: mobilesasa` and "Accepted by mobilesasa". The SMS
+   should arrive from **ACISI** within a minute. If it says NOT sent, the line
+   above it has an error code: `http_401` = wrong token, `http_4xx_<code>` =
+   Mobile Sasa refused it (sender ID, balance, number), `timeout`/`network` =
+   couldn't reach Mobile Sasa.
+5. Then try it for real: acisi.co.ke → Log in → Forgot PIN with your own
+   patient or staff account.
+
+**Logs** show only `SMS sent` / `SMS send failed` / `SMS not sent`, with the
+purpose (e.g. `PIN_RESET_CODE`), the provider and a masked number
+(`2547******78`): never the text, the code or the token. To see them:
+`sudo journalctl -u acisi --since today --no-pager | grep -E '"msg":"SMS'`.
+
+**When Airtel/Telkom approve the sender ID:** set
+`MOBILESASA_SAFARICOM_ONLY=false` and restart.
+
+**Back to Africa's Talking:** delete the `MOBILESASA_API_TOKEN` line and restart.
+
+**Changing the token:** run step 2 again (it replaces the old lines), then restart.
 
 ## Connecting to the national HIE (DHA)
 
