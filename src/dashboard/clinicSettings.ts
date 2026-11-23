@@ -141,7 +141,7 @@ clinicSettingsRouter.post('/staff/:id/make-admin', async (req, res) => {
 
 /**
  * Deactivates one staff member of the admin's own clinic (e.g. they left):
- * logs them out now, keeps their records. Not yourself, and never below 2 admins.
+ * logs them out now, keeps their records. Not yourself, not the last admin.
  */
 clinicSettingsRouter.post('/staff/:id/deactivate', async (req, res) => {
   const { clinicId, staffId } = (req as unknown as AuthenticatedRequest).dashboardSession;

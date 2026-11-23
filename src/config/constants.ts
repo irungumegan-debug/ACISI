@@ -128,6 +128,7 @@ export const CLINIC_COUNTED_SMS_PURPOSES: readonly string[] = ['PAYMENT_RECEIPT'
 /**
  * Every clinic should keep at least this many active admins (owner, 23 Nov
  * 2026), so one can reset the other's PIN. Below it the console shows a
- * reminder; at it, an admin can't be deactivated.
+ * reminder. Deactivating an admin is still allowed down to 1 (someone fired
+ * must lose access at once).
  */
 export const MIN_CLINIC_ADMINS = 2;

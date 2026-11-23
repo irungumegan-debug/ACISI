@@ -1,4 +1,3 @@
-import { MIN_CLINIC_ADMINS } from '../config/constants';
 import bcrypt from 'bcrypt';
 import dayjs from 'dayjs';
 import { prisma } from '../db/prisma';
@@ -447,9 +446,10 @@ export class StaffDeactivationError extends Error {
  * kept). They can't log in any more, aren't assigned new patients, and are
  * logged out everywhere straight away. Audit-logged.
  *
- * Refused for the admin themselves, and for an admin when the clinic would
- * drop below MIN_CLINIC_ADMINS (so one admin can always reset the other's
- * PIN). Two admins
+ * Refused for the admin themselves, and for the clinic's last active admin
+ * (so a clinic is never left with nobody to manage it). Going below
+ * MIN_CLINIC_ADMINS is allowed (someone fired must lose access at once);
+ * the console then shows the "Add a second clinic admin" reminder. Two admins
  * deactivating each other at the same moment can't both succeed: the check
  * and the change run under one per-clinic lock.
  */
@@ -470,10 +470,12 @@ export async function deactivateStaffByAdmin(input: {
 
     if (staff.role === 'ADMIN') {
       const activeAdmins = await tx.staff.count({ where: { clinicId: input.clinicId, role: 'ADMIN', isActive: true } });
-      if (activeAdmins <= MIN_CLINIC_ADMINS) {
-        throw new StaffDeactivationError(
-          `A clinic keeps at least ${MIN_CLINIC_ADMINS} admins, so this admin can't be deactivated yet. Make someone else an admin first (Make admin), then deactivate them.`,
-        );
+      // Anyone who leaves (or is fired) can lose access at once, even if the
+      // clinic then has fewer than MIN_CLINIC_ADMINS (the console reminds it
+      // to add one). Only the very last admin stays, so the clinic is never
+      // left with nobody to manage it.
+      if (activeAdmins <= 1) {
+        throw new StaffDeactivationError("This is the clinic's last admin, so they can't be deactivated. Make someone else an admin first.");
       }
     }
     await tx.staff.update({ where: { id: staff.id }, data: { isActive: false } });
