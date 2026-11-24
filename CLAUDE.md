@@ -72,8 +72,13 @@ USSD-first clinic management platform for small clinics in Kenya. See
   24 Nov 12:47 EAT: owner ran acisi-dr-tests.sh, all PASS (encryption verify,
   settings restore, file restore with 0 files as none uploaded yet, SC-02 back
   in 13 s); recorded in the log, Backup Policy and DR Test Report. Old copies
-  go to "Superseded versions" (never deleted). Still to do: tabletops SC-03/
-  SC-04 in chat; full rebuild + DR failover by 31 Dec 2026.
+  go to "Superseded versions" (never deleted). Tabletops 24 Nov: SC-03
+  PARTIAL (no off-server copy, SMS runs on the same server), SC-04 PASS with
+  findings (power-off located 24 Nov; ransom policy to decide, recommended
+  never pay). 24 Nov 13:35: manual encrypted copy of the 12:47 backups on the
+  owner's computer (Documents\ACISI-backups); G5 open until automatic.
+  Still to do: ransom policy; automatic off-server backup; full rebuild + DR
+  failover by 31 Dec 2026.
 
 - **Patient address / residence is NOT collected** (owner, 21 Nov 2026): not in
   the Privacy Notice, DPIA or ODPC registration; no GPS. Never add address or
