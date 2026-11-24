@@ -5,6 +5,11 @@ USSD-first clinic management platform for small clinics in Kenya. See
 
 ## Planned features
 
+- **Outpatient first (owner, 24 Nov 2026):** ACISI is an outpatient system;
+  inpatient care (admission, wards, beds, discharge) comes later. On the DHA
+  portal, leave inpatient components unticked; documents describe ACISI as
+  outpatient.
+
 - **USSD check-in:** planned for Dec 2026 / early 2027. When live, add the
   USSD code to the walk-in invite SMS (see invite template:
   `buildWalkInInviteSms` in `src/services/smsTemplates.ts`).
