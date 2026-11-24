@@ -60,6 +60,18 @@ USSD-first clinic management platform for small clinics in Kenya. See
 
 ## Compliance documents
 
+- **DHA records (owner, 24 Nov 2026): keep every record DHA may ask for.**
+  Google Drive folder "ACISI DHA Certification Records" (acisi.help@gmail.com,
+  id 1OrrtCTft7aSsL5QY5DzeF0YHNITYD29R): "00 ACISI DHA records log" (Google
+  Doc: submission, documents, every test with date and result, recurring
+  checks, incidents), "01 Submitted documents (24 Nov 2026)" (12 PDFs + 7
+  Word), "02 Test and DR records" (acisi-dr-tests.sh and test outputs).
+  After every test, deploy-relevant change or DHA contact: add a dated line
+  to the log and update the affected document there. Never leave a blank
+  field in a DHA document: write the result, or "Test needed" plus the test.
+  Pending 24 Nov: run acisi-dr-tests.sh (encryption verify, settings and file
+  restore, SC-02), tabletops SC-03/SC-04; full rebuild + DR failover by 31 Dec.
+
 - **Patient address / residence is NOT collected** (owner, 21 Nov 2026): not in
   the Privacy Notice, DPIA or ODPC registration; no GPS. Never add address or
   location fields for patients without the owner first updating those. The
