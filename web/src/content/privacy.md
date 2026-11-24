@@ -40,7 +40,7 @@ We check you in, place you in the queue, keep your visit and health records, and
 
 We use your ID number and date of birth to identify you correctly and avoid duplicate records, which the clinic needs to treat you safely and meet its legal obligations. The clinic may contact your next of kin when your care requires it, or in an emergency.
 
-Some uses need your consent. Another clinic can see your history only with your explicit consent, given each time. We send walk-in patients an invitation to check in from home only if they agree.
+Some uses need your consent. Another clinic can see your history only with your explicit consent: either a standing permission you can switch off at any time, or a one-time code you give that clinic, valid for that day. We send walk-in patients an invitation to check in from home only if they agree.
 
 We keep staff accounts, logins and activity logs, and use the least data needed to fix and improve ACISI, because we have a legitimate interest in running a secure, reliable system. We keep financial and tax records because the law requires it.
 
@@ -72,9 +72,11 @@ Safaricom processes M-Pesa payments under its own privacy terms, and the clinic'
 
 Only people and organisations who need it, and only what they need. ACISI and everyone working for us are bound by a duty of confidentiality, as the law requires for anyone handling health data who is not a healthcare provider.
 
-Your clinic's staff see what their role needs, and doctors see only patients in their own department queue. Every staff member has a personal login, and every view and change is logged. Another clinic can see your history only with your explicit consent, each time.
+Your clinic's staff see what their role needs, and doctors see only patients in their own department queue. Every staff member has a personal login, and every view and change is logged. Another clinic can see your history only with your explicit consent: a standing permission you can switch off, or a one-time code valid for that day.
 
 Our servers are hosted by HostAfrica in its data centre in Kenya. Our SMS provider, Mobile Sasa, receives your phone number and the text of the messages we send, which carry as little health information as possible. Safaricom receives the payment amount, your phone number and the M-Pesa reference when you pay, and handles them under its own legal obligations.
+
+Your clinic must report some infectious diseases (for example cholera or measles) to the Ministry of Health's public health officers, as the law requires. These reports go from the clinic, not from ACISI.
 
 We share data with courts, the Office of the Data Protection Commissioner or the Digital Health Agency only when the law requires it, on a lawful request.
 
@@ -142,4 +144,4 @@ You can reach the ODPC through its website, [odpc.go.ke](https://www.odpc.go.ke)
 
 We review this notice at least once a year and whenever how we use data changes. We post the new version here with its date and tell clinics and patients about important changes by email or SMS.
 
-**Last updated:** 22 November 2026
+**Last updated:** 24 November 2026

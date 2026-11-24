@@ -105,9 +105,9 @@ clinician, who decides.
 | Audit trail | ✅ | Every view and change of clinical records logged; append-only (the database refuses update and delete) and hash-chained; `npm run verify-audit-log` |
 | Consent for sharing between clinics | ✅ | Off by default; patient's standing consent or a same-day code; every view logged |
 | Minors | ✅ | Portal signup refuses under-18s; children are registered at the clinic with a parent or guardian |
-| Backups and restore test | ✅ | Nightly encrypted backups (age), kept 14 days; practice restore with `acisi-restore-test`. Last restore test: **____________ (fill in from checklist H2)** |
+| Backups and restore test | ✅ | Nightly encrypted backups (age), kept 14 days; practice restore with `acisi-restore-test`. Last restore test: **22 Nov 2026, passed** (DR Test Report) |
 | Off-site backup | ❌ | Gap G5 |
-| Breach procedure | ✅ | Clinic told within 48 h, ODPC within 72 h, affected patients when at real risk. DHA not yet named (gap G9) |
+| Breach procedure | ✅ | Incident Response Plan: clinic within 48 h, DHA within 48 h, ODPC within 72 h, affected patients when at real risk |
 | DPIA | ✅ | Version 1.5, 24 Nov 2026 (uploaded) |
 | Server hardening | ✅ | SSH key only, no root login, firewall (22/80/443), fail2ban, automatic security updates |
 
@@ -139,7 +139,7 @@ Paste this into the gaps / self-assessment field.
 | G6 | No external uptime alert | Add one on `/healthz` | Dec 2026 |
 | G7 | No automatic deletion at the end of the retention period | Build | Q2 2027 |
 | G8 | Card payments and live M-Pesa at clinic checkout | Check-in fee live on M-Pesa since 20 Nov 2026; checkout prompts and cards next | Dec 2026 |
-| G9 | Breach procedure does not yet name DHA | Add DHA notification to the breach procedure | Dec 2026 |
+| G9 | ~~Breach procedure does not name DHA~~ | **Closed 22 Nov 2026**: Incident Response Plan notifies DHA within 48 hours | Done |
 
 ---
 
@@ -161,8 +161,7 @@ the date below, and that the gaps in section 7 are all the known gaps.
 
 1. **Multi-factor login:** make sure every clinic admin and doctor shows
    "Multi-factor on" in Settings → Staff & doctors.
-2. **Restore test:** run `sudo acisi-restore-test` on the server (checklist
-   H2) and write the date in section 5.
+2. **Restore test:** done 22 Nov 2026 (DR Test Report).
 3. **Email reports (section 4):** decide the two "Tick only if" boxes from
    what the Settings page shows.
 4. **Sign** this sheet (section 8) and the DPIA (its section 8).
