@@ -8,7 +8,7 @@ import { generateTotpSecret, matchTotp, otpauthUrl } from '../utils/totp';
 import { recordAuditEvent } from './auditService';
 import { isSessionRevoked, revokeSessionsFor } from './sessionRevocation';
 import { clearLockout, isLockedOut, lockoutMessage, recordWrongPin } from './pinLockout';
-import { sendSms, smsCanReach, SMS_SAFARICOM_ONLY_NOTE } from './smsService';
+import { sendSms, smsCanReach } from './smsService';
 
 /**
  * Multi-factor login for the roles that can see or manage the most (clinic
@@ -16,11 +16,16 @@ import { sendSms, smsCanReach, SMS_SAFARICOM_ONLY_NOTE } from './smsService';
  * 6-digit code:
  *
  * - **Authenticator app** (the default): Google Authenticator, Microsoft
- *   Authenticator or similar. Set up at the first login after MFA is
- *   switched on, by scanning a QR code and typing the first code. Needs no
- *   SMS or internet on the phone.
+ *   Authenticator or similar. Set up by the person themselves in the
+ *   console under Settings → Multi-factor login (owner, 24 Nov 2026: not
+ *   at the login screen, which was too hard to get through), by scanning a
+ *   QR code and typing the first code. From then on every login asks for
+ *   the app code. Needs no SMS or internet on the phone.
  * - **SMS code**: only when STAFF_MFA_SMS_ENABLED=true (real SMS delivery)
  *   and the person hasn't set up an app.
+ *
+ * Admins and doctors who haven't set up an app yet log in with their PIN
+ * only, and see a reminder on every page until they do.
  *
  * A device can be remembered for 30 days; a PIN reset or deactivation
  * forgets every remembered device. A lost phone: the clinic admin resets
@@ -38,6 +43,7 @@ export const MFA_MAX_ATTEMPTS = 5;
 export const TRUSTED_DEVICE_DAYS = 30;
 export const TRUSTED_DEVICE_COOKIE = 'acisi_staff_device';
 
+/** 'setup' is only the Settings setup (startAppSetup), never a login step. */
 export type MfaMethod = 'authenticator' | 'setup' | 'sms';
 
 /** True for admins and doctors once STAFF_MFA_ENABLED=true (see config/env.ts). */
@@ -82,13 +88,9 @@ export function phoneHint(phone: string): string {
 export interface LoginChallengeResponse {
   mfaRequired: true;
   challengeId: string;
-  method: MfaMethod;
+  method: Exclude<MfaMethod, 'setup'>;
   /** sms only. */
   phoneHint?: string;
-  /** Why the person is setting up an app (e.g. the SMS code couldn't be sent). */
-  notice?: string;
-  /** setup only: what the app needs. */
-  setup?: { qrCodeSvg: string; secret: string; accountName: string };
 }
 
 interface StaffForMfa {
@@ -103,8 +105,12 @@ async function saveChallenge(id: string, challenge: Challenge, ttl: number): Pro
   await redis.set(challengeKey(id), JSON.stringify(challenge), 'EX', ttl);
 }
 
-/** Starts the second step of the login and says which kind of code to ask for. */
-export async function startLoginChallenge(staff: StaffForMfa): Promise<LoginChallengeResponse> {
+/**
+ * Starts the second step of the login and says which kind of code to ask
+ * for, or returns null when there is no second step for this person yet
+ * (no app set up in Settings, and no SMS code possible).
+ */
+export async function startLoginChallenge(staff: StaffForMfa): Promise<LoginChallengeResponse | null> {
   if (await isLockedOut(codeLockout(staff.id))) throw new MfaError(lockoutMessage('codes'), 429);
   const challengeId = crypto.randomBytes(24).toString('hex');
   const base = { staffId: staff.id, staffCode: staff.staffCode, clinicId: staff.clinicId, attempts: 0 };
@@ -114,9 +120,9 @@ export async function startLoginChallenge(staff: StaffForMfa): Promise<LoginChal
     return { mfaRequired: true, challengeId, method: 'authenticator' };
   }
 
-  // SMS codes only where the SMS can arrive; otherwise (not Safaricom, or
-  // the send fails) the person sets up an authenticator app instead, so a
-  // failed SMS never stops them logging in.
+  // No app yet: an SMS code only where the SMS can arrive. A failed or
+  // impossible SMS never stops them logging in (they set up an app in
+  // Settings instead).
   if (env.STAFF_MFA_SMS_ENABLED && smsCanReach(staff.phoneNumber)) {
     const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
     await saveChallenge(challengeId, { ...base, method: 'sms', codeHash: sha256(`${challengeId}:${code}`) }, MFA_CODE_TTL_SECONDS);
@@ -132,22 +138,64 @@ export async function startLoginChallenge(staff: StaffForMfa): Promise<LoginChal
     });
     if (sent === 'sent') return { mfaRequired: true, challengeId, method: 'sms', phoneHint: phoneHint(staff.phoneNumber) };
     await redis.del(challengeKey(challengeId));
-    return startAppSetup(base, "We couldn't send your login code by SMS, so set up an authenticator app instead (it works without SMS).");
   }
-
-  return startAppSetup(
-    base,
-    env.STAFF_MFA_SMS_ENABLED ? `${SMS_SAFARICOM_ONLY_NOTE} Set up an authenticator app instead (it works without SMS).` : undefined,
-  );
+  return null;
 }
 
-/** No app yet: set one up now. The secret is saved only once the first code checks out. */
-async function startAppSetup(base: Omit<Challenge, 'method'>, notice?: string): Promise<LoginChallengeResponse> {
-  const challengeId = crypto.randomBytes(24).toString('hex');
+const selfSetupKey = (id: string) => `mfa:selfsetup:${id}`;
+
+export interface AppSetupStart {
+  setupId: string;
+  qrCodeSvg: string;
+  /** The secret in groups of 4, for typing in by hand. */
+  secret: string;
+  accountName: string;
+}
+
+/**
+ * Settings → Multi-factor login: a logged-in admin or doctor starts setting
+ * up their authenticator app (first time, or a new phone). Nothing changes
+ * until confirmAppSetup checks the first code.
+ */
+export async function startAppSetup(staff: { id: string; staffCode: string; clinicId: string }): Promise<AppSetupStart> {
+  const setupId = crypto.randomBytes(24).toString('hex');
   const secret = generateTotpSecret();
-  await saveChallenge(challengeId, { ...base, method: 'setup', secret: encryptValue(secret) }, MFA_SETUP_TTL_SECONDS);
-  const qrCodeSvg = await QRCode.toString(otpauthUrl(secret, base.staffCode), { type: 'svg', margin: 1, errorCorrectionLevel: 'M' });
-  return { mfaRequired: true, challengeId, method: 'setup', setup: { qrCodeSvg, secret: secret.replace(/(.{4})/g, '$1 ').trim(), accountName: base.staffCode }, ...(notice ? { notice } : {}) };
+  const challenge: Challenge = { staffId: staff.id, staffCode: staff.staffCode, clinicId: staff.clinicId, method: 'setup', secret: encryptValue(secret), attempts: 0 };
+  await redis.set(selfSetupKey(setupId), JSON.stringify(challenge), 'EX', MFA_SETUP_TTL_SECONDS);
+  const qrCodeSvg = await QRCode.toString(otpauthUrl(secret, staff.staffCode), { type: 'svg', margin: 1, errorCorrectionLevel: 'M' });
+  return { setupId, qrCodeSvg, secret: secret.replace(/(.{4})/g, '$1 ').trim(), accountName: staff.staffCode };
+}
+
+/** Checks the first code from the app and saves the app for this person (replacing any earlier one). */
+export async function confirmAppSetup(staffId: string, setupId: string, code: string): Promise<void> {
+  const raw = await redis.get(selfSetupKey(setupId));
+  if (!raw) throw new MfaError('This setup has expired. Tap "Set up authenticator app" to get a new QR code.', 400);
+  const challenge = JSON.parse(raw) as Challenge;
+  if (challenge.staffId !== staffId) throw new MfaError('This setup has expired. Tap "Set up authenticator app" to get a new QR code.', 400);
+
+  if (!(await checkAppCode(challenge, code))) {
+    challenge.attempts += 1;
+    if (challenge.attempts >= MFA_MAX_ATTEMPTS) {
+      await redis.del(selfSetupKey(setupId));
+      throw new MfaError('Too many wrong codes. Tap "Set up authenticator app" to start again with a new QR code.', 400);
+    }
+    await redis.set(selfSetupKey(setupId), JSON.stringify(challenge), 'EX', MFA_SETUP_TTL_SECONDS);
+    throw new MfaError('Wrong code. Check the app and try again (use the newest code for ACISI).', 400);
+  }
+
+  await redis.del(selfSetupKey(setupId));
+  const had = await prisma.staff.findUnique({ where: { id: staffId }, select: { totpSecret: true } });
+  await prisma.staff.update({ where: { id: staffId }, data: { totpSecret: decryptValue(challenge.secret!), totpEnabledAt: new Date() } });
+  await recordAuditEvent({
+    actorType: 'STAFF',
+    actorId: staffId,
+    staffId,
+    clinicId: challenge.clinicId,
+    action: 'STAFF_AUTHENTICATOR_SET_UP',
+    entityType: 'Staff',
+    entityId: staffId,
+    metadata: { replacedEarlierApp: Boolean(had?.totpSecret), where: 'settings' },
+  });
 }
 
 async function checkAppCode(challenge: Challenge, code: string): Promise<boolean> {
@@ -186,18 +234,6 @@ export async function verifyLoginCode(challengeId: string, code: string): Promis
   if (ok) {
     await redis.del(challengeKey(challengeId));
     await clearLockout(codeLockout(challenge.staffId));
-    if (challenge.method === 'setup') {
-      await prisma.staff.update({ where: { id: challenge.staffId }, data: { totpSecret: decryptValue(challenge.secret!), totpEnabledAt: new Date() } });
-      await recordAuditEvent({
-        actorType: 'STAFF',
-        actorId: challenge.staffId,
-        staffId: challenge.staffId,
-        clinicId: challenge.clinicId,
-        action: 'STAFF_AUTHENTICATOR_SET_UP',
-        entityType: 'Staff',
-        entityId: challenge.staffId,
-      });
-    }
     return { staffId: challenge.staffId, staffCode: challenge.staffCode, method: challenge.method };
   }
 
@@ -223,7 +259,7 @@ export async function verifyLoginCode(challengeId: string, code: string): Promis
 
 /**
  * Forgets a staff member's authenticator app (lost or changed phone) and
- * every remembered device; they set the app up again at their next login.
+ * every remembered device; they set the app up again in Settings.
  * Callers check who may do this and record their own audit event.
  */
 export async function resetAuthenticator(staffId: string): Promise<void> {
