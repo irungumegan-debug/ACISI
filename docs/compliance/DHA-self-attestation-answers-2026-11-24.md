@@ -72,9 +72,9 @@ clinician, who decides.
 | Clinical decision support | Evidence-Based Interventions: **leave unticked** | Warnings use WHO cut-offs (IMCI, MUAC, BMI) but ACISI gives no treatment guidance |
 | Clinical decision support | Uses HPT Registry: **leave unticked** | |
 | Clinical summary | Includes Biodata, Includes Medications, Includes Care Plan | Visit record: date of birth, sex, ID; current medicines; plan / follow-up |
-| Clinical summary | Kenya HIE Exchangeable: **leave unticked** | Only once connected to the HIE (gap G2) |
+| Clinical summary | Kenya HIE Exchangeable: **tick** | The visit summary is built as the FHIR Bundle sent to the Shared Health Record (visit, diagnoses, problems, allergies, medicines, lab, vital signs, orders; `src/hie/shrBundle.ts`). Live test with DHA: gap G2 |
 | Electronic prescribing | Includes Diagnostic Tests, Includes Problem List, Includes Medication Lists | The visit record with the prescription carries diagnoses, lab results and current medicines |
-| Electronic prescribing | Electronic Transmission: **leave unticked** | Only once connected to the HIE (gap G2) |
+| Electronic prescribing | Electronic Transmission: **tick** | Prescriptions (MedicationRequest, DHA codes) and dispensing go in the Bundle sent to the Shared Health Record. Live test with DHA: gap G2 |
 | Quality measures | Switch on; Capture, Calculate, Export | Routine reports → Quality measures, CSV |
 | Quality measures | Import, Electronic Submission: **leave unticked** | |
 
@@ -121,8 +121,8 @@ clinician, who decides.
 | Terminologies | WHO ICD-11 MMS 2025-01; LOINC (vital signs; lab tests once their codes are set in Settings); DHA ePrescription IG 0.1.0 code lists. SNOMED CT: **leave unticked** |
 | LOINC | Tick |
 | Access | Logged-in doctors only; front desk and anonymous requests refused |
-| Connected to the national HIE (Client Registry, Facility Registry, Health Worker Registry, Shared Health Record) | **No** (gap G2). The connection is built and switched off; DHA issues the sandbox credentials after this attestation is submitted and paid |
-| Level 4, Able to connect to Kenya HIE | **Leave unticked** until the first successful test with DHA's credentials |
+| Able to connect to the national HIE (Client Registry, Facility Registry, Health Worker Registry, Shared Health Record) | **Yes, built.** Following DHA's published HIE API (hie-docs.dha.go.ke): service-account token (client ID and secret), facility search by name or MFL code, health worker lookup by regulator registration number, client lookup by national ID / passport / birth certificate, Shared Health Record with patient consent per visit (code to the patient's phone), sending the visit record at checkout with retries, reading records from other facilities, closing the visit (`src/hie/`). Switched on with `HIE_ENABLED=true` and DHA's credentials. Not yet tested against DHA's live sandbox: DHA issues the credentials after this attestation is submitted and paid (gap G2) |
+| Level 4, Able to connect to Kenya HIE | **Tick.** The connection is built (row above); the first live test is declared as gap G2 |
 | National identifiers | ACISI's own identifier systems until connected to the Client Registry (G2) |
 
 ## 7. Self-assessment: known gaps and plan
@@ -132,7 +132,7 @@ Paste this into the gaps / self-assessment field.
 | # | Gap | Plan | Target |
 |---|---|---|---|
 | G1 | ~~Multi-factor login not switched on~~ | **Closed 24 Nov 2026**: authenticator-app login live for clinic admins and doctors | Done |
-| G2 | Not yet connected to the national HIE (Client Registry, Facility Registry, Health Worker Registry, Shared Health Record) | Built from DHA's published HIE API documentation and switched off. Switch on and test as soon as DHA issues the sandbox credentials (after this submission and payment), then book UAT | Within 3 months of receiving credentials |
+| G2 | HIE connection built but not yet tested live (Client Registry, Facility Registry, Health Worker Registry, Shared Health Record) | Built from DHA's published HIE API documentation and switched off. Switch on and test as soon as DHA issues the sandbox credentials (after this submission and payment), fix any differences from the documentation, then book UAT with DHA | Within 3 months of receiving credentials |
 | G3 | Reports not sent automatically to KHIS / eIDSR | Clinics submit the generated MOH 505 and monthly reports; ACISI emails them to the Sub-County coordinator where set up. Automate once DHA / MOH name the route | With G2 |
 | G4 | Pharmacy and Poisons Board medicine list (in DHA's ePrescription IG) is "subject to separate terms" | Asked DHA on 16 Nov 2026; will follow DHA's terms, or remove the copy | On DHA's answer |
 | G5 | Backup copy is on the same server | Off-server copy kept in Kenya (prepared, not yet enabled) | Before onboarding more clinics |
