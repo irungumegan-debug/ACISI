@@ -69,8 +69,11 @@ USSD-first clinic management platform for small clinics in Kenya. See
   After every test, deploy-relevant change or DHA contact: add a dated line
   to the log and update the affected document there. Never leave a blank
   field in a DHA document: write the result, or "Test needed" plus the test.
-  Pending 24 Nov: run acisi-dr-tests.sh (encryption verify, settings and file
-  restore, SC-02), tabletops SC-03/SC-04; full rebuild + DR failover by 31 Dec.
+  24 Nov 12:47 EAT: owner ran acisi-dr-tests.sh, all PASS (encryption verify,
+  settings restore, file restore with 0 files as none uploaded yet, SC-02 back
+  in 13 s); recorded in the log, Backup Policy and DR Test Report. Old copies
+  go to "Superseded versions" (never deleted). Still to do: tabletops SC-03/
+  SC-04 in chat; full rebuild + DR failover by 31 Dec 2026.
 
 - **Patient address / residence is NOT collected** (owner, 21 Nov 2026): not in
   the Privacy Notice, DPIA or ODPC registration; no GPS. Never add address or
