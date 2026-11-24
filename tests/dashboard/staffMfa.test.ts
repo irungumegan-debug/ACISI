@@ -85,20 +85,18 @@ it('a wrong code is refused, and after 5 wrong codes even the right one stops wo
   expect((await request(app()).post('/auth/login/verify').send({ challengeId: start.body.challengeId, code })).status).toBe(401);
 });
 
-it('no SMS, no login: if the code cannot be sent, nobody gets in, but they are offered an authenticator app instead of being locked out', async () => {
+it('if the SMS code cannot be sent, the doctor (no app set up) logs in with the PIN; no setup at the login screen', async () => {
   (sendSms as jest.Mock).mockResolvedValueOnce('failed');
   const res = await request(app()).post('/auth/login').send({ staffCode: DOCTOR.staffCode, pin: '1234' });
   expect(res.status).toBe(200);
-  expect(res.body).toMatchObject({ mfaRequired: true, method: 'setup', notice: expect.stringMatching(/couldn't send your login code/) });
-  expect(res.body.setup.qrCodeSvg).toContain('<svg');
-  expect(String(res.headers['set-cookie'] ?? '')).not.toContain(SESSION_COOKIE_NAME);
+  expect(res.body).toMatchObject({ role: 'DOCTOR' });
 });
 
-it('a non-Safaricom phone gets no SMS attempt: straight to authenticator setup, with the reason on screen', async () => {
+it('a non-Safaricom phone gets no SMS attempt, and logs in with the PIN', async () => {
   (smsCanReach as jest.Mock).mockReturnValueOnce(false);
   const res = await request(app()).post('/auth/login').send({ staffCode: DOCTOR.staffCode, pin: '1234' });
   expect(sendSms).not.toHaveBeenCalled();
-  expect(res.body).toMatchObject({ mfaRequired: true, method: 'setup', notice: expect.stringMatching(/Safaricom/) });
+  expect(res.body).toMatchObject({ role: 'DOCTOR' });
 });
 
 it('"remember this device" skips the code for 30 days, until a PIN reset or deactivation', async () => {

@@ -17,11 +17,14 @@ import { markSessionActive } from '../services/idleTimeout';
 import { logger } from '../utils/logger';
 import { Clinic, Staff } from '@prisma/client';
 import { recordAuditEvent } from '../services/auditService';
+import { prisma } from '../db/prisma';
 import {
   isTrustedDevice,
+  confirmAppSetup,
   MfaError,
   mfaRequiredFor,
   rememberDevice,
+  startAppSetup,
   startLoginChallenge,
   TRUSTED_DEVICE_COOKIE,
   TRUSTED_DEVICE_DAYS,
@@ -68,10 +71,15 @@ authRouter.post('/login', async (req, res) => {
 
   await clearLockout(subject);
 
-  // Admins and doctors: a code from their authenticator app (or SMS) as well, unless this device was remembered.
+  // Admins and doctors who set up an authenticator app (Settings → Multi-factor
+  // login): the app code as well, unless this device was remembered.
   if (mfaRequiredFor(staff.role) && !(await isTrustedDevice(staff.id, req.cookies?.[TRUSTED_DEVICE_COOKIE] as string | undefined))) {
     try {
-      res.json(await startLoginChallenge(staff));
+      const challenge = await startLoginChallenge(staff);
+      if (challenge) {
+        res.json(challenge);
+        return;
+      }
     } catch (err) {
       if (err instanceof MfaError) {
         res.status(err.status).json({ error: err.message });
@@ -79,7 +87,6 @@ authRouter.post('/login', async (req, res) => {
       }
       throw err;
     }
-    return;
   }
 
   await issueStaffSession(staff, req, res);
@@ -183,6 +190,54 @@ authRouter.post('/activity', requireStaffSession, (_req, res) => {
 
 authRouter.get('/me', requireStaffSession, (req, res) => {
   res.json((req as AuthenticatedRequest).dashboardSession);
+});
+
+/**
+ * Settings → Multi-factor login, for the logged-in person themselves
+ * (admins and doctors). `available` is false until STAFF_MFA_ENABLED=true
+ * on the server, and for other roles.
+ */
+authRouter.get('/mfa', requireStaffSession, async (req, res) => {
+  const { staffId, role } = (req as AuthenticatedRequest).dashboardSession;
+  const staff = await prisma.staff.findUnique({ where: { id: staffId }, select: { totpEnabledAt: true } });
+  res.json({ available: mfaRequiredFor(role), setUp: Boolean(staff?.totpEnabledAt), setUpAt: staff?.totpEnabledAt?.toISOString() ?? null });
+});
+
+authRouter.post('/mfa/setup', requireStaffSession, async (req, res) => {
+  const { staffId, staffCode, clinicId, role } = (req as AuthenticatedRequest).dashboardSession;
+  if (!mfaRequiredFor(role)) {
+    res.status(403).json({ error: 'Multi-factor login is not switched on for your role' });
+    return;
+  }
+  res.json(await startAppSetup({ id: staffId, staffCode, clinicId }));
+});
+
+const confirmSetupSchema = z.object({
+  setupId: z.string().min(1).max(100),
+  code: z.string().trim().regex(/^\d{6}$/, 'The code is 6 digits'),
+});
+
+authRouter.post('/mfa/setup/confirm', requireStaffSession, async (req, res) => {
+  const { staffId, role } = (req as AuthenticatedRequest).dashboardSession;
+  if (!mfaRequiredFor(role)) {
+    res.status(403).json({ error: 'Multi-factor login is not switched on for your role' });
+    return;
+  }
+  const parsed = confirmSetupSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Enter the 6-digit code' });
+    return;
+  }
+  try {
+    await confirmAppSetup(staffId, parsed.data.setupId, parsed.data.code);
+  } catch (err) {
+    if (err instanceof MfaError) {
+      res.status(err.status).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
+  res.json({ setUp: true });
 });
 
 /**

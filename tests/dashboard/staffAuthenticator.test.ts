@@ -1,4 +1,4 @@
-/** Multi-factor login with an authenticator app: first-login setup, app codes, replay, lockout, admin reset. */
+/** Multi-factor login with an authenticator app: setup in Settings (not at login), app codes, replay, lockout, admin reset. */
 process.env.STAFF_MFA_ENABLED = 'true';
 process.env.STAFF_MFA_SMS_ENABLED = 'false';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -6,7 +6,7 @@ jest.mock('../../src/config/redis', () => require('../helpers/fakeRedis').fakeRe
 jest.mock('../../src/services/smsService', () => ({ sendSms: jest.fn(async () => 'sent') }));
 jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
 jest.mock('../../src/services/sessionRevocation', () => ({ isSessionRevoked: jest.fn(async () => false), revokeSessionsFor: jest.fn() }));
-jest.mock('../../src/db/prisma', () => ({ prisma: { staff: { update: jest.fn() } } }));
+jest.mock('../../src/db/prisma', () => ({ prisma: { staff: { update: jest.fn(), findUnique: jest.fn(async () => null) } } }));
 jest.mock('../../src/services/staffService', () => ({
   ...jest.requireActual('../../src/services/staffService'),
   findActiveStaffWithClinicByCode: jest.fn(),
@@ -50,32 +50,73 @@ beforeEach(() => {
   (findActiveStaffWithClinicByCode as jest.Mock).mockImplementation(async () => current);
 });
 
-it('with no app yet, the PIN alone gives no session: the doctor is shown a QR code to set one up (no SMS)', async () => {
+it('with no app yet, the PIN alone logs a doctor in: no QR code at the login screen, no SMS', async () => {
   const res = await login();
-  expect(res.body).toMatchObject({ mfaRequired: true, method: 'setup', setup: { accountName: 'ACI-STF-DOC1' } });
-  expect(res.body.setup.qrCodeSvg).toMatch(/^<svg/);
-  expect(res.body.setup.secret.replace(/\s/g, '')).toMatch(/^[A-Z2-7]{32}$/);
-  expect(String(res.headers['set-cookie'] ?? '')).not.toContain(SESSION_COOKIE_NAME);
+  expect(res.body).toMatchObject({ role: 'DOCTOR' });
+  expect(String(res.headers['set-cookie'])).toContain(SESSION_COOKIE_NAME);
   expect(sendSms).not.toHaveBeenCalled();
 });
 
-it('setup: the first code from the app saves the secret and logs in', async () => {
-  const start = await login();
-  const ok = await verify(start.body.challengeId, codeNow(start.body.setup.secret));
-  expect(ok.status).toBe(200);
-  expect(String(ok.headers['set-cookie'])).toContain(SESSION_COOKIE_NAME);
-  expect(prisma.staff.update).toHaveBeenCalledWith({
-    where: { id: 'doc-1' },
-    data: { totpSecret: start.body.setup.secret.replace(/\s/g, ''), totpEnabledAt: expect.any(Date) },
-  });
-  expect((recordAuditEvent as jest.Mock).mock.calls.map((c) => c[0].action)).toContain('STAFF_AUTHENTICATOR_SET_UP');
+/** A logged-in doctor (no app yet) as a cookie-keeping agent. */
+async function loggedInAgent() {
+  const agent = request.agent(app());
+  expect((await agent.post('/auth/login').send({ staffCode: 'ACI-STF-DOC1', pin: '1234' })).body).toMatchObject({ role: 'DOCTOR' });
+  return agent;
+}
+
+it('Settings: status says multi-factor login is available and not set up yet', async () => {
+  const agent = await loggedInAgent();
+  const res = await agent.get('/auth/mfa');
+  expect(res.body).toEqual({ available: true, setUp: false, setUpAt: null });
 });
 
-it('setup: a wrong code saves nothing', async () => {
-  const start = await login();
-  const wrong = codeNow(start.body.setup.secret) === '000000' ? '111111' : '000000';
-  expect((await verify(start.body.challengeId, wrong)).status).toBe(401);
+it('Settings: setup shows a QR code; the first code from the app saves it, and the next login asks for the app code', async () => {
+  const agent = await loggedInAgent();
+  const start = await agent.post('/auth/mfa/setup');
+  expect(start.body).toMatchObject({ setupId: expect.any(String), accountName: 'ACI-STF-DOC1' });
+  expect(start.body.qrCodeSvg).toMatch(/^<svg/);
+  const secret = start.body.secret.replace(/\s/g, '');
+  expect(secret).toMatch(/^[A-Z2-7]{32}$/);
+
+  const ok = await agent.post('/auth/mfa/setup/confirm').send({ setupId: start.body.setupId, code: codeNow(secret) });
+  expect(ok.status).toBe(200);
+  expect(prisma.staff.update).toHaveBeenCalledWith({ where: { id: 'doc-1' }, data: { totpSecret: secret, totpEnabledAt: expect.any(Date) } });
+  expect((recordAuditEvent as jest.Mock).mock.calls.map((c) => c[0].action)).toContain('STAFF_AUTHENTICATOR_SET_UP');
+
+  current = { ...DOCTOR, totpSecret: secret };
+  const next = await login();
+  expect(next.body).toMatchObject({ mfaRequired: true, method: 'authenticator' });
+  expect(String(next.headers['set-cookie'] ?? '')).not.toContain(SESSION_COOKIE_NAME);
+});
+
+it('Settings: a wrong code saves nothing, and after 5 the setup must start again', async () => {
+  const agent = await loggedInAgent();
+  const start = await agent.post('/auth/mfa/setup');
+  const good = codeNow(start.body.secret);
+  const wrong = good === '000000' ? '111111' : '000000';
+  for (let i = 0; i < 4; i++) expect((await agent.post('/auth/mfa/setup/confirm').send({ setupId: start.body.setupId, code: wrong })).body.error).toMatch(/Wrong code/);
+  expect((await agent.post('/auth/mfa/setup/confirm').send({ setupId: start.body.setupId, code: wrong })).body.error).toMatch(/start again/);
+  expect((await agent.post('/auth/mfa/setup/confirm').send({ setupId: start.body.setupId, code: good })).status).toBe(400);
   expect(prisma.staff.update).not.toHaveBeenCalled();
+});
+
+it("Settings: one person's setup can't be confirmed by another", async () => {
+  const agent = await loggedInAgent();
+  const start = await agent.post('/auth/mfa/setup');
+  current = { ...DOCTOR, id: 'doc-2', staffCode: 'ACI-STF-DOC2' };
+  const other = request.agent(app());
+  await other.post('/auth/login').send({ staffCode: 'ACI-STF-DOC2', pin: '1234' });
+  const res = await other.post('/auth/mfa/setup/confirm').send({ setupId: start.body.setupId, code: codeNow(start.body.secret) });
+  expect(res.status).toBe(400);
+  expect(prisma.staff.update).not.toHaveBeenCalled();
+});
+
+it('Settings: front desk has no multi-factor setup', async () => {
+  current = { ...DOCTOR, role: 'RECEPTIONIST' };
+  const agent = request.agent(app());
+  await agent.post('/auth/login').send({ staffCode: 'ACI-STF-DOC1', pin: '1234' });
+  expect((await agent.get('/auth/mfa')).body).toMatchObject({ available: false });
+  expect((await agent.post('/auth/mfa/setup')).status).toBe(403);
 });
 
 it('with an app set up, the doctor is asked for the app code, and the right one logs in', async () => {

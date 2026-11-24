@@ -115,12 +115,13 @@ enough.
 
 You need Google Authenticator or Microsoft Authenticator on your phone.
 
-- [ ] **F1. Setup.** Test doctor logs in (ID + PIN) → a QR code is shown → scan it with the app → type the code → in.
-- [ ] **F2. Next login.** Log out, log in again (untick "Remember this device" the first time) → asked for the app code, not a QR code → in.
+- [ ] **F1. No setup at login.** Test doctor who hasn't set up the app logs in (ID + PIN). *Expect:* straight in, with a banner "Protect your login: set up multi-factor login".
+- [ ] **F1b. Setup in Settings.** Settings → Multi-factor login → "Set up authenticator app" → scan the QR code → type the code → "Turn on". *Expect:* badge "On"; the banner is gone; Settings → Staff (as admin) shows "Multi-factor on" for them.
+- [ ] **F2. Next login.** Log out, log in again (untick "Remember this device" the first time) → asked for the app code after the PIN → in.
 - [ ] **F3. Wrong code.** Type a wrong code 5 times. *Expect:* "Too many wrong codes. Try again in 5 minutes."; logging in with the right PIN is also refused for those 5 minutes.
 - [ ] **F4. Remember this device.** Tick it → next login on that browser needs no code.
 - [ ] **F5. Front desk and lab.** Log in → no code asked.
-- [ ] **F6. Lost phone.** As clinic admin: Settings → Staff → the doctor → "Reset authenticator app". *Expect:* the doctor is logged out; at the next login a new QR code is shown. Delete the old ACISI entry in the app and scan the new one.
+- [ ] **F6. Lost phone.** As clinic admin: Settings → Staff → the doctor → "Reset authenticator app". *Expect:* the doctor is logged out; they log in with the PIN only, see the banner again, and set the app up again in Settings (delete the old ACISI entry in the app first).
 - [ ] **F7. Reset PIN.** Reset a doctor's PIN → their remembered device asks for a code again.
 
 ## G. FHIR interface

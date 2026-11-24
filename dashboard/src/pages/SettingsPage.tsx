@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { AdminDepartment, api, ApiError, ClinicStaffListItem, DoctorPresenceStatus } from '../lib/api';
+import { AdminDepartment, api, ApiError, ClinicStaffListItem, DoctorPresenceStatus, MfaStatus } from '../lib/api';
+import { MfaSetupSection } from '../components/MfaSetupSection';
 import { PaymentSettingsSection } from '../components/PaymentSettingsSection';
 import { SurveillanceEmailSection } from '../components/SurveillanceEmailSection';
 import { DepartmentsSection } from '../components/DepartmentsSection';
 import { LabTestsSection } from '../components/LabTestsSection';
-import { Building2, FlaskConical, KeyRound, RefreshCw, UsersRound, Wallet } from 'lucide-react';
+import { Building2, FlaskConical, KeyRound, RefreshCw, ShieldCheck, UsersRound, Wallet } from 'lucide-react';
 import { Avatar, Badge, Card, EmptyState, SkeletonList, Tone } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 
@@ -27,6 +28,33 @@ const smallBtn =
   'min-h-9 rounded-full border border-slate-300 bg-white px-3.5 py-1.5 text-xs font-semibold text-navy-900 transition hover:border-gold-500 disabled:opacity-50';
 
 export function SettingsPage() {
+  const { session } = useAuth();
+  const [mfa, setMfa] = useState<MfaStatus | null>(null);
+  const loadMfa = () => {
+    api.getMfaStatus().then(setMfa).catch(() => setMfa(null));
+  };
+  useEffect(loadMfa, []);
+
+  // Doctors: Settings holds only their own multi-factor login.
+  if (session?.role !== 'ADMIN') {
+    return (
+      <div className="max-w-3xl">
+        <h1 className="font-display text-2xl font-bold tracking-tight text-navy-900 sm:text-[28px]">Settings</h1>
+        <p className="mb-6 mt-1 text-sm text-ink-500">Your login security.</p>
+        {mfa === null ? null : mfa.available ? (
+          <MfaSetupSection status={mfa} onChanged={loadMfa} />
+        ) : (
+          <Card title="Multi-factor login" icon={ShieldCheck}>
+            <p className="text-sm text-ink-500">Multi-factor login is not switched on yet. Nothing to do for now.</p>
+          </Card>
+        )}
+      </div>
+    );
+  }
+  return <ClinicSettings mfa={mfa} onMfaChanged={loadMfa} />;
+}
+
+function ClinicSettings({ mfa, onMfaChanged }: { mfa: MfaStatus | null; onMfaChanged: () => void }) {
   const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [regenerating, setRegenerating] = useState(false);
@@ -108,7 +136,7 @@ export function SettingsPage() {
   async function handleResetAuthenticator(member: ClinicStaffListItem): Promise<void> {
     if (
       !confirm(
-        `Reset the authenticator app for ${member.name} (${member.staffCode})?\n\nDo this only if they lost or changed their phone, and you have checked it is really them. They are logged out now and set the app up again (scan a new QR code) at their next login.`,
+        `Reset the authenticator app for ${member.name} (${member.staffCode})?\n\nDo this only if they lost or changed their phone, and you have checked it is really them. They are logged out now. They log in with their PIN and set the app up again in Settings → Multi-factor login (scan a new QR code).`,
       )
     )
       return;
@@ -182,6 +210,8 @@ export function SettingsPage() {
       <p className="mb-6 mt-1 text-sm text-ink-500">Your clinic&apos;s invite code, how patients pay at checkout, and your team.</p>
 
       <div className="space-y-6">
+        <MfaSetupSection status={mfa} onChanged={onMfaChanged} />
+
         <Card title="Invite code" icon={KeyRound}>
           <p className="mb-4 text-sm text-ink-500">Share this invite code with doctors and front-desk staff so they can create their own accounts.</p>
           <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-navy-900 px-5 py-4">
@@ -295,6 +325,9 @@ export function SettingsPage() {
                     </div>
                   </div>
                   <div className="flex shrink-0 flex-wrap items-center gap-2">
+                    {mfa?.available && member.isActive && (member.role === 'ADMIN' || member.role === 'DOCTOR') && (
+                      <Badge tone={member.authenticatorSetUp ? 'success' : 'neutral'}>{member.authenticatorSetUp ? 'Multi-factor on' : 'Multi-factor not set up'}</Badge>
+                    )}
                     {member.presence && <Badge tone={PRESENCE_TONE[member.presence]}>{PRESENCE_LABEL[member.presence]}</Badge>}
                     {member.presence && (
                       <button onClick={() => void handleTogglePresence(member)} disabled={togglingPresenceId === member.id} className={smallBtn}>

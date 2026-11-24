@@ -26,6 +26,7 @@ function navFor(role: string): NavItem[] {
       { to: '/surveillance', label: 'Disease surveillance', icon: ShieldAlert },
       { to: '/reports/routine', label: 'Routine reports', icon: FileBarChart },
       { to: '/national-hie', label: 'National HIE', icon: Network },
+      { to: '/settings', label: 'Settings', icon: Settings },
     ];
   }
   const items: NavItem[] = [
@@ -155,6 +156,41 @@ function SecondAdminBanner() {
           Open Settings
         </NavLink>
       )}
+    </div>
+  );
+}
+
+/**
+ * Admins and doctors: a reminder on every page (except Settings, where the
+ * setup is) while multi-factor login is switched on and they haven't set up
+ * their authenticator app yet.
+ */
+function MfaSetupBanner() {
+  const { session } = useAuth();
+  const { pathname } = useLocation();
+  const [needsSetup, setNeedsSetup] = useState(false);
+  const eligible = session?.role === 'ADMIN' || session?.role === 'DOCTOR';
+  useEffect(() => {
+    if (!eligible) return;
+    let cancelled = false;
+    api
+      .getMfaStatus()
+      .then((s) => !cancelled && setNeedsSetup(s.available && !s.setUp))
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [eligible, pathname]);
+  if (!eligible || !needsSetup || pathname === '/settings') return null;
+  return (
+    <div role="status" className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-gold-400 bg-gold-tint px-4 py-3 text-sm text-navy-900 print:hidden">
+      <p className="flex items-center gap-2 font-semibold">
+        <ShieldAlert size={18} aria-hidden className="flex-none" />
+        Protect your login: set up multi-factor login with an authenticator app (about 2 minutes).
+      </p>
+      <NavLink to="/settings" className="rounded-full bg-navy-900 px-4 py-1.5 text-sm font-semibold text-white hover:bg-navy-800">
+        Set it up in Settings
+      </NavLink>
     </div>
   );
 }
@@ -494,6 +530,7 @@ export function ProtectedLayout() {
             <>
               <ReportNowBanner />
               <SecondAdminBanner />
+              <MfaSetupBanner />
               <Outlet />
             </>
           ) : termsStatus === 'required' ? (

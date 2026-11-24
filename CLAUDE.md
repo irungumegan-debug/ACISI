@@ -46,7 +46,11 @@ USSD-first clinic management platform for small clinics in Kenya. See
   doctors use an authenticator app (TOTP, `src/utils/totp.ts`,
   `src/services/staffMfaService.ts`); needs no SMS. Live only once deployed
   AND `STAFF_MFA_ENABLED=true` on the server (runbook "Turning on
-  multi-factor login"). Tick the DHA "Multi-Factor Authentication" box only
+  multi-factor login"). `STAFF_MFA_ENABLED=true` set on the server 24 Nov
+  2026. Owner, 24 Nov: setup moved out of the login screen into Settings →
+  Multi-factor login (doctors get a Settings page with just that); until set
+  up, PIN-only login plus a reminder banner; once set up, the code is
+  always asked. Tick the DHA "Multi-Factor Authentication" box only
   after the owner confirms both, then mark DPIA action A2 done (new version).
 
 ## Compliance documents

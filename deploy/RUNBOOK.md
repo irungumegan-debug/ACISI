@@ -389,23 +389,26 @@ is one. The reset lifts any lockout and logs them out everywhere.
 
 After the PIN, clinic admins and doctors enter a 6-digit code from an
 authenticator app on their own phone (Google Authenticator or Microsoft
-Authenticator, free). The first time, the login page shows a QR code to scan.
-This needs **no SMS**, so it can be switched on while SMS is still in sandbox.
+Authenticator, free). Each person sets the app up themselves in the console:
+**Settings → Multi-factor login → "Set up authenticator app"**, scan the QR
+code, type the code (owner, 24 Nov 2026: not at the login screen). Until
+they do, they log in with their PIN only and see a reminder on every page.
+Settings → Staff shows "Multi-factor on" / "not set up" for each admin and
+doctor. This needs **no SMS**.
 
-1. Install the release (runbook "Updating the app"); it runs migration
-   `20261120120000_staff_authenticator` (two empty columns, nothing to back-fill).
-2. **Tell the clinic admins and doctors first:** "From tomorrow, install
-   Google Authenticator or Microsoft Authenticator on your phone. At your next
-   login, scan the QR code on screen." Staff without a smartphone can't log in
-   as admin or doctor once this is on: sort that out first.
-3. Turn it on and restart:
+1. Install the release (runbook "Updating the app").
+2. Turn it on and restart (the `sudo` on every command matters: the file is
+   readable by root only):
    ```
-   grep -q '^STAFF_MFA_ENABLED=' /etc/acisi/acisi.env && sudo sed -i 's/^STAFF_MFA_ENABLED=.*/STAFF_MFA_ENABLED=true/' /etc/acisi/acisi.env || echo 'STAFF_MFA_ENABLED=true' | sudo tee -a /etc/acisi/acisi.env >/dev/null
+   sudo sed -i '/^STAFF_MFA_ENABLED=/d' /etc/acisi/acisi.env && echo 'STAFF_MFA_ENABLED=true' | sudo tee -a /etc/acisi/acisi.env >/dev/null
+   sudo grep -n '^STAFF_MFA' /etc/acisi/acisi.env
    sudo systemctl restart acisi
    ```
-4. Log in as a test doctor: scan the QR code, type the code, you're in. Log
-   out and in again: the app code is asked (unless "Remember this device" was ticked).
-5. Do the same as each clinic admin yourself, or with them on the phone.
+   The `grep` should show one `STAFF_MFA_ENABLED=true` line.
+3. Log in as a test doctor (PIN only) → reminder banner → Settings →
+   Multi-factor login → set up the app. Log out and in again: the app code is
+   asked (unless "Remember this device" was ticked).
+4. Ask each clinic admin and doctor to do the same (about 2 minutes).
 
 **Lost or changed phone:** the clinic admin uses Settings → Staff → "Reset
 authenticator app" (check it's really them first). If the clinic's only admin
@@ -413,13 +416,13 @@ lost their phone:
 ```
 sudo bash -c 'set -a; . /etc/acisi/acisi.env; set +a; cd /opt/acisi/app && npm run -s reset-staff-authenticator -- ACI-STF-XXXX'
 ```
-They scan a new QR code at the next login.
+They log in with their PIN and set the app up again in Settings.
 
 **SMS codes as well (optional, later):** once real SMS works (runbook
 "Switching SMS to Mobile Sasa", test SMS received), add
 `STAFF_MFA_SMS_ENABLED=true` and restart: people who haven't set up an app
-get a code by SMS instead of the QR code. If their number isn't Safaricom, or
-the SMS fails, they are shown the QR code instead, so nobody is locked out.
+get a code by SMS at login. If their number isn't Safaricom, or the SMS
+fails, they log in with their PIN only (and set up the app in Settings).
 
 To turn multi-factor login off: change the line to `STAFF_MFA_ENABLED=false`
 and restart. Saved app setups are kept, so turning it back on doesn't need a
