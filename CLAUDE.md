@@ -50,8 +50,8 @@ USSD-first clinic management platform for small clinics in Kenya. See
   2026. Owner, 24 Nov: setup moved out of the login screen into Settings →
   Multi-factor login (doctors get a Settings page with just that); until set
   up, PIN-only login plus a reminder banner; once set up, the code is
-  always asked. Tick the DHA "Multi-Factor Authentication" box only
-  after the owner confirms both, then mark DPIA action A2 done (new version).
+  always asked. Owner confirmed it working 24 Nov 2026: DHA box ticked,
+  DPIA action A2 done (v1.4).
 
 ## Compliance documents
 
@@ -103,7 +103,8 @@ USSD-first clinic management platform for small clinics in Kenya. See
   20 Nov 2026: DHA never replied (interoperability@dha.go.ke bounces; no
   answer from raymondbett@dha.go.ke), so the owner is submitting without
   their answers. Final answer sheet, with open items declared as gaps G1-G9:
-  docs/compliance/DHA-self-attestation-answers-2026-11-20.md. After
+  docs/compliance/DHA-self-attestation-answers-2026-11-24.md (final, replaces
+  the 20 Nov sheet; MFA ticked, DPIA v1.4 24 Nov). After
   certification, if DHA ever answers: automatic IDSR/KHIS submission (G3) and
   connecting the FHIR interface (src/fhir/, /fhir/r4) to the HIE (G2).
   Goal (owner, 20 Nov): raise the attestation score from ~53% to at least 70%
@@ -112,7 +113,7 @@ USSD-first clinic management platform for small clinics in Kenya. See
   list, critical lab alerts, quality measures, fuller visit record + care
   plan, family history, dispensing, on-screen surveillance banner,
   IHR flag, emailed SCDSC reports, LOINC lab codes. What to tick once
-  deployed: end of docs/compliance/DHA-self-attestation-answers-2026-11-20.md.
+  deployed: sections 3-6 of docs/compliance/DHA-self-attestation-answers-2026-11-24.md.
   Score estimate (formula reverse-engineered from section 4: component on =
   half, feature share = half, "Required" components weigh double): ~70-75%
   overall; the HIE critical gap needs DHA credentials regardless.

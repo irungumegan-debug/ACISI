@@ -210,7 +210,7 @@ You need Google Authenticator or Microsoft Authenticator on your phone.
 ## To confirm (not tests: things only you can check or decide)
 
 **20 Nov 2026:** DHA did not reply, so T5, T11, T12 and T13 are submitted as
-known gaps (G2–G4 in `docs/compliance/DHA-self-attestation-answers-2026-11-20.md`)
+known gaps (G2–G4 in `docs/compliance/DHA-self-attestation-answers-2026-11-24.md`)
 and no longer block the submission.
 
 Bring these to the DHA/MOH call or check them yourself; tell Claude the
@@ -222,7 +222,7 @@ answers and the code will be updated.
 - [ ] **T4. Deaths.** Deaths recorded as public health events are counted (maternal, neonatal, malaria deaths, clusters); deaths from other diseases (e.g. a cholera death) are still filled in by hand. Decide: should ACISI also record deaths on a visit?
 - [ ] **T5. Sending weekly and immediate reports.** Immediate cases go to the SCDSC (form MOH 502), weekly MOH 505 to the SCDSC by Monday. Ask DHA/MOH: should ACISI send these automatically (KHIS/eIDSR or the HIE)?
 - [ ] **T6. Privacy Notice.** Approve adding a sentence such as: *"Your clinic must report some infectious diseases (for example cholera or measles) to the Ministry of Health's public health officers, as the law requires."* (Then the ODPC record may need the same update.)
-- [ ] **T7. DPIA v1.3.** Read and sign: notifiable disease reporting (v1.2) and public health events (v1.3) were added (sections 2.4, 2.5, 2.6, 4.2, action A9).
+- [ ] **T7. DPIA v1.4.** Read and sign (24 Nov 2026: multi-factor login, Mobile Sasa, newer clinical data; earlier: notifiable diseases v1.2, public health events v1.3).
 - [ ] **T8. Real SMS.** When TextSMS is connected, re-run every *(simulator)* item (B9, K3, L8, M4, M5, N3) with real phones, then section F.
 - [ ] **T9. Restore test date** (H2) for the DHA form.
 - [ ] **T10. 2012 vs 2022 lists.** The older chart you sent (2012) differs from the 3rd edition (e.g. rabies, typhoid and dysentery are now immediate; COVID-19, chikungunya, Zika and smallpox were added). ACISI follows the 3rd edition. If your Sub-County still uses the older chart, tell Claude.
