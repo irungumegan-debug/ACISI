@@ -74,10 +74,12 @@ USSD-first clinic management platform for small clinics in Kenya. See
   in 13 s); recorded in the log, Backup Policy and DR Test Report. Old copies
   go to "Superseded versions" (never deleted). Tabletops 24 Nov: SC-03
   PARTIAL (no off-server copy, SMS runs on the same server), SC-04 PASS with
-  findings (power-off located 24 Nov; ransom policy to decide, recommended
-  never pay). 24 Nov 13:35: manual encrypted copy of the 12:47 backups on the
+  findings (power-off located 24 Nov; ransom policy decided 24 Nov:
+  never pay, Incident Response Plan v1.1 section 7). 24 Nov 13:35: manual encrypted copy of the 12:47 backups on the
   owner's computer (Documents\ACISI-backups); G5 open until automatic.
-  Still to do: ransom policy; automatic off-server backup; full rebuild + DR
+  Still to do: automatic off-server backup (hook deploy/backup/offsite-hook
+  .example.sh built, needs a Kenyan destination: owner choosing HostAfrica
+  add-on / second small VPS (recommended) / own PC); full rebuild + DR
   failover by 31 Dec 2026.
 
 - **Patient address / residence is NOT collected** (owner, 21 Nov 2026): not in
