@@ -104,7 +104,11 @@ USSD-first clinic management platform for small clinics in Kenya. See
   answer from raymondbett@dha.go.ke), so the owner is submitting without
   their answers. Final answer sheet, with open items declared as gaps G1-G9:
   docs/compliance/DHA-self-attestation-answers-2026-11-24.md (final, replaces
-  the 20 Nov sheet; MFA ticked, DPIA v1.4 24 Nov). After
+  the 20 Nov sheet; MFA ticked, DPIA v1.5 24 Nov). The documents the owner
+  uploads (12: 7 DHA-template Word files + PDFs, Privacy Policy, DPIA, Security
+  Policy, Incident Response Plan, User Manual) are NOT kept in the repo (owner,
+  24 Nov): 22 Nov originals on branch claude/focused-cori-macx3n; 24 Nov updates
+  (MFA live, PIN reset by admin) were sent to the owner as files. After
   certification, if DHA ever answers: automatic IDSR/KHIS submission (G3) and
   connecting the FHIR interface (src/fhir/, /fhir/r4) to the HIE (G2).
   Goal (owner, 20 Nov): raise the attestation score from ~53% to at least 70%

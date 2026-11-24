@@ -25,7 +25,7 @@ but switched off, or planned, are gaps, never ticks.
 | Users | Small outpatient clinics in Kenya: front desk, clinicians, doctors, lab technicians, clinic admins; patients (portal) |
 | Hosting | ACISI's own server at HostAfrica, Nairobi, Kenya; PostgreSQL. Patient records stay in Kenya |
 | Data Protection Officer | Megan Irungu (Founder), acisi.help@gmail.com, 0746404155 |
-| ODPC registration | Yes. DPIA version 1.4, 24 Nov 2026 (attached) |
+| ODPC registration | Yes. DPIA version 1.5, 24 Nov 2026 (uploaded) |
 
 ## 2. Classification
 
@@ -68,12 +68,12 @@ clinician, who decides.
 | Problem list | KNHTS: **leave unticked** | Needs the HIE Terminology Service (DHA credentials) |
 | Medication management | Active Medication List, Medication History | Doctor's page |
 | Medication management | HPT Registry / HPT Allergy Integration: **leave unticked** | Not integrated |
-| Clinical decision support | Switch on; Uses Problem List, Uses Allergy List, Uses Demographics, Uses Lab Results, Uses Vital Signs | Allergy warning at prescribing; notifiable-disease alert from diagnoses; age-adjusted vital-sign warnings; critical lab result alerts |
+| Clinical decision support | Switch on; Uses Allergy List, Uses Demographics, Uses Lab Results, Uses Vital Signs. **Uses Problem List: leave unticked** (22 Nov review) | Allergy warning at prescribing; notifiable-disease alert from diagnoses; age-adjusted vital-sign warnings; critical lab result alerts |
 | Clinical decision support | Evidence-Based Interventions: **leave unticked** | Warnings use WHO cut-offs (IMCI, MUAC, BMI) but ACISI gives no treatment guidance |
 | Clinical decision support | Uses HPT Registry: **leave unticked** | |
 | Clinical summary | Includes Biodata, Includes Medications, Includes Care Plan | Visit record: date of birth, sex, ID; current medicines; plan / follow-up |
 | Clinical summary | Kenya HIE Exchangeable: **tick** | The visit summary is built as the FHIR Bundle sent to the Shared Health Record (visit, diagnoses, problems, allergies, medicines, lab, vital signs, orders; `src/hie/shrBundle.ts`). Live test with DHA: gap G2 |
-| Electronic prescribing | Includes Diagnostic Tests, Includes Problem List, Includes Medication Lists | The visit record with the prescription carries diagnoses, lab results and current medicines |
+| Electronic prescribing | Includes Diagnostic Tests, Includes Medication Lists. **Includes Problem List: leave unticked** (22 Nov review) | The visit record with the prescription carries diagnoses, lab results and current medicines |
 | Electronic prescribing | Electronic Transmission: **tick** | Prescriptions (MedicationRequest, DHA codes) and dispensing go in the Bundle sent to the Shared Health Record. Live test with DHA: gap G2 |
 | Quality measures | Switch on; Capture, Calculate, Export | Routine reports → Quality measures, CSV |
 | Quality measures | Import, Electronic Submission: **leave unticked** | |
@@ -108,7 +108,7 @@ clinician, who decides.
 | Backups and restore test | ✅ | Nightly encrypted backups (age), kept 14 days; practice restore with `acisi-restore-test`. Last restore test: **____________ (fill in from checklist H2)** |
 | Off-site backup | ❌ | Gap G5 |
 | Breach procedure | ✅ | Clinic told within 48 h, ODPC within 72 h, affected patients when at real risk. DHA not yet named (gap G9) |
-| DPIA | ✅ | Version 1.4, 24 Nov 2026 (attached) |
+| DPIA | ✅ | Version 1.5, 24 Nov 2026 (uploaded) |
 | Server hardening | ✅ | SSH key only, no root login, firewall (22/80/443), fail2ban, automatic security updates |
 
 ## 6. Interoperability
@@ -122,7 +122,7 @@ clinician, who decides.
 | LOINC | Tick |
 | Access | Logged-in doctors only; front desk and anonymous requests refused |
 | Able to connect to the national HIE (Client Registry, Facility Registry, Health Worker Registry, Shared Health Record) | **Yes, built.** Following DHA's published HIE API (hie-docs.dha.go.ke): service-account token (client ID and secret), facility search by name or MFL code, health worker lookup by regulator registration number, client lookup by national ID / passport / birth certificate, Shared Health Record with patient consent per visit (code to the patient's phone), sending the visit record at checkout with retries, reading records from other facilities, closing the visit (`src/hie/`). Switched on with `HIE_ENABLED=true` and DHA's credentials. Not yet tested against DHA's live sandbox: DHA issues the credentials after this attestation is submitted and paid (gap G2) |
-| Level 4, Able to connect to Kenya HIE | **Tick.** The connection is built (row above); the first live test is declared as gap G2 |
+| Able to connect to Kenya HIE | **Switch on.** Kenya HIE capabilities: tick Can transmit data to HIE, Can receive data from HIE, FHIR compliant. Data exchange standards: FHIR compliant (not SDMX). FHIR version: R4 (4.0.1). The first live test is declared as gap G2 |
 | National identifiers | ACISI's own identifier systems until connected to the Client Registry (G2) |
 
 ## 7. Self-assessment: known gaps and plan

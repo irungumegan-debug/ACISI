@@ -18,12 +18,13 @@ const read = (file: string) => fs.readFileSync(path.join(root, file), 'utf8');
 
 /**
  * SHA-256 of the approved documents (the files as supplied, with the two
- * approved PIN wording fixes). Any edit to the text — even one character —
+ * approved PIN wording fixes; privacy.md updated 22 Nov 2026: SMS provider
+ * Mobile Sasa, residence removed). Any edit to the text — even one character —
  * fails here, so changing a legal document is always deliberate: update the
  * file, its "Last updated" date, src/config/legal.ts and this hash together.
  */
 const APPROVED = {
-  'web/src/content/privacy.md': '12977722c89130ae6968af15c28ff9480d5d0f5c7e9413be59f12e643d6d668c',
+  'web/src/content/privacy.md': '20119d3b3751baf6522e33bca6d38a6fcea25837ccd68744b354b61bb8042fd5',
   'web/src/content/terms.md': '0f2c2a98e3d3b11b88403a6cd7e63cd9a0b4327ce33684a86530879d4219bdde',
 };
 
