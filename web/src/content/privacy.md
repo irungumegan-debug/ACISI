@@ -22,7 +22,7 @@ Each clinic signs a Data Processing Agreement with ACISI before any real patient
 
 We collect only what the clinic and ACISI need to check you in, keep your records and handle payments.
 
-From patients, we collect your name, phone number, sex, date of birth and residence, and the name and phone number of your next of kin. To identify you correctly, we also record your national ID, passport, birth certificate or alien number. You give us these yourself, or clinic staff record them when you check in.
+From patients, we collect your name, phone number, sex and date of birth, and the name and phone number of your next of kin. To identify you correctly, we also record your national ID, passport, birth certificate or alien number. You give us these yourself, or clinic staff record them when you check in.
 
 For each visit, we record the clinic, department, reason for visit, check-in time and your place in the queue. The clinic and the doctors who treat you add your health data: consultation notes, diagnosis, prescriptions, test results and appointments.
 
@@ -40,7 +40,7 @@ We check you in, place you in the queue, keep your visit and health records, and
 
 We use your ID number and date of birth to identify you correctly and avoid duplicate records, which the clinic needs to treat you safely and meet its legal obligations. The clinic may contact your next of kin when your care requires it, or in an emergency.
 
-Some uses need your consent. Another clinic can see your history only with your explicit consent, given each time. We send walk-in patients an invitation to check in from home only if they agree.
+Some uses need your consent. Another clinic can see your history only with your explicit consent: either a standing permission you can switch off at any time, or a one-time code you give that clinic, valid for that day. We send walk-in patients an invitation to check in from home only if they agree.
 
 We keep staff accounts, logins and activity logs, and use the least data needed to fix and improve ACISI, because we have a legitimate interest in running a secure, reliable system. We keep financial and tax records because the law requires it.
 
@@ -48,7 +48,7 @@ We keep staff accounts, logins and activity logs, and use the least data needed 
 
 You can still be seen at the clinic, but some things may not work.
 
-Your name and phone number are needed to check you in, keep your records together and reach you; without them, the clinic may need to register you on paper. Your ID number, date of birth, sex and residence help the clinic identify you correctly, so without them your records may be harder to match and the clinic may ask again. Next of kin details are optional, but without them the clinic cannot reach anyone on your behalf. SMS is optional too: if you opt out, ask the clinic for a printed or on-screen receipt and summary.
+Your name and phone number are needed to check you in, keep your records together and reach you; without them, the clinic may need to register you on paper. Your ID number, date of birth and sex help the clinic identify you correctly, so without them your records may be harder to match and the clinic may ask again. Next of kin details are optional, but without them the clinic cannot reach anyone on your behalf. SMS is optional too: if you opt out, ask the clinic for a printed or on-screen receipt and summary.
 
 ## What messages do we send you?
 
@@ -72,9 +72,11 @@ Safaricom processes M-Pesa payments under its own privacy terms, and the clinic'
 
 Only people and organisations who need it, and only what they need. ACISI and everyone working for us are bound by a duty of confidentiality, as the law requires for anyone handling health data who is not a healthcare provider.
 
-Your clinic's staff see what their role needs, and doctors see only patients in their own department queue. Every staff member has a personal login, and every view and change is logged. Another clinic can see your history only with your explicit consent, each time.
+Your clinic's staff see what their role needs, and doctors see only patients in their own department queue. Every staff member has a personal login, and every view and change is logged. Another clinic can see your history only with your explicit consent: a standing permission you can switch off, or a one-time code valid for that day.
 
-Our servers are hosted by HostAfrica in its data centre in Kenya. Our SMS provider, Africa's Talking, receives your phone number and the text of the messages we send, which carry as little health information as possible. Safaricom receives the payment amount, your phone number and the M-Pesa reference when you pay, and handles them under its own legal obligations.
+Our servers are hosted by HostAfrica in its data centre in Kenya. Our SMS provider, Mobile Sasa, receives your phone number and the text of the messages we send, which carry as little health information as possible. Safaricom receives the payment amount, your phone number and the M-Pesa reference when you pay, and handles them under its own legal obligations.
+
+Your clinic must report some infectious diseases (for example cholera or measles) to the Ministry of Health's public health officers, as the law requires. These reports go from the clinic, not from ACISI.
 
 We share data with courts, the Office of the Data Protection Commissioner or the Digital Health Agency only when the law requires it, on a lawful request.
 
@@ -84,7 +86,7 @@ We do not sell or rent personal data to anyone.
 
 All patient data is stored and processed on servers in a data centre in Nairobi, Kenya. Kenyan law treats data used for primary or secondary health care as a matter of strategic national interest, so we keep it in Kenya.
 
-Website traffic travels encrypted straight between your device and our server in Kenya. Our domain provider, Cloudflare, only directs visitors to the server and never sees the content. SMS messages are sent through Africa's Talking, a Kenyan company. We do not transfer patient records outside Kenya.
+Website traffic travels encrypted straight between your device and our server in Kenya. Our domain provider, Cloudflare, only directs visitors to the server and never sees the content. SMS messages are sent through Mobile Sasa, a Kenyan company. We do not transfer patient records outside Kenya.
 
 If you email us, or send a message through our contact form, it reaches our email provider, Google, which may store it outside Kenya. Please do not send health details by email; your clinic and ACISI keep those inside the system. If that ever changes, we will meet the Data Protection Act's conditions for cross-border transfers first, including your explicit consent for health data, and update this notice.
 
@@ -142,4 +144,4 @@ You can reach the ODPC through its website, [odpc.go.ke](https://www.odpc.go.ke)
 
 We review this notice at least once a year and whenever how we use data changes. We post the new version here with its date and tell clinics and patients about important changes by email or SMS.
 
-**Last updated:** 8 October 2026
+**Last updated:** 24 November 2026

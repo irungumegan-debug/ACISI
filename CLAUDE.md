@@ -5,6 +5,11 @@ USSD-first clinic management platform for small clinics in Kenya. See
 
 ## Planned features
 
+- **Outpatient first (owner, 24 Nov 2026):** ACISI is an outpatient system;
+  inpatient care (admission, wards, beds, discharge) comes later. On the DHA
+  portal, leave inpatient components unticked; documents describe ACISI as
+  outpatient.
+
 - **USSD check-in:** planned for Dec 2026 / early 2027. When live, add the
   USSD code to the walk-in invite SMS (see invite template:
   `buildWalkInInviteSms` in `src/services/smsTemplates.ts`).
@@ -50,10 +55,32 @@ USSD-first clinic management platform for small clinics in Kenya. See
   2026. Owner, 24 Nov: setup moved out of the login screen into Settings →
   Multi-factor login (doctors get a Settings page with just that); until set
   up, PIN-only login plus a reminder banner; once set up, the code is
-  always asked. Tick the DHA "Multi-Factor Authentication" box only
-  after the owner confirms both, then mark DPIA action A2 done (new version).
+  always asked. Owner confirmed it working 24 Nov 2026: DHA box ticked,
+  DPIA action A2 done (v1.4).
 
 ## Compliance documents
+
+- **DHA records (owner, 24 Nov 2026): keep every record DHA may ask for.**
+  Google Drive folder "ACISI DHA Certification Records" (acisi.help@gmail.com,
+  id 1OrrtCTft7aSsL5QY5DzeF0YHNITYD29R): "00 ACISI DHA records log" (Google
+  Doc: submission, documents, every test with date and result, recurring
+  checks, incidents), "01 Submitted documents (24 Nov 2026)" (12 PDFs + 7
+  Word), "02 Test and DR records" (acisi-dr-tests.sh and test outputs).
+  After every test, deploy-relevant change or DHA contact: add a dated line
+  to the log and update the affected document there. Never leave a blank
+  field in a DHA document: write the result, or "Test needed" plus the test.
+  24 Nov 12:47 EAT: owner ran acisi-dr-tests.sh, all PASS (encryption verify,
+  settings restore, file restore with 0 files as none uploaded yet, SC-02 back
+  in 13 s); recorded in the log, Backup Policy and DR Test Report. Old copies
+  go to "Superseded versions" (never deleted). Tabletops 24 Nov: SC-03
+  PARTIAL (no off-server copy, SMS runs on the same server), SC-04 PASS with
+  findings (power-off located 24 Nov; ransom policy decided 24 Nov:
+  never pay, Incident Response Plan v1.1 section 7). 24 Nov 13:35: manual encrypted copy of the 12:47 backups on the
+  owner's computer (Documents\ACISI-backups); G5 open until automatic.
+  Still to do: automatic off-server backup (hook deploy/backup/offsite-hook
+  .example.sh built, needs a Kenyan destination: owner choosing HostAfrica
+  add-on / second small VPS (recommended) / own PC); full rebuild + DR
+  failover by 31 Dec 2026.
 
 - **Patient address / residence is NOT collected** (owner, 21 Nov 2026): not in
   the Privacy Notice, DPIA or ODPC registration; no GPS. Never add address or
@@ -103,7 +130,12 @@ USSD-first clinic management platform for small clinics in Kenya. See
   20 Nov 2026: DHA never replied (interoperability@dha.go.ke bounces; no
   answer from raymondbett@dha.go.ke), so the owner is submitting without
   their answers. Final answer sheet, with open items declared as gaps G1-G9:
-  docs/compliance/DHA-self-attestation-answers-2026-11-20.md. After
+  docs/compliance/DHA-self-attestation-answers-2026-11-24.md (final, replaces
+  the 20 Nov sheet; MFA ticked, DPIA v1.5 24 Nov). The documents the owner
+  uploads (12: 7 DHA-template Word files + PDFs, Privacy Policy, DPIA, Security
+  Policy, Incident Response Plan, User Manual) are NOT kept in the repo (owner,
+  24 Nov): 22 Nov originals on branch claude/focused-cori-macx3n; 24 Nov updates
+  (MFA live, PIN reset by admin) were sent to the owner as files. After
   certification, if DHA ever answers: automatic IDSR/KHIS submission (G3) and
   connecting the FHIR interface (src/fhir/, /fhir/r4) to the HIE (G2).
   Goal (owner, 20 Nov): raise the attestation score from ~53% to at least 70%
@@ -112,7 +144,7 @@ USSD-first clinic management platform for small clinics in Kenya. See
   list, critical lab alerts, quality measures, fuller visit record + care
   plan, family history, dispensing, on-screen surveillance banner,
   IHR flag, emailed SCDSC reports, LOINC lab codes. What to tick once
-  deployed: end of docs/compliance/DHA-self-attestation-answers-2026-11-20.md.
+  deployed: sections 3-6 of docs/compliance/DHA-self-attestation-answers-2026-11-24.md.
   Score estimate (formula reverse-engineered from section 4: component on =
   half, feature share = half, "Required" components weigh double): ~70-75%
   overall; the HIE critical gap needs DHA credentials regardless.

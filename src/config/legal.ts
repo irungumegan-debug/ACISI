@@ -11,7 +11,7 @@
  * When a document changes, update its .md file and its date here together —
  * tests/web/legal.test.ts fails if the two ever disagree.
  */
-export const PRIVACY_NOTICE_VERSION = '2026-10-08';
+export const PRIVACY_NOTICE_VERSION = '2026-11-24';
 export const TERMS_OF_SERVICE_VERSION = '2026-10-08';
 
 /**
