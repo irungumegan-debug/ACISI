@@ -71,7 +71,7 @@ USSD-first clinic management platform for small clinics in Kenya. See
   sha/*, patient page "SHA cover" panel; front desk only; read-only; off
   until HIE_ENABLED). Coverage status words undocumented by DHA: only
   active/eligible/covered count as covered until the sandbox shows the real
-  values. Next: start-visit consent, then phase 2 (services/tariffs).
+  values. Start-visit consent BUILT 25 Nov (src/hie/shaVisit.ts, table sha_visits, routes /hie/visits/:id/sha/*, "SHA visit" card on the Vitals and checkout pages; OTP path only, fingerprint path needs DHA hardware; consent token encrypted). Next: phase 2 (services/tariffs), then billing+claims.
   ODPC answered 25 Nov 08:36 (Ian, 020 780 1800): founder of a sole
   proprietorship may be DPO and carry out the DPIA (recorded in the Drive log).
   Still pending: DHA/Samuel Q9 (does DHA require a separate qualified

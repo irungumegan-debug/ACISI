@@ -3,6 +3,18 @@
 Plain-language record of what changed in ACISI, which data each change
 touches, and who can use it. Newest first.
 
+## 2026-11-25: Start the visit with SHA (SHA claims, start-visit consent)
+
+Database: new table `sha_visits` (migration `20261125100000_sha_visits`,
+additive; undo `prisma/rollback/20261125100000_sha_visits.down.sql`). Off
+until the national HIE is switched on with DHA's credentials (`HIE_ENABLED=true`).
+
+| What | Who |
+|---|---|
+| Queue → **Vitals** page, and the checkout page: **SHA visit** card. Front desk chooses the SHA services for the visit (benefit package → outpatient services, with SHA's tariff), and which of the patient's SHA phone numbers gets the code (masked by DHA). ACISI checks SHA cover first and stops if the patient isn't covered, is recorded as deceased, or SHA requires a fingerprint (ACISI can't take fingerprints yet). | Front desk, clinicians, clinic admins |
+| SHA texts the patient a code; the patient reads it out; **Start SHA visit** opens the visit's claim with SHA (outpatient). The card then shows the SHA claim number and status. The treating doctor is put on the claim when DHA has verified their registration. A new code can be sent after a minute, at most 5 per visit. | Front desk, clinicians, clinic admins |
+| SHA's consent token for the claim is stored encrypted (AES-256-GCM) and never shown. Audit log: ids and outcomes only, never the code, phone numbers or names. | – |
+
 ## 2026-11-25: SHA cover check at the front desk (SHA claims, phase 1)
 
 No database change. Off until the national HIE is switched on with DHA's

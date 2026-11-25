@@ -1,8 +1,9 @@
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
+import { ShaVisitPanel } from '../components/ShaVisitPanel';
 import { VitalSignsCard } from '../components/VitalSigns';
 
-/** Front desk triage: record vital signs for a visit in the queue. */
+/** Front desk triage: start the visit with SHA (when connected) and record vital signs for a visit in the queue. */
 export function VisitVitalsPage() {
   const { encounterId = '' } = useParams();
   return (
@@ -12,6 +13,7 @@ export function VisitVitalsPage() {
           <ArrowLeft size={16} aria-hidden /> Back to queue
         </Link>
       </p>
+      <ShaVisitPanel encounterId={encounterId} />
       <VitalSignsCard encounterId={encounterId} editable />
     </div>
   );

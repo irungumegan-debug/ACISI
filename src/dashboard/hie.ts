@@ -27,6 +27,7 @@ import {
 } from '../hie/shrService';
 import { enqueueHieShrSend } from '../jobs/queue';
 import { checkShaEligibility, listShaBenefits, listShaInterventions, listShaSubBenefits } from '../hie/shaEligibility';
+import { getShaVisit, listShaContacts, sendShaVisitCode, startShaVisit } from '../hie/shaVisit';
 import { assertEncounterInDoctorQueue } from '../services/encounterService';
 import { getDoctorDepartmentIds } from '../services/departmentService';
 
@@ -194,6 +195,64 @@ hieRouter.get(
   })),
 );
 
+// ---------- SHA start visit (claims), front desk ----------
+
+/** The code DHA texts the patient (SHA visit, SHR consent, closing). */
+const codeSchema = z.object({ code: z.string().trim().regex(/^\d{4,8}$/, 'Enter the code from the SMS (numbers only)') });
+
+
+function shaVisitRoute(handler: (args: { req: import('express').Request; res: Response; encounterId: string; clinicId: string; staffId: string }) => Promise<unknown>) {
+  return async (req: import('express').Request, res: Response) => {
+    const { clinicId, staffId, role } = session(req);
+    if (!isFrontDeskRole(role)) {
+      res.status(403).json({ error: 'Only front-desk staff can start SHA visits' });
+      return;
+    }
+    try {
+      const out = await handler({ req, res, encounterId: req.params.encounterId as string, clinicId, staffId });
+      if (!res.headersSent) res.json(out);
+    } catch (err) {
+      sendHieError(res, err);
+    }
+  };
+}
+
+hieRouter.get('/visits/:encounterId/sha', shaVisitRoute(({ encounterId, clinicId }) => getShaVisit(encounterId, clinicId)));
+
+hieRouter.get(
+  '/visits/:encounterId/sha/contacts',
+  shaVisitRoute(async ({ encounterId, clinicId, staffId }) => ({ contacts: await listShaContacts({ encounterId, clinicId, staffId }) })),
+);
+
+const shaCodeSchema = z.object({
+  interventionCodes: z.array(z.string().trim().min(2).max(42)).min(1).max(10),
+  contactId: z.number().int().positive().optional(),
+});
+
+hieRouter.post(
+  '/visits/:encounterId/sha/code',
+  shaVisitRoute(async ({ req, res, encounterId, clinicId, staffId }) => {
+    const parsed = shaCodeSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Choose the SHA services for this visit (at most 10).' });
+      return;
+    }
+    return sendShaVisitCode({ encounterId, clinicId, staffId, ...parsed.data });
+  }),
+);
+
+hieRouter.post(
+  '/visits/:encounterId/sha/start',
+  shaVisitRoute(async ({ req, res, encounterId, clinicId, staffId }) => {
+    const parsed = codeSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Enter the code' });
+      return;
+    }
+    return startShaVisit({ encounterId, clinicId, staffId, code: parsed.data.code });
+  }),
+);
+
 // ---------- Shared Health Record, per visit ----------
 
 /**
@@ -215,8 +274,6 @@ async function canWorkOnVisit(req: unknown, res: Response, encounterId: string):
   res.status(403).json({ error: 'Not available for your role' });
   return false;
 }
-
-const codeSchema = z.object({ code: z.string().trim().regex(/^\d{4,8}$/, 'Enter the code from the SMS (numbers only)') });
 
 function visitRoute(handler: (args: { req: unknown; res: Response; encounterId: string; clinicId: string; staffId: string; role: string }) => Promise<unknown>) {
   return async (req: import('express').Request, res: Response) => {

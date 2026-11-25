@@ -540,6 +540,7 @@ model Encounter {
   prescriptionItems PrescriptionItem[]
 
   hieVisit HieVisit?
+  shaVisit ShaVisit?
 
   serviceOrders ServiceOrder[]
 
@@ -1424,6 +1425,49 @@ model HieVisit {
 
   @@index([clinicId, closeStatus])
   @@map("hie_visits")
+}
+
+enum ShaVisitStatus {
+  /// DHA texted the patient a code to confirm the SHA visit.
+  CODE_SENT
+  /// The visit is open with SHA: DHA created the claim.
+  STARTED
+}
+
+/// One visit's SHA claim (claims phase 1b, start visit): the patient's
+/// SMS-code consent, then DHA's virtual claim for the services. Outpatient
+/// only. Created when front desk sends the code. See hie/shaVisit.ts.
+model ShaVisit {
+  id                 String         @id @default(cuid())
+  encounterId        String         @unique
+  encounter          Encounter      @relation(fields: [encounterId], references: [id])
+  clinicId           String
+  patientId          String
+  status             ShaVisitStatus @default(CODE_SENT)
+  /// SHA intervention codes the visit is started for (e.g. SHA-19-404).
+  interventionCodes  String[]
+  /// DHA's id of the patient contact the code went to (none: their default).
+  contactId          Int?
+  codeSentAt         DateTime
+  codeSendCount      Int            @default(1)
+  requestedByStaffId String
+  /// DHA's claim id and visit number, once started.
+  shaClaimId         String?
+  shaVisitNumber     String?
+  /// DHA's authorization_code: the consent token for later claim steps. Encrypted at rest.
+  shaConsentToken    String?
+  /// Claim status words as DHA sends them (claim_auth_status, workflow_state).
+  shaClaimStatus     String?
+  shaWorkflowState   String?
+  /// The treating doctor was attached to the claim at start.
+  doctorAttached     Boolean        @default(false)
+  startedAt          DateTime?
+  startedByStaffId   String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  @@index([clinicId, status])
+  @@map("sha_visits")
 }
 
 /// Orders a doctor places besides medicines and lab tests (CPOE).

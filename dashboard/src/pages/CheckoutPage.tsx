@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 import { Avatar, btn, EmptyState, field, SkeletonList, StatusBadge } from '../components/ui';
 import { HieVisitPanel } from '../components/HieVisitPanel';
+import { ShaVisitPanel } from '../components/ShaVisitPanel';
 import { ServiceOrdersToArrange } from '../components/ServiceOrders';
 import { Dispensing } from '../components/Dispensing';
 
@@ -774,6 +775,8 @@ export function CheckoutPage() {
           <BillStatusChip status={bill?.status ?? null} />
         </div>
       </div>
+
+      <ShaVisitPanel encounterId={view.encounterId} />
 
       <HieVisitPanel encounterId={view.encounterId} mode="frontdesk" />
 
