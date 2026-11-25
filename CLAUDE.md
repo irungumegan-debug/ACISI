@@ -58,6 +58,20 @@ USSD-first clinic management platform for small clinics in Kenya. See
   always asked. Owner confirmed it working 24 Nov 2026: DHA box ticked,
   DPIA action A2 done (v1.4).
 
+- **SHA claims (owner, 25 Nov 2026): to be built, outpatient first.** Owner
+  sees SHA as essential long-term (SHA/DHA retire the manual SHA provider
+  portal 30 Nov 2026; facilities must use a DHA-certified HMIS). API is public
+  at hie-docs.dha.go.ke/docs/claims (~70 operations: eligibility, start-visit
+  consent, interventions, preauths, billing, claim dispatch, callbacks,
+  remittances, emergency). Reuses src/hie/ (token, facility, CR, PUID,
+  consent). Plan: 1 eligibility (~1 wk), 2 services/tariffs (~1 wk), 3
+  billing+claims (~1.5-2 wk), 4 outpatient preauths (~1 wk), 5 status,
+  resubmission, remittance (~1 wk); sandbox needs DHA certification first.
+  PAUSED 25 Nov until the owner hears from ODPC (founder as DPO and doing
+  the DPIA: allowed?) and DHA/Samuel (DPIA by a qualified assessor?). If not
+  allowed: independent assessor via Strathmore CIPIT/iBizAfrica, new DPO,
+  update the DPO name in all 12 documents.
+
 ## Compliance documents
 
 - **DHA records (owner, 24 Nov 2026): keep every record DHA may ask for.**
