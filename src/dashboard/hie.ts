@@ -26,6 +26,7 @@ import {
   startConsent,
 } from '../hie/shrService';
 import { enqueueHieShrSend } from '../jobs/queue';
+import { checkShaEligibility, listShaBenefits, listShaInterventions, listShaSubBenefits } from '../hie/shaEligibility';
 import { assertEncounterInDoctorQueue } from '../services/encounterService';
 import { getDoctorDepartmentIds } from '../services/departmentService';
 
@@ -149,6 +150,49 @@ hieRouter.post('/patients/:id/client-registry/confirm', async (req, res) => {
     sendHieError(res, err);
   }
 });
+
+// ---------- SHA eligibility (claims phase 1), front desk ----------
+
+/** Front desk only, like the Client Registry lookup; the patient must have been seen at this clinic. */
+function shaRoute(handler: (args: { req: import('express').Request; patientId: string; clinicId: string; staffId: string }) => Promise<unknown>) {
+  return async (req: import('express').Request, res: Response) => {
+    const { clinicId, staffId, role } = session(req);
+    if (!isFrontDeskRole(role)) {
+      res.status(403).json({ error: 'Only front-desk staff can check SHA cover' });
+      return;
+    }
+    try {
+      res.json(await handler({ req, patientId: req.params.id as string, clinicId, staffId }));
+    } catch (err) {
+      sendHieError(res, err);
+    }
+  };
+}
+
+/** Is the patient covered by SHA today, under which schemes? */
+hieRouter.post('/patients/:id/sha/eligibility', shaRoute(({ patientId, clinicId, staffId }) => checkShaEligibility({ patientId, clinicId, staffId })));
+
+hieRouter.get('/patients/:id/sha/benefits', shaRoute(async ({ patientId, clinicId, staffId }) => ({ benefits: await listShaBenefits({ patientId, clinicId, staffId }) })));
+
+hieRouter.get(
+  '/patients/:id/sha/benefits/:benefitCode/sub-benefits',
+  shaRoute(async ({ req, patientId, clinicId, staffId }) => ({
+    subBenefits: await listShaSubBenefits({ patientId, clinicId, staffId, benefitCode: req.params.benefitCode as string }),
+  })),
+);
+
+hieRouter.get(
+  '/patients/:id/sha/sub-benefits/:subBenefitCode/interventions',
+  shaRoute(async ({ req, patientId, clinicId, staffId }) => ({
+    interventions: await listShaInterventions({
+      patientId,
+      clinicId,
+      staffId,
+      subBenefitCode: req.params.subBenefitCode as string,
+      search: typeof req.query.search === 'string' ? req.query.search : undefined,
+    }),
+  })),
+);
 
 // ---------- Shared Health Record, per visit ----------
 

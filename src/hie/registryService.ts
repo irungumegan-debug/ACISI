@@ -62,7 +62,7 @@ export async function setClinicFacility(input: { clinicId: string; staffId: stri
   return found;
 }
 
-async function clinicFacilityId(clinicId: string): Promise<string | null> {
+export async function clinicFacilityId(clinicId: string): Promise<string | null> {
   const clinic = await prisma.clinic.findUnique({ where: { id: clinicId }, select: { hieFacilityId: true } });
   return clinic?.hieFacilityId ?? null;
 }
@@ -148,7 +148,7 @@ export type ClientLookupResult =
   | { result: 'saved'; crId: string }
   | { result: 'check'; registry: Pick<HieClient, 'firstName' | 'middleName' | 'lastName' | 'dateOfBirth' | 'sex'> };
 
-async function patientAtClinic(patientId: string, clinicId: string) {
+export async function patientAtClinic(patientId: string, clinicId: string) {
   const patient = await prisma.patient.findFirst({
     where: { id: patientId, deletedAt: null, OR: [{ checkIns: { some: { clinicId } } }, { encounters: { some: { clinicId } } }] },
   });

@@ -3,6 +3,17 @@
 Plain-language record of what changed in ACISI, which data each change
 touches, and who can use it. Newest first.
 
+## 2026-11-25: SHA cover check at the front desk (SHA claims, phase 1)
+
+No database change. Off until the national HIE is switched on with DHA's
+credentials (`HIE_ENABLED=true`, runbook "Connecting to the national HIE").
+
+| What | Who |
+|---|---|
+| Patient page → **Check SHA cover**: asks SHA (through DHA's AfyaConnect eClaims API) whether the patient is covered today and under which scheme, with DHA's reason and what to do when cover isn't active. Deceased patients are flagged. Shows whether the clinic must confirm SHA visits by fingerprint. Needs the patient's Client Registry ID and the clinic's facility code. | Front desk, clinicians, clinic admins |
+| **What does SHA cover here?**: the patient's benefit packages, their outpatient services, the SHA tariff for each and whether it needs pre-authorisation. Read-only: nothing is claimed or sent to SHA yet (that is phases 2 to 5). | Front desk, clinicians, clinic admins |
+| Every check is audit-logged with the outcome only (covered or not, number of schemes); never the patient's name, ID number or scheme details. | – |
+
 ## 2026-11-23: At least 2 admins per clinic
 
 No database change.

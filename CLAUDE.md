@@ -67,6 +67,11 @@ USSD-first clinic management platform for small clinics in Kenya. See
   consent). Plan: 1 eligibility (~1 wk), 2 services/tariffs (~1 wk), 3
   billing+claims (~1.5-2 wk), 4 outpatient preauths (~1 wk), 5 status,
   resubmission, remittance (~1 wk); sandbox needs DHA certification first.
+  Phase 1 BUILT 25 Nov (src/hie/shaEligibility.ts, routes /hie/patients/:id/
+  sha/*, patient page "SHA cover" panel; front desk only; read-only; off
+  until HIE_ENABLED). Coverage status words undocumented by DHA: only
+  active/eligible/covered count as covered until the sandbox shows the real
+  values. Next: start-visit consent, then phase 2 (services/tariffs).
   ODPC answered 25 Nov 08:36 (Ian, 020 780 1800): founder of a sole
   proprietorship may be DPO and carry out the DPIA (recorded in the Drive log).
   Still pending: DHA/Samuel Q9 (does DHA require a separate qualified
