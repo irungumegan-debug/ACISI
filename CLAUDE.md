@@ -67,10 +67,10 @@ USSD-first clinic management platform for small clinics in Kenya. See
   consent). Plan: 1 eligibility (~1 wk), 2 services/tariffs (~1 wk), 3
   billing+claims (~1.5-2 wk), 4 outpatient preauths (~1 wk), 5 status,
   resubmission, remittance (~1 wk); sandbox needs DHA certification first.
-  PAUSED 25 Nov until the owner hears from ODPC (founder as DPO and doing
-  the DPIA: allowed?) and DHA/Samuel (DPIA by a qualified assessor?). If not
-  allowed: independent assessor via Strathmore CIPIT/iBizAfrica, new DPO,
-  update the DPO name in all 12 documents.
+  ODPC answered 25 Nov 08:36 (Ian, 020 780 1800): founder of a sole
+  proprietorship may be DPO and carry out the DPIA (recorded in the Drive log).
+  Still pending: DHA/Samuel Q9 (does DHA require a separate qualified
+  assessor?). If DHA says yes: independent assessor via Strathmore CIPIT.
 
 ## Compliance documents
 
