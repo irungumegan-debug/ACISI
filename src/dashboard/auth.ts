@@ -13,6 +13,7 @@ import {
   DashboardSession,
   SESSION_COOKIE_NAME,
 } from './session';
+import { auditLogout } from '../services/securityAudit';
 import { markSessionActive } from '../services/idleTimeout';
 import { logger } from '../utils/logger';
 import { Clinic, Staff } from '@prisma/client';
@@ -174,7 +175,9 @@ authRouter.post('/login/verify', async (req, res) => {
 authRouter.post('/logout', async (req, res) => {
   const token = req.cookies?.[SESSION_COOKIE_NAME] as string | undefined;
   if (token) {
+    const session = await loadDashboardSession(token);
     await destroyDashboardSession(token);
+    if (session) await auditLogout('staff', session);
   }
   res.clearCookie(SESSION_COOKIE_NAME);
   res.status(204).send();

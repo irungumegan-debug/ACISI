@@ -58,6 +58,32 @@ USSD-first clinic management platform for small clinics in Kenya. See
   always asked. Owner confirmed it working 24 Nov 2026: DHA box ticked,
   DPIA action A2 done (v1.4).
 
+- **SHA claims: optional add-on, kept OFF (owner, 26 Nov 2026).** Not part
+  of ACISI's core. Two switches, both off by default: server `SHA_ENABLED`
+  (off: /api/staff/sha/* not mounted, 404, like USSD) and per clinic
+  `Clinic.shaAddonEnabled` (only the ACISI owner, owner site → clinic → "SHA
+  claims add-on"). `requireShaAddon` (src/hie/shaAddon.ts) runs first in every
+  SHA service call, so no patient data goes to SHA while either is off; new
+  SHA code must call it too. Owner's rules: (1) keep it off; (2) expect
+  rework: built from DHA's published docs (hie-docs.dha.go.ke/docs/claims)
+  without an onboarded/certified-vendor sandbox, and SHA's rules changed
+  several times in 2026; (3) keep it OUT of the DHA and ODPC paperwork:
+  those describe only what ACISI does today; if DHA asks, SHA claims is
+  "not active" (never add SHA to the Privacy Notice, DPIA, ODPC record or
+  DHA answers unless the owner decides to switch it on); (4) never let it
+  delay DHA certification or the 8 Jan 2027 launch: build more only once
+  those are on track, or in quiet gaps. Built so far: phase 1 eligibility
+  (src/hie/shaEligibility.ts, patient page "SHA cover" row) and start-visit
+  consent (src/hie/shaVisit.ts, table sha_visits, "SHA visit" card on
+  Vitals/checkout; OTP path only; consent token encrypted). Coverage words
+  undocumented: only active/eligible/covered count as covered. Later plan:
+  2 services/tariffs, 3 billing+claims, 4 outpatient preauths, 5 status,
+  resubmission, remittance.
+  ODPC answered 25 Nov 08:36 (Ian, 020 780 1800): founder of a sole
+  proprietorship may be DPO and carry out the DPIA (recorded in the Drive log).
+  Still pending: DHA/Samuel Q9 (does DHA require a separate qualified
+  assessor?). If DHA says yes: independent assessor via Strathmore CIPIT.
+
 ## Compliance documents
 
 - **DHA records (owner, 24 Nov 2026): keep every record DHA may ask for.**
@@ -78,8 +104,9 @@ USSD-first clinic management platform for small clinics in Kenya. See
   never pay, Incident Response Plan v1.1 section 7). 24 Nov 13:35: manual encrypted copy of the 12:47 backups on the
   owner's computer (Documents\ACISI-backups); G5 open until automatic.
   Still to do: automatic off-server backup (hook deploy/backup/offsite-hook
-  .example.sh built, needs a Kenyan destination: owner choosing HostAfrica
-  add-on / second small VPS (recommended) / own PC); full rebuild + DR
+  .example.sh built, destination chosen 26 Nov: second VM at Angani,
+  Nairobi, 'Acisi-Healthcare' 102.221.32.220, custom SSH port (not 22;
+  Angani ticket ANG-022788); not yet connected or copying, G5 stays open); full rebuild + DR
   failover by 31 Dec 2026.
 
 - **Patient address / residence is NOT collected** (owner, 21 Nov 2026): not in
@@ -131,7 +158,7 @@ USSD-first clinic management platform for small clinics in Kenya. See
   answer from raymondbett@dha.go.ke), so the owner is submitting without
   their answers. Final answer sheet, with open items declared as gaps G1-G9:
   docs/compliance/DHA-self-attestation-answers-2026-11-24.md (final, replaces
-  the 20 Nov sheet; MFA ticked, DPIA v1.5 24 Nov). The documents the owner
+  the 20 Nov sheet; MFA ticked; DPIA v1.6 26 Nov: restore test date 24 Nov). The documents the owner
   uploads (12: 7 DHA-template Word files + PDFs, Privacy Policy, DPIA, Security
   Policy, Incident Response Plan, User Manual) are NOT kept in the repo (owner,
   24 Nov): 22 Nov originals on branch claude/focused-cori-macx3n; 24 Nov updates

@@ -1,12 +1,13 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Link, useParams } from 'react-router-dom';
-import { api, ApiError, ClientRegistryLookup, PatientDetail, PatientHie, PatientIdentity, PatientIdentityRecord } from '../lib/api';
+import { api, ApiError, ClientRegistryLookup, PatientDetail, PatientHie, PatientIdentity, PatientIdentityRecord, ShaCode, ShaEligibility, ShaIntervention } from '../lib/api';
 import { ArrowLeft, Building2, CalendarDays, FileText, IdCard, Lock, MessageSquareOff, Phone, Pill, Printer, Stethoscope } from 'lucide-react';
 import { Avatar, btn, Card, EmptyState, SkeletonList } from '../components/ui';
 import { ID_TYPE_LABEL, IdentityFields } from '../components/IdentityFields';
 import { PortalSetupCode } from '../components/PhoneVerification';
 import { PatientFiles } from '../components/PatientFiles';
+import { useShaAddon } from '../lib/useShaAddon';
 
 export function PatientDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -197,6 +198,7 @@ function IdentityCard({ patient, onSaved }: { patient: PatientDetail; onSaved: (
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const canEdit = session?.role !== 'DOCTOR';
+  const shaAddon = useShaAddon();
 
   async function save(e: FormEvent): Promise<void> {
     e.preventDefault();
@@ -230,6 +232,7 @@ function IdentityCard({ patient, onSaved }: { patient: PatientDetail; onSaved: (
               {row('Next of kin phone', patient.nextOfKinPhone)}
             </dl>
             <ClientRegistryRow patient={patient} canLookUp={canEdit} onSaved={(crId) => onSaved({ ...patient, hie: { ...patient.hie, crId, verifiedAt: new Date().toISOString() } })} />
+            {canEdit && shaAddon && patient.hie.crId && <ShaCoverRow patientId={patient.id} />}
             {canEdit && (
               <button
                 type="button"
@@ -437,6 +440,187 @@ function RecordsFromOtherClinics({ patientId, canRequest, onGranted }: { patient
           </button>
         </form>
       )}
+      {error && (
+        <p role="alert" className="mt-2 text-sm text-red-700">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+const PREAUTH_FORM_LABEL: Record<NonNullable<ShaIntervention['preauthForm']>, string> = {
+  surgical: 'surgical',
+  radiology: 'imaging',
+  optical: 'optical',
+  oncology: 'oncology',
+  renal: 'renal',
+};
+
+/**
+ * SHA claims phase 1 (front desk, at check-in): is the patient covered by
+ * the Social Health Authority today, and what can be billed to SHA here.
+ * Read-only: nothing is claimed or sent to SHA from this panel.
+ */
+function ShaCoverRow({ patientId }: { patientId: string }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<ShaEligibility | null>(null);
+  const [benefits, setBenefits] = useState<ShaCode[] | null>(null);
+  const [benefit, setBenefit] = useState<ShaCode | null>(null);
+  const [subBenefits, setSubBenefits] = useState<ShaCode[] | null>(null);
+  const [subBenefit, setSubBenefit] = useState<ShaCode | null>(null);
+  const [interventions, setInterventions] = useState<ShaIntervention[] | null>(null);
+
+  async function run<T>(fn: () => Promise<T>, apply: (v: T) => void, fallback: string): Promise<void> {
+    setBusy(true);
+    setError(null);
+    try {
+      apply(await fn());
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : fallback);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const check = () =>
+    run(() => api.checkShaEligibility(patientId), (r) => {
+      setResult(r);
+      setBenefits(null);
+      setBenefit(null);
+      setSubBenefits(null);
+      setSubBenefit(null);
+      setInterventions(null);
+    }, 'The SHA check failed. Try again.');
+  const showBenefits = () => run(() => api.getShaBenefits(patientId), (r) => setBenefits(r.benefits), 'Could not load SHA benefits.');
+  const openBenefit = (b: ShaCode) =>
+    run(() => api.getShaSubBenefits(patientId, b.code), (r) => {
+      setBenefit(b);
+      setSubBenefits(r.subBenefits);
+      setSubBenefit(null);
+      setInterventions(null);
+    }, 'Could not load the sub-benefits.');
+  const openSubBenefit = (sb: ShaCode) =>
+    run(() => api.getShaInterventions(patientId, sb.code), (r) => {
+      setSubBenefit(sb);
+      setInterventions(r.interventions);
+    }, 'Could not load the services.');
+
+  const date = (d: string | null) => (d ? d.slice(0, 10) : '?');
+  const chip = 'rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-navy-900 hover:border-gold-500 disabled:opacity-50';
+
+  return (
+    <div className="mt-4 border-t border-slate-100 pt-4 text-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-ink-500">SHA cover</span>
+        <button type="button" className={btn.secondary} disabled={busy} onClick={() => void check()}>
+          {busy && !result ? 'Checking…' : result ? 'Check again' : 'Check SHA cover'}
+        </button>
+      </div>
+
+      {result && (
+        <div
+          role="status"
+          className={`mt-3 rounded-xl border p-3.5 ${result.covered ? 'border-green-200 bg-green-50 text-green-900' : 'border-red-200 bg-red-50 text-red-900'}`}
+        >
+          <p className="font-semibold">
+            {result.deceased
+              ? 'SHA records this person as deceased. Do not bill SHA; check the patient’s identity.'
+              : result.covered
+                ? 'Covered by SHA today.'
+                : 'Not covered by SHA today. The patient pays, or sorts out their SHA cover first.'}
+          </p>
+          <ul className="mt-2 space-y-1.5">
+            {result.schemes.map((s, i) => (
+              <li key={`${s.name}-${i}`}>
+                <span className="font-medium">{s.name}</span>
+                {s.memberType ? ` (${s.memberType.toLowerCase()})` : ''}: {s.coverageStatus}
+                {s.active && `, ${date(s.validFrom)} to ${date(s.validTo)}`}
+                {!s.active && s.reason && <span className="block text-xs">Reason: {s.reason}</span>}
+                {!s.active && s.possibleSolution && <span className="block text-xs">What to do: {s.possibleSolution}</span>}
+              </li>
+            ))}
+            {result.schemes.length === 0 && <li>No SHA scheme found for this patient.</li>}
+          </ul>
+          {result.covered && result.consent.biometricsEnforced && (
+            <p className="mt-2 text-xs">
+              This clinic must confirm SHA visits by fingerprint{result.consent.otpAllowed ? ' (this patient may also use an SMS code)' : ''}.
+            </p>
+          )}
+          {result.publicOfficerScheme && <p className="mt-1 text-xs">Public officers’ scheme (POMSF / TSC / USALAMA): balances apply.</p>}
+          <p className="mt-2 text-xs opacity-75">Checked {new Date(result.checkedAt).toLocaleString('en-KE')}</p>
+          {result.covered && !benefits && (
+            <button type="button" className={`${btn.secondary} mt-3`} disabled={busy} onClick={() => void showBenefits()}>
+              {busy ? 'Loading…' : 'What does SHA cover here?'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {benefits && (
+        <div className="mt-3">
+          <p className="mb-1.5 text-xs font-semibold uppercase text-ink-500">Benefit packages</p>
+          <div className="flex flex-wrap gap-2">
+            {benefits.map((b) => (
+              <button key={b.code} type="button" className={chip} disabled={busy} onClick={() => void openBenefit(b)} aria-pressed={benefit?.code === b.code}>
+                {b.name}
+              </button>
+            ))}
+            {benefits.length === 0 && <span className="text-ink-500">No benefit packages for this patient at this clinic.</span>}
+          </div>
+        </div>
+      )}
+
+      {benefit && subBenefits && (
+        <div className="mt-3">
+          <p className="mb-1.5 text-xs font-semibold uppercase text-ink-500">{benefit.name}: outpatient services</p>
+          <div className="flex flex-wrap gap-2">
+            {subBenefits.map((sb) => (
+              <button key={sb.code} type="button" className={chip} disabled={busy} onClick={() => void openSubBenefit(sb)} aria-pressed={subBenefit?.code === sb.code}>
+                {sb.name}
+              </button>
+            ))}
+            {subBenefits.length === 0 && <span className="text-ink-500">No outpatient services under this package.</span>}
+          </div>
+        </div>
+      )}
+
+      {subBenefit && interventions && (
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="text-ink-500">
+              <tr>
+                <th className="py-1 pr-3 font-semibold">Service</th>
+                <th className="py-1 pr-3 font-semibold">SHA pays (KES)</th>
+                <th className="py-1 font-semibold">Pre-authorisation</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {interventions.map((i) => (
+                <tr key={i.code}>
+                  <td className="py-1.5 pr-3">
+                    <span className="font-medium text-navy-900">{i.name}</span>
+                    <span className="block font-mono text-[11px] text-ink-400">{i.code}</span>
+                  </td>
+                  <td className="py-1.5 pr-3">{i.tariff != null ? i.tariff.toLocaleString('en-KE') : '—'}</td>
+                  <td className="py-1.5">
+                    {i.needsPreauth
+                      ? `Needed${i.preauthForm ? ` (${PREAUTH_FORM_LABEL[i.preauthForm]})` : ''}${i.preauthReviewedBySha ? ', reviewed by SHA' : ''}`
+                      : 'Not needed'}
+                  </td>
+                </tr>
+              ))}
+              {interventions.length === 0 && (
+                <tr>
+                  <td colSpan={3} className="py-2 text-ink-500">No outpatient services found.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {error && (
         <p role="alert" className="mt-2 text-sm text-red-700">
           {error}

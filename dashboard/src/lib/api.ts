@@ -318,6 +318,74 @@ export interface HieStatus {
   practitioner: HiePractitioner | null;
 }
 
+/** SHA claims phase 1: is the patient covered by SHA today (DHA eClaims eligibility), by Client Registry ID. */
+export interface ShaEligibility {
+  covered: boolean;
+  deceased: boolean;
+  publicOfficerScheme: boolean;
+  consent: { biometricsEnforced: boolean; otpAllowed: boolean };
+  schemes: {
+    name: string;
+    memberType: string | null;
+    coverageStatus: string;
+    active: boolean;
+    validFrom: string | null;
+    validTo: string | null;
+    reason: string | null;
+    possibleSolution: string | null;
+  }[];
+  statusDesc: string | null;
+  checkedAt: string;
+}
+
+export interface ShaCode {
+  code: string;
+  name: string;
+}
+
+export interface ShaIntervention {
+  code: string;
+  name: string;
+  paymentMechanism: string | null;
+  tariff: number | null;
+  needsPreauth: boolean;
+  preauthReviewedBySha: boolean;
+  preauthForm: 'surgical' | 'radiology' | 'optical' | 'oncology' | 'renal' | null;
+  documents: string[];
+}
+
+export interface ShaAddonStatus {
+  enabled: boolean;
+  connected: boolean;
+}
+
+export interface ShaVisitInfo {
+  status: 'CODE_SENT' | 'STARTED';
+  interventionCodes: string[];
+  codeSentAt: string;
+  canResendAt: string;
+  claimId: string | null;
+  visitNumber: string | null;
+  claimStatus: string | null;
+  doctorAttached: boolean;
+  startedAt: string | null;
+}
+
+export interface ShaVisitState {
+  patientId: string;
+  connected: boolean;
+  facilitySet: boolean;
+  patientLinked: boolean;
+  visit: ShaVisitInfo | null;
+}
+
+export interface ShaContact {
+  id: number;
+  type: string;
+  masked: string;
+  confirmed: boolean;
+}
+
 export type ClientRegistryLookup =
   | { result: 'saved'; crId: string }
   | { result: 'check'; registry: { firstName: string | null; middleName: string | null; lastName: string | null; dateOfBirth: string | null; sex: 'MALE' | 'FEMALE' | null } };
@@ -999,6 +1067,22 @@ export const api = {
   hieVisitAction(encounterId: string, action: 'consent' | 'consent/resend' | 'consent/confirm' | 'consent/refuse' | 'send' | 'close' | 'close/confirm', body?: object) {
     return request<HieVisitInfo | { ok: true }>(`/hie/visits/${encodeURIComponent(encounterId)}/${action}`, { method: 'POST', body: JSON.stringify(body ?? {}) });
   },
+  /** SHA claims add-on: on for this clinic? A 404 means it is switched off on the server. */
+  getShaAddonStatus() {
+    return request<ShaAddonStatus>('/sha/status');
+  },
+  getShaVisit(encounterId: string) {
+    return request<ShaVisitState>(`/sha/visits/${encodeURIComponent(encounterId)}`);
+  },
+  getShaContacts(encounterId: string) {
+    return request<{ contacts: ShaContact[] }>(`/sha/visits/${encodeURIComponent(encounterId)}/contacts`);
+  },
+  sendShaVisitCode(encounterId: string, interventionCodes: string[], contactId?: number) {
+    return request<ShaVisitInfo>(`/sha/visits/${encodeURIComponent(encounterId)}/code`, { method: 'POST', body: JSON.stringify({ interventionCodes, contactId }) });
+  },
+  startShaVisit(encounterId: string, code: string) {
+    return request<ShaVisitInfo>(`/sha/visits/${encodeURIComponent(encounterId)}/start`, { method: 'POST', body: JSON.stringify({ code }) });
+  },
   getNationalRecord(encounterId: string) {
     return request<{ items: NationalRecordItem[] }>(`/hie/visits/${encodeURIComponent(encounterId)}/national-record`);
   },
@@ -1029,6 +1113,22 @@ export const api = {
 
   lookUpPatientInClientRegistry(patientId: string) {
     return request<ClientRegistryLookup>(`/hie/patients/${encodeURIComponent(patientId)}/client-registry`, { method: 'POST' });
+  },
+
+  checkShaEligibility(patientId: string) {
+    return request<ShaEligibility>(`/sha/patients/${encodeURIComponent(patientId)}/eligibility`, { method: 'POST' });
+  },
+
+  getShaBenefits(patientId: string) {
+    return request<{ benefits: ShaCode[] }>(`/sha/patients/${encodeURIComponent(patientId)}/benefits`);
+  },
+
+  getShaSubBenefits(patientId: string, benefitCode: string) {
+    return request<{ subBenefits: ShaCode[] }>(`/sha/patients/${encodeURIComponent(patientId)}/benefits/${encodeURIComponent(benefitCode)}/sub-benefits`);
+  },
+
+  getShaInterventions(patientId: string, subBenefitCode: string) {
+    return request<{ interventions: ShaIntervention[] }>(`/sha/patients/${encodeURIComponent(patientId)}/sub-benefits/${encodeURIComponent(subBenefitCode)}/interventions`);
   },
 
   confirmClientRegistryMatch(patientId: string) {

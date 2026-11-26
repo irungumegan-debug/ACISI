@@ -511,6 +511,84 @@ record (DHA/HIE becomes a recipient of patient data).
 
 To switch off: `HIE_ENABLED=false` and restart. Saved codes and IDs stay.
 
+## SHA claims add-on (keep OFF for now)
+
+SHA claims (cover check, start SHA visit) is an optional add-on, not part of
+ACISI's core. **Leave it off until DHA certification and the 8 January launch
+are done.** Two switches, both off by default; nothing about any patient goes
+to SHA unless both are on for that clinic:
+
+1. Server: `SHA_ENABLED=true` in `/etc/acisi/acisi.env`, then
+   `sudo systemctl restart acisi`. Off: every `/api/staff/sha` call answers 404.
+2. Per clinic: owner site → the clinic → **SHA claims add-on** → Switch on
+   (audit-logged). Off: the console shows no SHA panels for that clinic.
+
+It also needs the HIE connected (section above), because SHA claims go
+through DHA's AfyaConnect API. It was built from DHA's published docs
+without sandbox access, and SHA's rules changed several times in 2026:
+expect rework before switching it on. Before switching it on for real
+patients: update the Privacy Notice, DPIA and ODPC record (SHA becomes a
+recipient of patient data). Until then, DHA/ODPC forms say SHA claims are
+not active.
+
+To switch off: either switch, off again. Saved SHA visits stay in the database.
+
+## Full rebuild test on the Angani server (fills the RTO blanks)
+
+Measures how long it takes to rebuild ACISI from nothing on a new server in
+Kenya using only the encrypted backup: the DR Test Report's "RTO — Core
+application" and "RTO — Overall", and the Backup & Recovery Policy's "Full
+System" test. Live acisi.co.ke is never touched. The test copy can't be
+reached from outside and can't send SMS, M-Pesa prompts, email or HIE
+requests. At the end it deletes the decrypted data, so the Angani server
+again holds only encrypted backups. Takes about 30 to 60 minutes.
+
+You need: SSH into the Angani server working (its custom port from Angani,
+ticket ANG-022788), and the backup private key (kept offline).
+
+**A. Let the main server reach the Angani server** (once; the nightly
+off-server copy uses the same key later). Replace `PORT` and `USER` with
+Angani's details.
+
+1. On the main server (`ssh acisi`), make a key for root and show the public half:
+   ```
+   sudo ssh-keygen -t ed25519 -N "" -f /root/.ssh/acisi_offsite -C acisi-offsite
+   sudo cat /root/.ssh/acisi_offsite.pub
+   ```
+2. On the Angani server, add that one line (it starts `ssh-ed25519`):
+   ```
+   mkdir -p ~/.ssh && chmod 700 ~/.ssh && nano ~/.ssh/authorized_keys
+   ```
+3. Back on the main server, check it works (answer `yes` the first time):
+   ```
+   sudo ssh -i /root/.ssh/acisi_offsite -p PORT USER@102.221.32.220 hostname
+   ```
+   Then make it the default for that host:
+   ```
+   printf 'Host 102.221.32.220\n  IdentityFile /root/.ssh/acisi_offsite\n' | sudo tee -a /root/.ssh/config
+   ```
+
+**B. Send the backup and the app code** (on the main server):
+```
+cd /opt/acisi/app && git pull
+sudo bash deploy/dr/acisi-dr-send.sh USER@102.221.32.220 PORT
+```
+
+**C. Rebuild and time it** (on the Angani server). Copy the script there
+first from the main server:
+```
+sudo scp -P PORT /opt/acisi/app/deploy/dr/acisi-rebuild-test.sh USER@102.221.32.220:
+```
+then on the Angani server:
+```
+sudo bash acisi-rebuild-test.sh ~/acisi-dr
+```
+Paste the backup private key when asked. Keep the window open until it
+prints SUMMARY and "test copy deleted". The report is saved in
+`/root/acisi-rebuild-test-*.txt`: send Claude the SUMMARY lines (no keys,
+no patient data in them) to fill in the DR Test Report, Backup & Recovery
+Policy and DHA log.
+
 ## Switching ACISI's M-Pesa to production (Buy Goods till)
 
 Do this only after the release that adds `MPESA_TILL_NUMBER` is deployed.

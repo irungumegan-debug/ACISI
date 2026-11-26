@@ -39,7 +39,7 @@ hieRouter.use(requireStaffSession);
 
 const session = (req: unknown) => (req as AuthenticatedRequest).dashboardSession;
 
-function sendHieError(res: Response, err: unknown): void {
+export function sendHieError(res: Response, err: unknown): void {
   if (err instanceof HieError) {
     res.status(hieErrorStatus(err)).json({ error: err.message, hie: err.kind });
     return;
@@ -150,6 +150,11 @@ hieRouter.post('/patients/:id/client-registry/confirm', async (req, res) => {
   }
 });
 
+/** The code DHA texts the patient (SHR consent, closing). */
+const codeSchema = z.object({ code: z.string().trim().regex(/^\d{4,8}$/, 'Enter the code from the SMS (numbers only)') });
+
+// SHA claims routes are not here: they are the optional SHA add-on (./sha.ts).
+
 // ---------- Shared Health Record, per visit ----------
 
 /**
@@ -171,8 +176,6 @@ async function canWorkOnVisit(req: unknown, res: Response, encounterId: string):
   res.status(403).json({ error: 'Not available for your role' });
   return false;
 }
-
-const codeSchema = z.object({ code: z.string().trim().regex(/^\d{4,8}$/, 'Enter the code from the SMS (numbers only)') });
 
 function visitRoute(handler: (args: { req: unknown; res: Response; encounterId: string; clinicId: string; staffId: string; role: string }) => Promise<unknown>) {
   return async (req: import('express').Request, res: Response) => {

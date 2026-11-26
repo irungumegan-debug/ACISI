@@ -44,6 +44,8 @@ export const ENCRYPTED_FIELDS: ReadonlySet<string> = new Set([
   'hieCrId',
   // hie_visits: per-visit consent token for the national record
   'consentToken',
+  // sha_visits: SHA's per-visit consent token (authorization_code)
+  'shaConsentToken',
   // service_orders (radiology, therapy and other orders)
   'orderDescription',
   'orderNote',

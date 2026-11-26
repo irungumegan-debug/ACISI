@@ -4,6 +4,7 @@ import { OWNER_SESSION_TTL_SECONDS } from '../config/constants';
 import { clearLockout, isLockedOut, lockoutMessage, recordWrongPin } from '../services/pinLockout';
 import { authenticateOwner, normalizeOwnerEmail } from '../services/ownerService';
 import { createOwnerSession, destroyOwnerSession, loadOwnerSession, OwnerSession, OWNER_SESSION_COOKIE_NAME } from './session';
+import { auditLogout } from '../services/securityAudit';
 import { logger } from '../utils/logger';
 
 export interface AuthenticatedOwnerRequest extends Request {
@@ -58,7 +59,9 @@ ownerAuthRouter.post('/login', async (req, res) => {
 ownerAuthRouter.post('/logout', async (req, res) => {
   const token = req.cookies?.[OWNER_SESSION_COOKIE_NAME] as string | undefined;
   if (token) {
+    const session = await loadOwnerSession(token);
     await destroyOwnerSession(token);
+    if (session) await auditLogout('owner', session);
   }
   res.clearCookie(OWNER_SESSION_COOKIE_NAME);
   res.status(204).send();

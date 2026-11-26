@@ -3,6 +3,53 @@
 Plain-language record of what changed in ACISI, which data each change
 touches, and who can use it. Newest first.
 
+## 2026-11-26: Audit log records logout, session end, lockout and access denied
+
+No database change.
+
+| What | Who |
+|---|---|
+| Logging out writes `STAFF_LOGOUT`, `PATIENT_LOGOUT` or `OWNER_LOGOUT`. A session the server ends writes `STAFF_SESSION_ENDED` / `PATIENT_SESSION_ENDED` / `OWNER_SESSION_ENDED` with the reason (`idle`: 15-minute inactivity logoff; `revoked`: account or clinic deactivated, PIN or password reset, account deleted). | Everyone who logs in |
+| Too many wrong PINs, passwords or login codes writes `ACCOUNT_LOCKED` (the account's ID only; an owner's email and an unknown typed ID are never stored). | Everyone who logs in |
+| Any request refused with 403 to a logged-in person writes `ACCESS_DENIED` with the method, the route pattern (no IDs, no query) and the staff role. | Everyone who logs in |
+| IDs and reasons only, never names, phone numbers or emails. A failed audit write never breaks the request. `src/services/securityAudit.ts` | – |
+
+## 2026-11-26: SHA claims becomes an optional add-on, off by default
+
+Database: two new columns on `clinics` (`shaAddonEnabled`, default false, and
+`shaAddonChangedAt`; migration `20261126100000_sha_addon_switch`, additive;
+undo `prisma/rollback/20261126100000_sha_addon_switch.down.sql`). Not active:
+nothing about any patient is sent to SHA.
+
+| What | Who |
+|---|---|
+| SHA claims is now a separate add-on, not part of ACISI's core. Server switch `SHA_ENABLED` (default off): while off, every `/api/staff/sha` route answers 404, like USSD. The SHA routes moved from `/api/staff/hie/.../sha` to `/api/staff/sha/...`. | – |
+| Owner site → clinic → **SHA claims add-on**: switch it on or off for one clinic (off by default; audit-logged `OWNER_CLINIC_SHA_ADDON_ON`/`_OFF`). SHA code checks this switch before reading or sending anything. | ACISI owner only |
+| Console: the SHA cover row (patient page) and the SHA visit card (Vitals and checkout pages) appear only when the add-on is on for the clinic. | Front desk, clinicians, clinic admins |
+
+## 2026-11-25: Start the visit with SHA (SHA claims, start-visit consent)
+
+Database: new table `sha_visits` (migration `20261125100000_sha_visits`,
+additive; undo `prisma/rollback/20261125100000_sha_visits.down.sql`). Off
+(since 26 Nov: the SHA add-on, see above).
+
+| What | Who |
+|---|---|
+| Queue → **Vitals** page, and the checkout page: **SHA visit** card. Front desk chooses the SHA services for the visit (benefit package → outpatient services, with SHA's tariff), and which of the patient's SHA phone numbers gets the code (masked by DHA). ACISI checks SHA cover first and stops if the patient isn't covered, is recorded as deceased, or SHA requires a fingerprint (ACISI can't take fingerprints yet). | Front desk, clinicians, clinic admins |
+| SHA texts the patient a code; the patient reads it out; **Start SHA visit** opens the visit's claim with SHA (outpatient). The card then shows the SHA claim number and status. The treating doctor is put on the claim when DHA has verified their registration. A new code can be sent after a minute, at most 5 per visit. | Front desk, clinicians, clinic admins |
+| SHA's consent token for the claim is stored encrypted (AES-256-GCM) and never shown. Audit log: ids and outcomes only, never the code, phone numbers or names. | – |
+
+## 2026-11-25: SHA cover check at the front desk (SHA claims, phase 1)
+
+No database change. Off until the national HIE is switched on with DHA's
+credentials (`HIE_ENABLED=true`, runbook "Connecting to the national HIE").
+
+| What | Who |
+|---|---|
+| Patient page → **Check SHA cover**: asks SHA (through DHA's AfyaConnect eClaims API) whether the patient is covered today and under which scheme, with DHA's reason and what to do when cover isn't active. Deceased patients are flagged. Shows whether the clinic must confirm SHA visits by fingerprint. Needs the patient's Client Registry ID and the clinic's facility code. | Front desk, clinicians, clinic admins |
+| **What does SHA cover here?**: the patient's benefit packages, their outpatient services, the SHA tariff for each and whether it needs pre-authorisation. Read-only: nothing is claimed or sent to SHA yet (that is phases 2 to 5). | Front desk, clinicians, clinic admins |
+| Every check is audit-logged with the outcome only (covered or not, number of schemes); never the patient's name, ID number or scheme details. | – |
+
 ## 2026-11-23: At least 2 admins per clinic
 
 No database change.
