@@ -122,3 +122,21 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Side menu: a visible scrollbar on the dark background, so it's clear the
+   menu scrolls when it doesn't fit the window (short laptop screens). */
+.sidebar-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(212, 175, 55, 0.55) rgba(255, 255, 255, 0.06);
+}
+.sidebar-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+.sidebar-scroll::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 9999px;
+}
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background: rgba(212, 175, 55, 0.55);
+  border-radius: 9999px;
+}

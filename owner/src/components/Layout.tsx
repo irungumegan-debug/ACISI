@@ -40,7 +40,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           </p>
         </div>
       </div>
-      <nav aria-label="Main" className="relative flex-1 space-y-1 px-3">
+      <nav aria-label="Main" className="sidebar-scroll relative min-h-0 flex-1 space-y-1 overflow-y-auto px-3 pb-2">
         {NAV.map((item) => (
           <NavLink
             key={item.to}
@@ -62,7 +62,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           </NavLink>
         ))}
       </nav>
-      <div className="relative border-t border-white/10 p-3">
+      <div className="relative flex-none border-t border-white/10 p-3">
         <button
           type="button"
           onClick={() => void logout()}
