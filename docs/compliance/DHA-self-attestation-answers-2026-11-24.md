@@ -105,7 +105,7 @@ clinician, who decides.
 | Audit trail | ✅ | Every view and change of clinical records logged; append-only (the database refuses update and delete) and hash-chained; `npm run verify-audit-log` |
 | Consent for sharing between clinics | ✅ | Off by default; patient's standing consent or a same-day code; every view logged |
 | Minors | ✅ | Portal signup refuses under-18s; children are registered at the clinic with a parent or guardian |
-| Backups and restore test | ✅ | Nightly encrypted backups (age), kept 14 days; practice restore with `acisi-restore-test`. Last restore test: **24 Nov 2026, passed** (full disaster-recovery tests: encryption check, settings restore, file restore, service back in 13 seconds; DR Test Report). Previous: 22 Nov 2026, passed |
+| Backups and restore test | ✅ | Nightly encrypted backups (age), kept 14 days; practice restore with `acisi-restore-test`. Database restore test: **22 Nov 2026, passed** (36 of 36 tables match, audit log intact). **24 Nov 2026:** encryption check, settings restore and file restore passed, and login service back in 13 seconds (DR Test Report) |
 | Off-site backup | ❌ | Gap G5 |
 | Breach procedure | ✅ | Incident Response Plan: clinic within 48 h, DHA within 48 h, ODPC within 72 h, affected patients when at real risk |
 | DPIA | ✅ | Version 1.6, 26 Nov 2026 (uploaded) |
@@ -161,7 +161,7 @@ the date below, and that the gaps in section 7 are all the known gaps.
 
 1. **Multi-factor login:** make sure every clinic admin and doctor shows
    "Multi-factor on" in Settings → Staff & doctors.
-2. **Restore test:** done 24 Nov 2026, all passed (DR Test Report); earlier test 22 Nov 2026.
+2. **Restore tests:** database restore 22 Nov 2026; encryption check, settings and file restore 24 Nov 2026; all passed (DR Test Report).
 3. **Email reports (section 4):** decide the two "Tick only if" boxes from
    what the Settings page shows.
 4. **Sign** this sheet (section 8) and the DPIA (its section 8).
