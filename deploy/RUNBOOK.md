@@ -533,6 +533,62 @@ not active.
 
 To switch off: either switch, off again. Saved SHA visits stay in the database.
 
+## Full rebuild test on the Angani server (fills the RTO blanks)
+
+Measures how long it takes to rebuild ACISI from nothing on a new server in
+Kenya using only the encrypted backup: the DR Test Report's "RTO — Core
+application" and "RTO — Overall", and the Backup & Recovery Policy's "Full
+System" test. Live acisi.co.ke is never touched. The test copy can't be
+reached from outside and can't send SMS, M-Pesa prompts, email or HIE
+requests. At the end it deletes the decrypted data, so the Angani server
+again holds only encrypted backups. Takes about 30 to 60 minutes.
+
+You need: SSH into the Angani server working (its custom port from Angani,
+ticket ANG-022788), and the backup private key (kept offline).
+
+**A. Let the main server reach the Angani server** (once; the nightly
+off-server copy uses the same key later). Replace `PORT` and `USER` with
+Angani's details.
+
+1. On the main server (`ssh acisi`), make a key for root and show the public half:
+   ```
+   sudo ssh-keygen -t ed25519 -N "" -f /root/.ssh/acisi_offsite -C acisi-offsite
+   sudo cat /root/.ssh/acisi_offsite.pub
+   ```
+2. On the Angani server, add that one line (it starts `ssh-ed25519`):
+   ```
+   mkdir -p ~/.ssh && chmod 700 ~/.ssh && nano ~/.ssh/authorized_keys
+   ```
+3. Back on the main server, check it works (answer `yes` the first time):
+   ```
+   sudo ssh -i /root/.ssh/acisi_offsite -p PORT USER@102.221.32.220 hostname
+   ```
+   Then make it the default for that host:
+   ```
+   printf 'Host 102.221.32.220\n  IdentityFile /root/.ssh/acisi_offsite\n' | sudo tee -a /root/.ssh/config
+   ```
+
+**B. Send the backup and the app code** (on the main server):
+```
+cd /opt/acisi/app && git pull
+sudo bash deploy/dr/acisi-dr-send.sh USER@102.221.32.220 PORT
+```
+
+**C. Rebuild and time it** (on the Angani server). Copy the script there
+first from the main server:
+```
+sudo scp -P PORT /opt/acisi/app/deploy/dr/acisi-rebuild-test.sh USER@102.221.32.220:
+```
+then on the Angani server:
+```
+sudo bash acisi-rebuild-test.sh ~/acisi-dr
+```
+Paste the backup private key when asked. Keep the window open until it
+prints SUMMARY and "test copy deleted". The report is saved in
+`/root/acisi-rebuild-test-*.txt`: send Claude the SUMMARY lines (no keys,
+no patient data in them) to fill in the DR Test Report, Backup & Recovery
+Policy and DHA log.
+
 ## Switching ACISI's M-Pesa to production (Buy Goods till)
 
 Do this only after the release that adds `MPESA_TILL_NUMBER` is deployed.
