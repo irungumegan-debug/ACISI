@@ -52,7 +52,16 @@ echo "=== 2. Backup key and settings ($(stamp))"
 key=$(mktemp -p /run acisi-backup-key.XXXXXX)
 work=$(mktemp -d -p /run acisi-dr.XXXXXX)
 trap 'rm -rf "$key" "$work"' EXIT
-read -rsp "Paste the backup private key (the AGE-SECRET-KEY-1... line), then press Enter: " secret </dev/tty; echo
+echo "Paste the backup private key (the AGE-SECRET-KEY-1... line), then press Enter:"
+secret=""
+while IFS= read -rs line </dev/tty; do
+  line=$(tr -d '[:space:]' <<<"$line")
+  [[ -z $line || $line == \#* ]] && continue
+  secret=$line; break
+done
+if [[ $secret == *AGE-SECRET-KEY-1* ]]; then secret="AGE-SECRET-KEY-1${secret#*AGE-SECRET-KEY-1}"; fi
+if [[ $secret == age1* ]]; then echo "That is the PUBLIC key (age1...). Paste the line starting AGE-SECRET-KEY-1." >&2; exit 1; fi
+if [[ $secret != AGE-SECRET-KEY-1* && ! $secret =~ ^1[02-9ACDEFGHJ-NP-Z]{58}$ ]]; then echo "Not recognised: ${#secret} characters received, starting '${secret:0:4}'. The key line is 74 characters and starts AGE-SECRET-KEY-1." >&2; exit 1; fi
 secret=$(tr -d '[:space:]' <<<"$secret")
 [[ $secret =~ ^1[02-9ACDEFGHJ-NP-Z]{58}$ ]] && secret="AGE-SECRET-KEY-$secret"
 [[ $secret == AGE-SECRET-KEY-1* ]] || { echo "That isn't the backup PRIVATE key (AGE-SECRET-KEY-1...)." >&2; exit 1; }
