@@ -104,8 +104,9 @@ USSD-first clinic management platform for small clinics in Kenya. See
   never pay, Incident Response Plan v1.1 section 7). 24 Nov 13:35: manual encrypted copy of the 12:47 backups on the
   owner's computer (Documents\ACISI-backups); G5 open until automatic.
   Still to do: automatic off-server backup (hook deploy/backup/offsite-hook
-  .example.sh built, needs a Kenyan destination: owner choosing HostAfrica
-  add-on / second small VPS (recommended) / own PC); full rebuild + DR
+  .example.sh built, destination chosen 26 Nov: second VM at Angani,
+  Nairobi, 'Acisi-Healthcare' 102.221.32.220, custom SSH port (not 22;
+  Angani ticket ANG-022788); not yet connected or copying, G5 stays open); full rebuild + DR
   failover by 31 Dec 2026.
 
 - **Patient address / residence is NOT collected** (owner, 21 Nov 2026): not in
