@@ -118,6 +118,13 @@ USSD-first clinic management platform for small clinics in Kenya. See
   `docs/compliance/DPIA-2026-11-13.md`. Show it in full whenever the owner
   asks for "the DPIA" or "the DPI report". Update it (new version and date)
   when an action in its section 6 is completed.
+- **Audit log security events, live 26 Nov 2026** (PR #75, #76; owner saw
+  STAFF_LOGOUT on the owner site 12:32 EAT): logout, session ended
+  (idle/revoked), ACCOUNT_LOCKED, ACCESS_DENIED (`src/services/securityAudit.ts`).
+  Audit Trail Specification v1.3 (all "Must Log" rows Yes) goes to DHA.
+  Side-menu Log out/Settings were hidden on short screens; fixed in #76.
+  Full rebuild test scripts: deploy/dr/ (runbook "Full rebuild test on the
+  Angani server"), waiting for Angani's SSH port.
 - **DHA self-attestation** (draft reference DHS-1793019691629-GXVFAJJTJ, not yet
   submitted or paid). Answers must be checked against the code, never assumed.
   Done 14 Nov 2026 (on branch, deploy with the runbook "DHA fixes" release):
