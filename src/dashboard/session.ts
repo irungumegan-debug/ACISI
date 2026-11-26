@@ -4,6 +4,7 @@ import { CLINIC_ADMIN_SESSION_TTL_SECONDS, DASHBOARD_SESSION_TTL_SECONDS } from 
 import { logger } from '../utils/logger';
 import { isSessionRevoked } from '../services/sessionRevocation';
 import { clearSessionActivity, isSessionIdle, markSessionActive } from '../services/idleTimeout';
+import { auditSessionEnded } from '../services/securityAudit';
 
 const SESSION_KEY_PREFIX = 'dashboard:session:';
 
@@ -61,11 +62,13 @@ export async function loadDashboardSession(token: string): Promise<DashboardSess
   }
   if (await isSessionRevoked([`staff:${session.staffId}`, `clinic:${session.clinicId}`], session.issuedAt)) {
     await redis.del(key(token));
+    await auditSessionEnded('staff', session, 'revoked');
     return null;
   }
   // Logged off after IDLE_LOGOFF_SECONDS without activity.
   if (await isSessionIdle('staff', token)) {
     await redis.del(key(token));
+    await auditSessionEnded('staff', session, 'idle');
     return null;
   }
   return session;

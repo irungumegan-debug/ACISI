@@ -1,5 +1,6 @@
 import { redis } from '../config/redis';
 import { PIN_LOCKOUT } from '../config/constants';
+import { auditAccountLocked } from './securityAudit';
 
 /**
  * Wrong-PIN lockout counted per ACCOUNT, not per typed text or per session,
@@ -38,6 +39,7 @@ export async function recordWrongPin(subject: LockoutSubject): Promise<boolean> 
   if (count >= PIN_LOCKOUT.maxAttempts) {
     await redis.set(lockKey(subject), '1', 'EX', PIN_LOCKOUT.lockMinutes * 60);
     await redis.del(failKey(subject));
+    await auditAccountLocked(subject);
     return true;
   }
   return false;

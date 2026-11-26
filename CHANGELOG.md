@@ -3,6 +3,17 @@
 Plain-language record of what changed in ACISI, which data each change
 touches, and who can use it. Newest first.
 
+## 2026-11-26: Audit log records logout, session end, lockout and access denied
+
+No database change.
+
+| What | Who |
+|---|---|
+| Logging out writes `STAFF_LOGOUT`, `PATIENT_LOGOUT` or `OWNER_LOGOUT`. A session the server ends writes `STAFF_SESSION_ENDED` / `PATIENT_SESSION_ENDED` / `OWNER_SESSION_ENDED` with the reason (`idle`: 15-minute inactivity logoff; `revoked`: account or clinic deactivated, PIN or password reset, account deleted). | Everyone who logs in |
+| Too many wrong PINs, passwords or login codes writes `ACCOUNT_LOCKED` (the account's ID only; an owner's email and an unknown typed ID are never stored). | Everyone who logs in |
+| Any request refused with 403 to a logged-in person writes `ACCESS_DENIED` with the method, the route pattern (no IDs, no query) and the staff role. | Everyone who logs in |
+| IDs and reasons only, never names, phone numbers or emails. A failed audit write never breaks the request. `src/services/securityAudit.ts` | – |
+
 ## 2026-11-26: SHA claims becomes an optional add-on, off by default
 
 Database: two new columns on `clinics` (`shaAddonEnabled`, default false, and

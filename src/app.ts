@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { auditAccessDenied } from './services/securityAudit';
 import path from 'node:path';
 import express, { Express } from 'express';
 // Patches Express's shared Router/Route prototypes so a rejected promise
@@ -33,6 +34,8 @@ export function createApp(): Express {
   app.set('trust proxy', 1);
 
   app.use(requestLogger);
+  // Every 403 to a logged-in person goes in the audit log as ACCESS_DENIED.
+  app.use(auditAccessDenied);
   app.use(express.urlencoded({ extended: true }));
   app.use(express.json());
   app.use(cookieParser());

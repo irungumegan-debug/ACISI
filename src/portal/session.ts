@@ -4,6 +4,7 @@ import { DASHBOARD_SESSION_TTL_SECONDS } from '../config/constants';
 import { logger } from '../utils/logger';
 import { isSessionRevoked } from '../services/sessionRevocation';
 import { clearSessionActivity, isSessionIdle, markSessionActive } from '../services/idleTimeout';
+import { auditSessionEnded } from '../services/securityAudit';
 
 const SESSION_KEY_PREFIX = 'portal:session:';
 
@@ -44,11 +45,13 @@ export async function loadPatientSession(token: string): Promise<PatientSession 
   // device can't keep reading the (now anonymous) records.
   if (await isSessionRevoked([`patient:${session.patientId}`], session.issuedAt)) {
     await redis.del(key(token));
+    await auditSessionEnded('patient', session, 'revoked');
     return null;
   }
   // Logged off after IDLE_LOGOFF_SECONDS without activity.
   if (await isSessionIdle('patient', token)) {
     await redis.del(key(token));
+    await auditSessionEnded('patient', session, 'idle');
     return null;
   }
   return session;

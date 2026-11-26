@@ -3,6 +3,7 @@ import { redis } from '../config/redis';
 import { OWNER_SESSION_TTL_SECONDS } from '../config/constants';
 import { logger } from '../utils/logger';
 import { isSessionRevoked } from '../services/sessionRevocation';
+import { auditSessionEnded } from '../services/securityAudit';
 
 const SESSION_KEY_PREFIX = 'owner:session:';
 
@@ -41,6 +42,7 @@ export async function loadOwnerSession(token: string): Promise<OwnerSession | nu
   // Revoked by scripts/createOwner.ts whenever the password is reset.
   if (await isSessionRevoked([`owner:${session.ownerId}`], session.issuedAt)) {
     await redis.del(key(token));
+    await auditSessionEnded('owner', session, 'revoked');
     return null;
   }
   return session;

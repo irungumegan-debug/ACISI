@@ -30,6 +30,7 @@ import {
   PatientSession,
   PATIENT_SESSION_COOKIE_NAME,
 } from './session';
+import { auditLogout } from '../services/securityAudit';
 import { markSessionActive } from '../services/idleTimeout';
 import { logger } from '../utils/logger';
 
@@ -282,7 +283,9 @@ portalAuthRouter.post('/login', async (req, res) => {
 portalAuthRouter.post('/logout', async (req, res) => {
   const token = req.cookies?.[PATIENT_SESSION_COOKIE_NAME] as string | undefined;
   if (token) {
+    const session = await loadPatientSession(token);
     await destroyPatientSession(token);
+    if (session) await auditLogout('patient', session);
   }
   res.clearCookie(PATIENT_SESSION_COOKIE_NAME);
   res.status(204).send();
