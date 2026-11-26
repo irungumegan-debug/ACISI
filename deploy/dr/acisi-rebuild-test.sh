@@ -124,10 +124,13 @@ echo "=== 4. Patient files restore ($(stamp))"
 id acisi >/dev/null 2>&1 || useradd --system --create-home --home-dir /opt/acisi --shell /usr/sbin/nologin acisi
 install -d -o acisi -g acisi -m 700 /var/lib/acisi /var/lib/acisi/uploads
 if [[ -n $files ]]; then
-  age --decrypt -i "$key" "$files" | tar -C / -xf -
-  chown -R acisi:acisi /var/lib/acisi
+  # The archive holds the CONTENTS of the uploads folder ("./..."): unpack
+  # into that folder only, never "/" (its "." entry would re-own the root).
+  age --decrypt -i "$key" "$files" | tar -C /var/lib/acisi/uploads --no-same-owner --no-overwrite-dir -xf -
+  chown -R acisi:acisi /var/lib/acisi; chmod 700 /var/lib/acisi/uploads
 fi
 nfiles=$(find /var/lib/acisi/uploads -type f | wc -l)
+[[ $(stat -c %U:%a /) == root:755 ]] || { chown root:root /; chmod 755 /; echo " Root folder permissions repaired." >&2; }
 T4=$(now); echo " RESULT: $nfiles files restored in $(mins $((T4 - T3)))"
 
 echo "=== 5. Install and build ACISI ($(stamp))"
