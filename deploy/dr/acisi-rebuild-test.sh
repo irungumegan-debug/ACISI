@@ -33,14 +33,19 @@ echo "Backup: $(basename "$db"); app commit: $(cat "$SRC/app-commit.txt" 2>/dev/
 T0=$(now)
 
 echo "=== 1. Install system software ($(stamp))"
+# Package keys and lists must be readable by apt's own user: normal file
+# permissions for this step only (the data steps below stay root-only).
+umask 022
 export DEBIAN_FRONTEND=noninteractive
+# Undo a failed earlier run that left root-only package keys behind.
+chmod 644 /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc /etc/apt/sources.list.d/pgdg.list /etc/apt/sources.list.d/nodesource.list /etc/apt/keyrings/nodesource.gpg /usr/share/keyrings/nodesource.gpg 2>/dev/null || true
 apt-get update -qq
-apt-get install -y -qq curl ca-certificates gnupg age git build-essential python3 redis-server >/dev/null
-install -d /usr/share/postgresql-common/pgdg
-curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
-echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main" >/etc/apt/sources.list.d/pgdg.list
+apt-get install -y -qq curl ca-certificates gnupg age git build-essential python3 redis-server postgresql-common >/dev/null
+# PostgreSQL's own repository, set up with its official script.
+/usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y >/dev/null
 curl -fsSL https://deb.nodesource.com/setup_22.x | bash - >/dev/null
 apt-get install -y -qq postgresql-18 nodejs >/dev/null
+umask 077
 T1=$(now); echo " RESULT: done in $(mins $((T1 - T0))) (node $(node -v), $(psql --version | awk '{print $3}'))"
 
 echo "=== 2. Backup key and settings ($(stamp))"
