@@ -25,7 +25,7 @@ but switched off, or planned, are gaps, never ticks.
 | Users | Small outpatient clinics in Kenya: front desk, clinicians, doctors, lab technicians, clinic admins; patients (portal) |
 | Hosting | ACISI's own server at HostAfrica, Nairobi, Kenya; PostgreSQL. Patient records stay in Kenya |
 | Data Protection Officer | Megan Irungu (Founder), acisi.help@gmail.com, 0746404155 |
-| ODPC registration | Yes. DPIA version 1.5, 24 Nov 2026 (uploaded) |
+| ODPC registration | Yes. DPIA version 1.6, 26 Nov 2026 (uploaded) |
 
 ## 2. Classification
 
@@ -105,10 +105,10 @@ clinician, who decides.
 | Audit trail | ✅ | Every view and change of clinical records logged; append-only (the database refuses update and delete) and hash-chained; `npm run verify-audit-log` |
 | Consent for sharing between clinics | ✅ | Off by default; patient's standing consent or a same-day code; every view logged |
 | Minors | ✅ | Portal signup refuses under-18s; children are registered at the clinic with a parent or guardian |
-| Backups and restore test | ✅ | Nightly encrypted backups (age), kept 14 days; practice restore with `acisi-restore-test`. Last restore test: **22 Nov 2026, passed** (DR Test Report) |
+| Backups and restore test | ✅ | Nightly encrypted backups (age), kept 14 days; practice restore with `acisi-restore-test`. Last restore test: **24 Nov 2026, passed** (full disaster-recovery tests: encryption check, settings restore, file restore, service back in 13 seconds; DR Test Report). Previous: 22 Nov 2026, passed |
 | Off-site backup | ❌ | Gap G5 |
 | Breach procedure | ✅ | Incident Response Plan: clinic within 48 h, DHA within 48 h, ODPC within 72 h, affected patients when at real risk |
-| DPIA | ✅ | Version 1.5, 24 Nov 2026 (uploaded) |
+| DPIA | ✅ | Version 1.6, 26 Nov 2026 (uploaded) |
 | Server hardening | ✅ | SSH key only, no root login, firewall (22/80/443), fail2ban, automatic security updates |
 
 ## 6. Interoperability
@@ -153,7 +153,7 @@ the date below, and that the gaps in section 7 are all the known gaps.
 | Name | Megan Irungu |
 | Position | Founder and Data Protection Officer, ACISI Healthcare |
 | Signature | |
-| Date | |
+| Date | 26 November 2026 |
 
 ---
 
@@ -161,7 +161,7 @@ the date below, and that the gaps in section 7 are all the known gaps.
 
 1. **Multi-factor login:** make sure every clinic admin and doctor shows
    "Multi-factor on" in Settings → Staff & doctors.
-2. **Restore test:** done 22 Nov 2026 (DR Test Report).
+2. **Restore test:** done 24 Nov 2026, all passed (DR Test Report); earlier test 22 Nov 2026.
 3. **Email reports (section 4):** decide the two "Tick only if" boxes from
    what the Settings page shows.
 4. **Sign** this sheet (section 8) and the DPIA (its section 8).

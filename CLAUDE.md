@@ -157,7 +157,7 @@ USSD-first clinic management platform for small clinics in Kenya. See
   answer from raymondbett@dha.go.ke), so the owner is submitting without
   their answers. Final answer sheet, with open items declared as gaps G1-G9:
   docs/compliance/DHA-self-attestation-answers-2026-11-24.md (final, replaces
-  the 20 Nov sheet; MFA ticked, DPIA v1.5 24 Nov). The documents the owner
+  the 20 Nov sheet; MFA ticked; DPIA v1.6 26 Nov: restore test date 24 Nov). The documents the owner
   uploads (12: 7 DHA-template Word files + PDFs, Privacy Policy, DPIA, Security
   Policy, Incident Response Plan, User Manual) are NOT kept in the repo (owner,
   24 Nov): 22 Nov originals on branch claude/focused-cori-macx3n; 24 Nov updates
