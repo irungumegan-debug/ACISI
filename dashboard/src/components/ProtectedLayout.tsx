@@ -220,7 +220,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         </div>
       </div>
 
-      <nav aria-label="Main" className="relative flex-1 space-y-1 px-3">
+      <nav aria-label="Main" className="relative min-h-0 flex-1 space-y-1 overflow-y-auto px-3">
         {navFor(session.role).map((item) => {
           const active = isActive(item, pathname);
           return (
@@ -246,7 +246,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         })}
       </nav>
 
-      <div className="relative border-t border-white/10 p-3">
+      <div className="relative flex-none border-t border-white/10 p-3">
         <button
           type="button"
           onClick={() => void logout()}
