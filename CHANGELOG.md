@@ -3,11 +3,24 @@
 Plain-language record of what changed in ACISI, which data each change
 touches, and who can use it. Newest first.
 
+## 2026-11-26: SHA claims becomes an optional add-on, off by default
+
+Database: two new columns on `clinics` (`shaAddonEnabled`, default false, and
+`shaAddonChangedAt`; migration `20261126100000_sha_addon_switch`, additive;
+undo `prisma/rollback/20261126100000_sha_addon_switch.down.sql`). Not active:
+nothing about any patient is sent to SHA.
+
+| What | Who |
+|---|---|
+| SHA claims is now a separate add-on, not part of ACISI's core. Server switch `SHA_ENABLED` (default off): while off, every `/api/staff/sha` route answers 404, like USSD. The SHA routes moved from `/api/staff/hie/.../sha` to `/api/staff/sha/...`. | – |
+| Owner site → clinic → **SHA claims add-on**: switch it on or off for one clinic (off by default; audit-logged `OWNER_CLINIC_SHA_ADDON_ON`/`_OFF`). SHA code checks this switch before reading or sending anything. | ACISI owner only |
+| Console: the SHA cover row (patient page) and the SHA visit card (Vitals and checkout pages) appear only when the add-on is on for the clinic. | Front desk, clinicians, clinic admins |
+
 ## 2026-11-25: Start the visit with SHA (SHA claims, start-visit consent)
 
 Database: new table `sha_visits` (migration `20261125100000_sha_visits`,
 additive; undo `prisma/rollback/20261125100000_sha_visits.down.sql`). Off
-until the national HIE is switched on with DHA's credentials (`HIE_ENABLED=true`).
+(since 26 Nov: the SHA add-on, see above).
 
 | What | Who |
 |---|---|

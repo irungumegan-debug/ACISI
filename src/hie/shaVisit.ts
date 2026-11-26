@@ -4,6 +4,7 @@ import { recordAuditEvent } from '../services/auditService';
 import { HieError, hieConfigured, hieRequest } from './client';
 import { HieSetupError, patientCrView } from './registryService';
 import { checkShaEligibility } from './shaEligibility';
+import { requireShaAddon } from './shaAddon';
 
 /**
  * SHA claims, start visit (owner, 25 Nov 2026; after phase 1, eligibility).
@@ -93,6 +94,8 @@ export function shaVisitView(v: ShaVisit | null): ShaVisitView | null {
 }
 
 async function context(encounterId: string, clinicId: string) {
+  // Add-on switch first: nothing is read or sent for SHA while it is off.
+  await requireShaAddon(clinicId);
   const encounter = await prisma.encounter.findFirst({
     where: { id: encounterId, clinicId },
     include: {

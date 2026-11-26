@@ -511,6 +511,28 @@ record (DHA/HIE becomes a recipient of patient data).
 
 To switch off: `HIE_ENABLED=false` and restart. Saved codes and IDs stay.
 
+## SHA claims add-on (keep OFF for now)
+
+SHA claims (cover check, start SHA visit) is an optional add-on, not part of
+ACISI's core. **Leave it off until DHA certification and the 8 January launch
+are done.** Two switches, both off by default; nothing about any patient goes
+to SHA unless both are on for that clinic:
+
+1. Server: `SHA_ENABLED=true` in `/etc/acisi/acisi.env`, then
+   `sudo systemctl restart acisi`. Off: every `/api/staff/sha` call answers 404.
+2. Per clinic: owner site → the clinic → **SHA claims add-on** → Switch on
+   (audit-logged). Off: the console shows no SHA panels for that clinic.
+
+It also needs the HIE connected (section above), because SHA claims go
+through DHA's AfyaConnect API. It was built from DHA's published docs
+without sandbox access, and SHA's rules changed several times in 2026:
+expect rework before switching it on. Before switching it on for real
+patients: update the Privacy Notice, DPIA and ODPC record (SHA becomes a
+recipient of patient data). Until then, DHA/ODPC forms say SHA claims are
+not active.
+
+To switch off: either switch, off again. Saved SHA visits stay in the database.
+
 ## Switching ACISI's M-Pesa to production (Buy Goods till)
 
 Do this only after the release that adds `MPESA_TILL_NUMBER` is deployed.

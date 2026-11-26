@@ -7,6 +7,7 @@ import { Avatar, btn, Card, EmptyState, SkeletonList } from '../components/ui';
 import { ID_TYPE_LABEL, IdentityFields } from '../components/IdentityFields';
 import { PortalSetupCode } from '../components/PhoneVerification';
 import { PatientFiles } from '../components/PatientFiles';
+import { useShaAddon } from '../lib/useShaAddon';
 
 export function PatientDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -197,6 +198,7 @@ function IdentityCard({ patient, onSaved }: { patient: PatientDetail; onSaved: (
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const canEdit = session?.role !== 'DOCTOR';
+  const shaAddon = useShaAddon();
 
   async function save(e: FormEvent): Promise<void> {
     e.preventDefault();
@@ -230,7 +232,7 @@ function IdentityCard({ patient, onSaved }: { patient: PatientDetail; onSaved: (
               {row('Next of kin phone', patient.nextOfKinPhone)}
             </dl>
             <ClientRegistryRow patient={patient} canLookUp={canEdit} onSaved={(crId) => onSaved({ ...patient, hie: { ...patient.hie, crId, verifiedAt: new Date().toISOString() } })} />
-            {canEdit && patient.hie.crId && <ShaCoverRow patientId={patient.id} />}
+            {canEdit && shaAddon && patient.hie.crId && <ShaCoverRow patientId={patient.id} />}
             {canEdit && (
               <button
                 type="button"

@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { BadgeCheck, ShieldCheck } from 'lucide-react';
 import { api, ApiError, ShaCode, ShaContact, ShaIntervention, ShaVisitState } from '../lib/api';
 import { Badge, btn, Card, field } from './ui';
+import { useShaAddon } from '../lib/useShaAddon';
 
 const errorText = (err: unknown) => (err instanceof ApiError ? err.message : 'Something went wrong. Try again.');
 const chip = 'rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-navy-900 hover:border-gold-500 disabled:opacity-50';
@@ -9,10 +10,16 @@ const chip = 'rounded-full border border-slate-300 bg-white px-3 py-1 text-xs fo
 /**
  * Front desk: start this visit with SHA while the patient is here. Choose
  * the SHA services, SHA texts the patient a code, the patient reads it out,
- * and SHA opens the visit's claim. Hidden until ACISI is connected to the HIE;
+ * and SHA opens the visit's claim. Hidden unless the SHA add-on is on for the
+ * clinic and ACISI is connected to the HIE;
  * never blocks the visit (a patient can always pay cash).
  */
 export function ShaVisitPanel({ encounterId }: { encounterId: string }) {
+  // Optional add-on: render nothing (and ask SHA nothing) unless it is on for this clinic.
+  return useShaAddon() ? <ShaVisitPanelInner encounterId={encounterId} /> : null;
+}
+
+function ShaVisitPanelInner({ encounterId }: { encounterId: string }) {
   const [state, setState] = useState<ShaVisitState | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

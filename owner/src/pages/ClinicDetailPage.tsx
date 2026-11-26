@@ -5,6 +5,7 @@ import { formatDate, formatKes } from '../lib/format';
 import { useLoad } from '../lib/useLoad';
 import { ActiveBadge, Badge, Button, Card, Empty, ErrorText, Loading, PageHeader } from '../components/ui';
 import { StaffTable } from '../components/StaffTable';
+import { ShaAddonCard } from '../components/ShaAddonCard';
 import { SmsUsageCard } from '../components/SmsUsageCard';
 
 export function ClinicDetailPage() {
@@ -84,6 +85,8 @@ export function ClinicDetailPage() {
 
       <div className="space-y-6">
         <SmsUsageCard key={`${clinic.plan}-${clinic.smsMonthlyAllowance}`} clinic={clinic} onChanged={reload} />
+
+        <ShaAddonCard clinic={clinic} onChanged={reload} />
 
         <Card title={`Doctors (${doctors.length})`}>
           {doctors.length === 0 ? <Empty>No doctors have joined yet.</Empty> : <StaffTable staff={doctors} kind="doctors" onChanged={reload} />}

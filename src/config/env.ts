@@ -153,6 +153,18 @@ const envSchema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
+  /**
+   * SHA claims add-on (Social Health Authority: cover check, start visit,
+   * claims). An optional add-on, not part of ACISI's core: off unless this
+   * is exactly "true". With it off, every /api/staff/sha route answers 404
+   * and the console shows no SHA panels. The code stays in src/hie/sha*.ts,
+   * ready to switch on. Also needs HIE_ENABLED with DHA's credentials, since
+   * SHA claims go through DHA's AfyaConnect API.
+   */
+  SHA_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
   HIE_BASE_URL: z.string().url().default('https://ilm-dev.dha.go.ke/uat-middleware/api/v1'),
   HIE_CLIENT_ID: z.string().trim().optional(),
   HIE_CLIENT_SECRET: z.string().trim().optional(),

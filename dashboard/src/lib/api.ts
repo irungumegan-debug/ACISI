@@ -354,6 +354,11 @@ export interface ShaIntervention {
   documents: string[];
 }
 
+export interface ShaAddonStatus {
+  enabled: boolean;
+  connected: boolean;
+}
+
 export interface ShaVisitInfo {
   status: 'CODE_SENT' | 'STARTED';
   interventionCodes: string[];
@@ -1062,17 +1067,21 @@ export const api = {
   hieVisitAction(encounterId: string, action: 'consent' | 'consent/resend' | 'consent/confirm' | 'consent/refuse' | 'send' | 'close' | 'close/confirm', body?: object) {
     return request<HieVisitInfo | { ok: true }>(`/hie/visits/${encodeURIComponent(encounterId)}/${action}`, { method: 'POST', body: JSON.stringify(body ?? {}) });
   },
+  /** SHA claims add-on: on for this clinic? A 404 means it is switched off on the server. */
+  getShaAddonStatus() {
+    return request<ShaAddonStatus>('/sha/status');
+  },
   getShaVisit(encounterId: string) {
-    return request<ShaVisitState>(`/hie/visits/${encodeURIComponent(encounterId)}/sha`);
+    return request<ShaVisitState>(`/sha/visits/${encodeURIComponent(encounterId)}`);
   },
   getShaContacts(encounterId: string) {
-    return request<{ contacts: ShaContact[] }>(`/hie/visits/${encodeURIComponent(encounterId)}/sha/contacts`);
+    return request<{ contacts: ShaContact[] }>(`/sha/visits/${encodeURIComponent(encounterId)}/contacts`);
   },
   sendShaVisitCode(encounterId: string, interventionCodes: string[], contactId?: number) {
-    return request<ShaVisitInfo>(`/hie/visits/${encodeURIComponent(encounterId)}/sha/code`, { method: 'POST', body: JSON.stringify({ interventionCodes, contactId }) });
+    return request<ShaVisitInfo>(`/sha/visits/${encodeURIComponent(encounterId)}/code`, { method: 'POST', body: JSON.stringify({ interventionCodes, contactId }) });
   },
   startShaVisit(encounterId: string, code: string) {
-    return request<ShaVisitInfo>(`/hie/visits/${encodeURIComponent(encounterId)}/sha/start`, { method: 'POST', body: JSON.stringify({ code }) });
+    return request<ShaVisitInfo>(`/sha/visits/${encodeURIComponent(encounterId)}/start`, { method: 'POST', body: JSON.stringify({ code }) });
   },
   getNationalRecord(encounterId: string) {
     return request<{ items: NationalRecordItem[] }>(`/hie/visits/${encodeURIComponent(encounterId)}/national-record`);
@@ -1107,19 +1116,19 @@ export const api = {
   },
 
   checkShaEligibility(patientId: string) {
-    return request<ShaEligibility>(`/hie/patients/${encodeURIComponent(patientId)}/sha/eligibility`, { method: 'POST' });
+    return request<ShaEligibility>(`/sha/patients/${encodeURIComponent(patientId)}/eligibility`, { method: 'POST' });
   },
 
   getShaBenefits(patientId: string) {
-    return request<{ benefits: ShaCode[] }>(`/hie/patients/${encodeURIComponent(patientId)}/sha/benefits`);
+    return request<{ benefits: ShaCode[] }>(`/sha/patients/${encodeURIComponent(patientId)}/benefits`);
   },
 
   getShaSubBenefits(patientId: string, benefitCode: string) {
-    return request<{ subBenefits: ShaCode[] }>(`/hie/patients/${encodeURIComponent(patientId)}/sha/benefits/${encodeURIComponent(benefitCode)}/sub-benefits`);
+    return request<{ subBenefits: ShaCode[] }>(`/sha/patients/${encodeURIComponent(patientId)}/benefits/${encodeURIComponent(benefitCode)}/sub-benefits`);
   },
 
   getShaInterventions(patientId: string, subBenefitCode: string) {
-    return request<{ interventions: ShaIntervention[] }>(`/hie/patients/${encodeURIComponent(patientId)}/sha/sub-benefits/${encodeURIComponent(subBenefitCode)}/interventions`);
+    return request<{ interventions: ShaIntervention[] }>(`/sha/patients/${encodeURIComponent(patientId)}/sub-benefits/${encodeURIComponent(subBenefitCode)}/interventions`);
   },
 
   confirmClientRegistryMatch(patientId: string) {

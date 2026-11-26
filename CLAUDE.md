@@ -58,20 +58,27 @@ USSD-first clinic management platform for small clinics in Kenya. See
   always asked. Owner confirmed it working 24 Nov 2026: DHA box ticked,
   DPIA action A2 done (v1.4).
 
-- **SHA claims (owner, 25 Nov 2026): to be built, outpatient first.** Owner
-  sees SHA as essential long-term (SHA/DHA retire the manual SHA provider
-  portal 30 Nov 2026; facilities must use a DHA-certified HMIS). API is public
-  at hie-docs.dha.go.ke/docs/claims (~70 operations: eligibility, start-visit
-  consent, interventions, preauths, billing, claim dispatch, callbacks,
-  remittances, emergency). Reuses src/hie/ (token, facility, CR, PUID,
-  consent). Plan: 1 eligibility (~1 wk), 2 services/tariffs (~1 wk), 3
-  billing+claims (~1.5-2 wk), 4 outpatient preauths (~1 wk), 5 status,
-  resubmission, remittance (~1 wk); sandbox needs DHA certification first.
-  Phase 1 BUILT 25 Nov (src/hie/shaEligibility.ts, routes /hie/patients/:id/
-  sha/*, patient page "SHA cover" panel; front desk only; read-only; off
-  until HIE_ENABLED). Coverage status words undocumented by DHA: only
-  active/eligible/covered count as covered until the sandbox shows the real
-  values. Start-visit consent BUILT 25 Nov (src/hie/shaVisit.ts, table sha_visits, routes /hie/visits/:id/sha/*, "SHA visit" card on the Vitals and checkout pages; OTP path only, fingerprint path needs DHA hardware; consent token encrypted). Next: phase 2 (services/tariffs), then billing+claims.
+- **SHA claims: optional add-on, kept OFF (owner, 26 Nov 2026).** Not part
+  of ACISI's core. Two switches, both off by default: server `SHA_ENABLED`
+  (off: /api/staff/sha/* not mounted, 404, like USSD) and per clinic
+  `Clinic.shaAddonEnabled` (only the ACISI owner, owner site → clinic → "SHA
+  claims add-on"). `requireShaAddon` (src/hie/shaAddon.ts) runs first in every
+  SHA service call, so no patient data goes to SHA while either is off; new
+  SHA code must call it too. Owner's rules: (1) keep it off; (2) expect
+  rework: built from DHA's published docs (hie-docs.dha.go.ke/docs/claims)
+  without an onboarded/certified-vendor sandbox, and SHA's rules changed
+  several times in 2026; (3) keep it OUT of the DHA and ODPC paperwork:
+  those describe only what ACISI does today; if DHA asks, SHA claims is
+  "not active" (never add SHA to the Privacy Notice, DPIA, ODPC record or
+  DHA answers unless the owner decides to switch it on); (4) never let it
+  delay DHA certification or the 8 Jan 2027 launch: build more only once
+  those are on track, or in quiet gaps. Built so far: phase 1 eligibility
+  (src/hie/shaEligibility.ts, patient page "SHA cover" row) and start-visit
+  consent (src/hie/shaVisit.ts, table sha_visits, "SHA visit" card on
+  Vitals/checkout; OTP path only; consent token encrypted). Coverage words
+  undocumented: only active/eligible/covered count as covered. Later plan:
+  2 services/tariffs, 3 billing+claims, 4 outpatient preauths, 5 status,
+  resubmission, remittance.
   ODPC answered 25 Nov 08:36 (Ian, 020 780 1800): founder of a sole
   proprietorship may be DPO and carry out the DPIA (recorded in the Drive log).
   Still pending: DHA/Samuel Q9 (does DHA require a separate qualified

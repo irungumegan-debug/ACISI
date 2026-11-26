@@ -1,6 +1,7 @@
 /** SHA claims phase 1: eligibility, benefits, sub-benefits and interventions, read through DHA's eClaims API. */
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 jest.mock('../../src/config/redis', () => require('../helpers/fakeRedis').fakeRedisModule());
+jest.mock('../../src/hie/shaAddon', () => ({ requireShaAddon: jest.fn() }));
 jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
 jest.mock('../../src/hie/client', () => ({ ...jest.requireActual('../../src/hie/client'), hieRequest: jest.fn() }));
 jest.mock('../../src/db/prisma', () => ({
@@ -184,5 +185,18 @@ describe('benefits, sub-benefits, interventions', () => {
   it('an inactive or code-less intervention is dropped', () => {
     expect(toInterventionView({ code: 'X-1', active: false })).toBeNull();
     expect(toInterventionView({ name: 'no code' })).toBeNull();
+  });
+});
+
+describe('SHA add-on switched off', () => {
+  it('sends nothing to SHA and reads no patient when the add-on is off', async () => {
+    const { requireShaAddon } = jest.requireMock('../../src/hie/shaAddon') as { requireShaAddon: jest.Mock };
+    const { hieRequest } = jest.requireMock('../../src/hie/client') as { hieRequest: jest.Mock };
+    requireShaAddon.mockRejectedValueOnce(new Error('The SHA add-on is switched off for this clinic.'));
+    hieRequest.mockClear();
+    (prisma.patient.findFirst as jest.Mock).mockClear();
+    await expect(checkShaEligibility({ patientId: 'p1', clinicId: 'c1', staffId: 's1' })).rejects.toThrow('switched off');
+    expect(hieRequest).not.toHaveBeenCalled();
+    expect(prisma.patient.findFirst).not.toHaveBeenCalled();
   });
 });

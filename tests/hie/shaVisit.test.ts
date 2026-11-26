@@ -1,6 +1,7 @@
 /** SHA claims: start visit (patient's SMS code, then SHA's virtual claim), through DHA's eClaims API. */
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 jest.mock('../../src/config/redis', () => require('../helpers/fakeRedis').fakeRedisModule());
+jest.mock('../../src/hie/shaAddon', () => ({ requireShaAddon: jest.fn() }));
 jest.mock('../../src/services/auditService', () => ({ recordAuditEvent: jest.fn() }));
 jest.mock('../../src/hie/client', () => ({ ...jest.requireActual('../../src/hie/client'), hieRequest: jest.fn(), hieConfigured: jest.fn(() => true) }));
 jest.mock('../../src/hie/shaEligibility', () => ({ checkShaEligibility: jest.fn() }));

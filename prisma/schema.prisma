@@ -185,6 +185,12 @@ model Clinic {
   surveillanceEmail         String?
   /// Week (Monday, YYYY-MM-DD) whose summary was last emailed, so it goes once.
   surveillanceWeeklySentFor String?
+  /// SHA claims add-on for this clinic (optional, not part of ACISI's core).
+  /// Off by default; only the ACISI owner turns it on (owner site), and SHA
+  /// calls also need SHA_ENABLED=true on the server. While off, nothing about
+  /// this clinic's patients is sent to SHA. See src/hie/shaAddon.ts.
+  shaAddonEnabled           Boolean    @default(false)
+  shaAddonChangedAt         DateTime?
   createdAt                 DateTime   @default(now())
   updatedAt                 DateTime   @updatedAt
 

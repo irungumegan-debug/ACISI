@@ -87,8 +87,16 @@ export interface ClinicDetail {
   planLabel: string;
   smsMonthlyAllowance: number;
   smsUsage: { thisMonth: SmsUsage; lastMonth: SmsUsage };
+  /** SHA claims add-on: this clinic's switch, and the server's (SHA_ENABLED). */
+  shaAddon: ShaAddon;
   departments: { id: string; name: string; code: string; isActive: boolean }[];
   staff: StaffListItem[];
+}
+
+export interface ShaAddon {
+  enabled: boolean;
+  changedAt: string | null;
+  serverEnabled: boolean;
 }
 
 export interface ActivityEntry {
@@ -192,6 +200,12 @@ export const api = {
       `/clinics/${encodeURIComponent(id)}/plan`,
       { method: 'PATCH', body: JSON.stringify({ plan, smsMonthlyAllowance }) },
     );
+  },
+  setClinicShaAddon(id: string, enabled: boolean) {
+    return request<{ id: string; shaAddon: ShaAddon }>(`/clinics/${encodeURIComponent(id)}/sha-addon`, {
+      method: 'PATCH',
+      body: JSON.stringify({ enabled }),
+    });
   },
   setStaffActive(id: string, active: boolean) {
     return request<{ id: string; isActive: boolean }>(

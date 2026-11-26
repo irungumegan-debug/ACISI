@@ -4,6 +4,7 @@ import { recordAuditEvent } from '../services/auditService';
 import { revokeSessionsFor } from '../services/sessionRevocation';
 import { AuthenticatedOwnerRequest } from './auth';
 import { CLINIC_PLANS } from '../config/constants';
+import { env } from '../config/env';
 import { getSmsUsage, kenyaMonth, planLabel } from '../services/clinicSmsUsageService';
 
 export const ownerClinicsRouter = Router();
@@ -148,6 +149,8 @@ ownerClinicsRouter.get('/:id', async (req, res) => {
     smsMonthlyAllowance: clinic.smsMonthlyAllowance,
     // C24: SMS sent to patients on this clinic's behalf. Owner only; clinic admins never see it.
     smsUsage: { thisMonth: smsThisMonth.get(clinic.id), lastMonth: smsLastMonth.get(clinic.id) },
+    // SHA claims add-on: the clinic's switch, and whether the server switch (SHA_ENABLED) is on too.
+    shaAddon: { enabled: clinic.shaAddonEnabled, changedAt: clinic.shaAddonChangedAt, serverEnabled: env.SHA_ENABLED },
     departments: clinic.departments.map((d) => ({ id: d.id, name: d.name, code: d.code, isActive: d.isActive })),
     staff: clinic.staff.map((s) => ({
       id: s.id,
@@ -257,4 +260,39 @@ ownerClinicsRouter.patch('/:id/plan', async (req, res) => {
   });
 
   res.json({ id: updated.id, plan: updated.plan, planLabel: planLabel(updated.plan), smsMonthlyAllowance: updated.smsMonthlyAllowance });
+});
+
+/**
+ * SHA claims add-on, per clinic: off by default, and only the ACISI owner
+ * can switch it on. SHA calls also need SHA_ENABLED=true on the server.
+ * Logged with the old and new value.
+ */
+ownerClinicsRouter.patch('/:id/sha-addon', async (req, res) => {
+  const ownerReq = req as unknown as AuthenticatedOwnerRequest;
+  const { enabled } = (req.body ?? {}) as { enabled?: unknown };
+  if (typeof enabled !== 'boolean') {
+    res.status(400).json({ error: 'enabled must be true or false' });
+    return;
+  }
+  const clinic = await prisma.clinic.findUnique({ where: { id: req.params.id } });
+  if (!clinic) {
+    res.status(404).json({ error: 'Clinic not found' });
+    return;
+  }
+  const updated =
+    clinic.shaAddonEnabled === enabled
+      ? clinic
+      : await prisma.clinic.update({ where: { id: clinic.id }, data: { shaAddonEnabled: enabled, shaAddonChangedAt: new Date() } });
+  if (clinic.shaAddonEnabled !== enabled) {
+    await recordAuditEvent({
+      actorType: 'OWNER',
+      actorId: ownerReq.ownerSession.ownerId,
+      action: enabled ? 'OWNER_CLINIC_SHA_ADDON_ON' : 'OWNER_CLINIC_SHA_ADDON_OFF',
+      entityType: 'Clinic',
+      entityId: clinic.id,
+      clinicId: clinic.id,
+      metadata: { from: clinic.shaAddonEnabled, to: enabled },
+    });
+  }
+  res.json({ id: updated.id, shaAddon: { enabled: updated.shaAddonEnabled, changedAt: updated.shaAddonChangedAt, serverEnabled: env.SHA_ENABLED } });
 });

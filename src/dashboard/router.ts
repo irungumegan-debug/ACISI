@@ -16,6 +16,8 @@ import { labRouter, labTestsAdminRouter } from './lab';
 import { surveillanceRouter } from './surveillance';
 import { routineReportsRouter } from './routineReports';
 import { hieRouter } from './hie';
+import { shaRouter } from './sha';
+import { env } from '../config/env';
 import { serviceOrdersRouter } from './serviceOrders';
 import { vitalsRouter } from './vitals';
 import { dispensingRouter } from './dispensing';
@@ -34,6 +36,11 @@ dashboardRouter.use('/doctor', doctorRouter);
 dashboardRouter.use('/surveillance', surveillanceRouter);
 dashboardRouter.use('/routine-reports', routineReportsRouter);
 dashboardRouter.use('/hie', hieRouter);
+// SHA claims add-on: off unless SHA_ENABLED=true (see env.ts), like USSD.
+// With it off, /api/staff/sha/* answers 404 and nothing can reach SHA.
+if (env.SHA_ENABLED) {
+  dashboardRouter.use('/sha', shaRouter);
+}
 dashboardRouter.use('/service-orders', serviceOrdersRouter);
 dashboardRouter.use('/vitals', vitalsRouter);
 dashboardRouter.use('/dispensing', dispensingRouter);

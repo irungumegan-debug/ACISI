@@ -1,5 +1,6 @@
 import { recordAuditEvent } from '../services/auditService';
 import { hieRequest } from './client';
+import { requireShaAddon } from './shaAddon';
 import { clinicFacilityId, HieSetupError, patientAtClinic, patientCrView } from './registryService';
 
 /**
@@ -210,6 +211,8 @@ interface Ctx {
 }
 
 async function context(input: Ctx): Promise<{ crId: string; facilityId: string }> {
+  // Add-on switch first: nothing is read or sent for SHA while it is off.
+  await requireShaAddon(input.clinicId);
   const patient = await patientAtClinic(input.patientId, input.clinicId);
   const { crId } = patientCrView(patient);
   if (!crId) throw new HieSetupError('Look the patient up in the national Client Registry first (patient page → National HIE).');
